@@ -180,7 +180,8 @@ static void set_sizes(scan_ctx *c, uint32_t idx, const struct stat *st, uint32_t
   }
   uint64_t d = (uint64_t)st->st_blocks * 512;
   a->disk[idx] = d;
-  a->apparent[idx] = (uint64_t)st->st_size;
+  /* Как GNU du --apparent-size: размер самих каталогов не учитывается. */
+  a->apparent[idx] = S_ISDIR(st->st_mode) ? 0 : (uint64_t)st->st_size;
   atomic_fetch_add_explicit(&a->h->bytes, d, memory_order_relaxed);
   if (slot)
     atomic_fetch_add_explicit(

@@ -24,7 +24,7 @@ static int ref_cb(const char *p, const struct stat *st, int fl, struct FTW *f) {
     ref_seen[ref_nseen++].i = st->st_ino;
   }
   ref_disk += (uint64_t)st->st_blocks * 512;
-  ref_app += (uint64_t)st->st_size;
+  if (!S_ISDIR(st->st_mode)) ref_app += (uint64_t)st->st_size; /* как GNU du -A: каталоги = 0 */
   return 0;
 }
 
