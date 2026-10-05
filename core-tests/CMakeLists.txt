@@ -22,3 +22,7 @@ ancdu_test(test_scan)
 ancdu_test(test_dump)
 ancdu_test(test_index)
 ancdu_test(test_rmtree)
+
+ancdu_test(test_memfd)
+target_compile_definitions(test_memfd PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
+add_dependencies(test_memfd ancdu_scan)
