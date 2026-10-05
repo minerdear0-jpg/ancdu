@@ -97,3 +97,9 @@ int arena_cur_path(const arena *a, char *out, size_t cap);
 uint64_t arena_cap_hint(const char *path);
 uint64_t arena_names_hint(uint64_t cap_nodes);
 int64_t ancdu_now_ns(void);
+
+/* ---- сериализация (формат = раскладка арены с ёмкостями = факту) ---- */
+int arena_write(const arena *a, int fd);
+int arena_read_stream(arena *out, int fd);
+int arena_save_file(const arena *a, const char *path);
+int arena_open_file(arena *out, const char *path);

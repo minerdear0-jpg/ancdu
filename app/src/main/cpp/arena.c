@@ -1,10 +1,15 @@
 #include "arena.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <time.h>
+#include <unistd.h>
 
 #define ALIGN64(x) (((x) + 63u) & ~(uint64_t)63u)
 
@@ -226,4 +231,144 @@ uint64_t arena_cap_hint(const char *path) {
 uint64_t arena_names_hint(uint64_t cap_nodes) {
   uint64_t v = cap_nodes * 40 + (64u << 20);
   return v > ANCDU_MAX_NAMES ? ANCDU_MAX_NAMES : v;
+}
+
+#define ANCDU_MAX_FILE (64ull << 30)
+
+static int write_all(int fd, const void *p, size_t n) {
+  const char *c = p;
+  while (n) {
+    ssize_t w = write(fd, c, n);
+    if (w < 0) {
+      if (errno == EINTR) continue;
+      return -errno;
+    }
+    c += w;
+    n -= (size_t)w;
+  }
+  return 0;
+}
+
+static int read_all(int fd, void *p, size_t n) {
+  char *c = p;
+  while (n) {
+    ssize_t r = read(fd, c, n);
+    if (r < 0) {
+      if (errno == EINTR) continue;
+      return -errno;
+    }
+    if (r == 0) return -EIO;
+    c += r;
+    n -= (size_t)r;
+  }
+  return 0;
+}
+
+/* Дописывает нули до off, затем данные. */
+static int put(int fd, uint64_t *pos, uint64_t off, const void *data, size_t len) {
+  static const char zeros[64];
+  while (*pos < off) {
+    size_t k = off - *pos < sizeof zeros ? (size_t)(off - *pos) : sizeof zeros;
+    int r = write_all(fd, zeros, k);
+    if (r) return r;
+    *pos += k;
+  }
+  int r = write_all(fd, data, len);
+  if (r) return r;
+  *pos += len;
+  return 0;
+}
+
+int arena_write(const arena *a, int fd) {
+  uint64_t n = atomic_load(&a->h->count), nu = atomic_load(&a->h->names_used);
+  char hb[ANCDU_HDR_SIZE];
+  memcpy(hb, a->h, ANCDU_HDR_SIZE);
+  ancdu_hdr *h = (ancdu_hdr *)hb;
+  h->cap_nodes = n;
+  h->cap_names = nu;
+  uint64_t total = layout(h, n, nu);
+  uint64_t pos = 0;
+  int r;
+#define PUT(field, ptr, elem) \
+  if ((r = put(fd, &pos, h->field, ptr, (size_t)(n * (elem))))) return r
+  if ((r = put(fd, &pos, 0, hb, ANCDU_HDR_SIZE))) return r;
+  PUT(off_parent, a->parent, 4);
+  PUT(off_disk, a->disk, 8);
+  PUT(off_apparent, a->apparent, 8);
+  PUT(off_items, a->items, 4);
+  PUT(off_name_off, a->name_off, 4);
+  PUT(off_name_len, a->name_len, 2);
+  PUT(off_flags, a->flags, 1);
+  PUT(off_child_start, a->child_start, 4);
+  PUT(off_child_count, a->child_count, 4);
+  PUT(off_order, a->order, 4);
+#undef PUT
+  if ((r = put(fd, &pos, h->off_names, a->names, (size_t)nu))) return r;
+  return put(fd, &pos, total, "", 0);
+}
+
+int arena_read_stream(arena *out, int fd) {
+  char hb[ANCDU_HDR_SIZE];
+  int r = read_all(fd, hb, sizeof hb);
+  if (r) return r;
+  ancdu_hdr *h = (ancdu_hdr *)hb;
+  if (memcmp(h->magic, ANCDU_MAGIC, 8) != 0 || h->version != ANCDU_VERSION ||
+      h->cap_nodes >= ANCDU_NONE || h->cap_names > ANCDU_MAX_NAMES)
+    return -EINVAL;
+  uint64_t size = layout(NULL, h->cap_nodes, h->cap_names);
+  if (size > ANCDU_MAX_FILE) return -EINVAL;
+  void *base = mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+  if (base == MAP_FAILED) return -errno;
+  memcpy(base, hb, sizeof hb);
+  r = read_all(fd, (char *)base + ANCDU_HDR_SIZE, (size_t)(size - ANCDU_HDR_SIZE));
+  if (!r) r = arena_attach(out, base, (size_t)size);
+  if (!r) r = arena_validate(out);
+  if (r) {
+    munmap(base, (size_t)size);
+    memset(out, 0, sizeof *out);
+    return r;
+  }
+  out->owned = 1;
+  return 0;
+}
+
+int arena_save_file(const arena *a, const char *path) {
+  char tmp[4096];
+  if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp) return -ENAMETOOLONG;
+  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+  if (fd < 0) return -errno;
+  int r = arena_write(a, fd);
+  if (!r && fsync(fd) != 0) r = -errno;
+  if (close(fd) != 0 && !r) r = -errno;
+  if (!r && rename(tmp, path) != 0) r = -errno;
+  if (r) unlink(tmp);
+  return r;
+}
+
+int arena_open_file(arena *out, const char *path) {
+  int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return -errno;
+  struct stat st;
+  if (fstat(fd, &st) != 0) {
+    int e = -errno;
+    close(fd);
+    return e;
+  }
+  if (st.st_size < (off_t)ANCDU_HDR_SIZE || (uint64_t)st.st_size > ANCDU_MAX_FILE) {
+    close(fd);
+    return -EINVAL;
+  }
+  void *base = mmap(NULL, (size_t)st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+  close(fd);
+  if (base == MAP_FAILED) return -errno;
+  int r = arena_attach(out, base, (size_t)st.st_size);
+  if (!r) r = arena_validate(out);
+  if (r) {
+    munmap(base, (size_t)st.st_size);
+    memset(out, 0, sizeof *out);
+    return r;
+  }
+  out->owned = 1;
+  return 0;
 }
