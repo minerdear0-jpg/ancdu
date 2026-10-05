@@ -9,6 +9,7 @@ find_package(Threads REQUIRED)
 
 add_library(ancdu_core STATIC
   arena.c
+  csr.c
 )
 target_include_directories(ancdu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ancdu_core PUBLIC _GNU_SOURCE)

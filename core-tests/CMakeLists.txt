@@ -17,3 +17,4 @@ function(ancdu_test name)
 endfunction()
 
 ancdu_test(test_arena)
+ancdu_test(test_csr)
