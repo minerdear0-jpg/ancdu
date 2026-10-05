@@ -295,7 +295,8 @@ int scan_default_threads(const char *root) {
   if (n < 1) n = 1;
   if (n > 16) n = 16;
   struct statfs sf;
-  if (statfs(root, &sf) == 0 && (unsigned long)sf.f_type == FUSE_SUPER_MAGIC && n > 4) n = 4;
+  /* Замер на DUT через FUSE: t4 292 мс, t6 155-190, t8 ~190 — потолок 6. */
+  if (statfs(root, &sf) == 0 && (unsigned long)sf.f_type == FUSE_SUPER_MAGIC && n > 6) n = 6;
   return (int)n;
 }
 
@@ -303,7 +304,8 @@ int scan_run(arena *a, const scan_opts *o) {
   ancdu_hdr *h = a->h;
   const char *root = h->root_path;
   struct stat st;
-  if (lstat(root, &st) != 0 || !S_ISDIR(st.st_mode)) return ST_FAILED;
+  /* Корень разыменовывается (/sdcard — симлинк); внутри симлинки не обходятся. */
+  if (stat(root, &st) != 0 || !S_ISDIR(st.st_mode)) return ST_FAILED;
 
   scan_ctx c;
   memset(&c, 0, sizeof c);

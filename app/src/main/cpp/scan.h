@@ -11,5 +11,5 @@ typedef struct {
  * публикует h->state — это обязанность вызывающего. */
 int scan_run(arena *a, const scan_opts *o);
 
-/* Прямой доступ — все онлайн-ядра (≤ 16); FUSE — не больше 4. */
+/* Прямой доступ — все онлайн-ядра (≤ 16); FUSE — не больше 6. */
 int scan_default_threads(const char *root);

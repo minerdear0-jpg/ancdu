@@ -130,6 +130,11 @@ static void test_edge_states(const char *T) {
   CHECK_EQ_U(scan_run(&a, &o), ST_FULL);
   CHECK_EQ_U(atomic_load(&a.h->count), 5);
   arena_unmap(&a);
+  /* корень — симлинк на каталог (как /sdcard): разыменовывается */
+  scan_new(&a, pj(T, "lnk"), 2, &st);
+  CHECK_EQ_U(st, ST_DONE);
+  CHECK(atomic_load(&a.h->count) > 1);
+  arena_unmap(&a);
   /* корень не существует / не каталог */
   scan_new(&a, pj(T, "missing"), 2, &st);
   CHECK_EQ_U(st, ST_FAILED);
