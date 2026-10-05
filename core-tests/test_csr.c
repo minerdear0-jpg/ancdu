@@ -68,6 +68,10 @@ static void test_remove(void) {
   csr_children(&a, 0, SORT_SIZE, 0, out, 8);
   CHECK(out[0] == 2 && out[1] == 3 && out[2] == 1); /* b c(16384) a(8192) — пересортировано */
   CHECK(csr_remove(&a, 5) == -EINVAL);        /* повторно */
+  CHECK(csr_remove(&a, 3) == 0);              /* каталог c целиком */
+  uint64_t before = a.disk[0];
+  CHECK(csr_remove(&a, 6) == -EINVAL);        /* c1 под удалённым c */
+  CHECK_EQ_U(a.disk[0], before);
   CHECK(csr_remove(&a, 0) == -EINVAL);        /* корень */
   CHECK(csr_remove(&a, 99) == -EINVAL);       /* вне диапазона */
   arena_unmap(&a);

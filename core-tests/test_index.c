@@ -49,6 +49,17 @@ int main(void) {
   CHECK(ad != ANCDU_NONE && child(&a, ad, "b") != ANCDU_NONE);
   arena_unmap(&a);
 
+  /* недопустимые имена файлов отвергаются */
+  CHECK(arena_alloc_anon(&a, 100, 1 << 20, "/s", SRC_INDEX) == 0);
+  b = index_begin(&a);
+  CHECK(index_add(b, "A/", "..", 1) == -EINVAL);
+  CHECK(index_add(b, "A/", ".", 1) == -EINVAL);
+  CHECK(index_add(b, "A/", "", 1) == -EINVAL);
+  CHECK(index_add(b, "A/", "x/y", 1) == -EINVAL);
+  CHECK(index_add(b, "A/", "ok", 1) == 0);
+  index_end(b);
+  arena_unmap(&a);
+
   /* переполнение */
   CHECK(arena_alloc_anon(&a, 3, 1 << 20, "/s", SRC_INDEX) == 0);
   b = index_begin(&a);

@@ -136,7 +136,9 @@ uint32_t csr_children(const arena *a, uint32_t node, int key, int apparent,
 
 int csr_remove(arena *a, uint32_t node) {
   uint64_t n = atomic_load(&a->h->count);
-  if (node == 0 || node >= n || (a->flags[node] & F_DELETED)) return -EINVAL;
+  if (node == 0 || node >= n) return -EINVAL;
+  for (uint32_t x = node; x != ANCDU_NONE; x = a->parent[x])
+    if (a->flags[x] & F_DELETED) return -EINVAL; /* сам узел или предок уже вычтен */
   uint64_t d = a->disk[node], ap = a->apparent[node];
   uint32_t it = a->items[node];
   a->flags[node] |= F_DELETED;

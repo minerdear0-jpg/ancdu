@@ -99,6 +99,30 @@ int main(void) {
   CHECK(arena_open_file(&b, path) == -EINVAL);
   CHECK(arena_open_file(&b, pj(T, "missing")) == -ENOENT);
 
+  /* #1: дочерние массивы проверяются при любом state (здесь FULL) */
+  atomic_store(&a.h->state, ST_FULL);
+  uint32_t saved = a.child_start[0];
+  a.child_start[0] = 0x7fffffff;
+  CHECK(arena_save_file(&a, path) == 0);
+  CHECK(arena_open_file(&b, path) == -EINVAL);
+  a.child_start[0] = saved;
+  saved = a.order[0];
+  a.order[0] = 0x7fffffff;
+  CHECK(arena_save_file(&a, path) == 0);
+  CHECK(arena_open_file(&b, path) == -EINVAL);
+  a.order[0] = saved;
+  atomic_store(&a.h->state, ST_DONE);
+
+  /* #2: файл без узлов (скан упал на корне) не открывается */
+  arena e;
+  CHECK(arena_alloc_anon(&e, 10, 4096, "/r", SRC_SCAN) == 0);
+  CHECK(arena_save_file(&e, path) == 0);
+  CHECK(arena_open_file(&b, path) == -EINVAL);
+  fd = open(path, O_RDONLY);
+  CHECK(arena_read_stream(&b, fd) == -EINVAL);
+  close(fd);
+  arena_unmap(&e);
+
   unlink(path);
   rmdir(T);
   arena_unmap(&a);

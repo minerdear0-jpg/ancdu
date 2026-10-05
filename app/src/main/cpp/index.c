@@ -70,6 +70,8 @@ index_builder *index_begin(arena *a) {
 
 int index_add(index_builder *b, const char *rel_dir, const char *name, uint64_t size) {
   arena *a = b->a;
+  if (!name[0] || !strcmp(name, ".") || !strcmp(name, "..") || strchr(name, '/'))
+    return -EINVAL; /* такое имя дало бы чужой путь для удаления */
   uint32_t dir;
   if (b->last_dir && strcmp(b->last_dir, rel_dir) == 0) {
     dir = b->last_node;

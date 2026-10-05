@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -35,4 +36,14 @@ static int rm_at(int dfd, const char *name, int depth) {
   return err;
 }
 
-int rm_tree(const char *path) { return rm_at(AT_FDCWD, path, 0); }
+int rm_tree(const char *path) {
+  /* "link/" разыменовывается даже с AT_SYMLINK_NOFOLLOW/O_NOFOLLOW —
+   * срезаем завершающие слеши, чтобы удалялась сама ссылка. */
+  char buf[PATH_MAX];
+  size_t n = strlen(path);
+  while (n > 1 && path[n - 1] == '/') n--;
+  if (n >= sizeof buf) return -ENAMETOOLONG;
+  memcpy(buf, path, n);
+  buf[n] = 0;
+  return rm_at(AT_FDCWD, buf, 0);
+}

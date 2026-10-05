@@ -24,6 +24,18 @@ int main(void) {
   CHECK(rm_tree(pj(t, "lnk")) == 0);
   CHECK(access(pj(t, "keep/important"), F_OK) == 0);
 
+  /* симлинк с завершающим слешем: удаляется ссылка, цель цела */
+  mk_dir(pj(t, "target"));
+  mk_dir(pj(t, "target/sub"));
+  write_file(pj(t, "target/sub/keep"), 1);
+  CHECK(symlink(pj(t, "target"), pj(t, "slink")) == 0);
+  char ts[4200];
+  snprintf(ts, sizeof ts, "%s/slink//", t);
+  CHECK(rm_tree(ts) == 0);
+  CHECK(access(pj(t, "target/sub/keep"), F_OK) == 0);
+  struct stat lst;
+  CHECK(lstat(pj(t, "slink"), &lst) != 0);
+
   /* одиночный файл и отсутствующий путь */
   write_file(pj(t, "single"), 1);
   CHECK(rm_tree(pj(t, "single")) == 0);

@@ -192,11 +192,11 @@ int arena_validate(const arena *a) {
     uint64_t end = (uint64_t)a->name_off[i] + a->name_len[i];
     if (end + 1 > nu || a->names[end] != 0) return -EINVAL;
   }
-  if (atomic_load(&a->h->state) == ST_DONE) {
-    for (uint64_t i = 0; i < n; i++) {
-      if ((uint64_t)a->child_start[i] + a->child_count[i] > n - 1) return -EINVAL;
-      if (i + 1 < n && a->order[i] >= n) return -EINVAL;
-    }
+  /* Дочерние массивы проверяются всегда: state берётся из того же
+   * недоверенного файла, а до post_process массивы нулевые и проходят. */
+  for (uint64_t i = 0; i < n; i++) {
+    if ((uint64_t)a->child_start[i] + a->child_count[i] > n - 1) return -EINVAL;
+    if (i + 1 < n && a->order[i] >= n) return -EINVAL;
   }
   return 0;
 }
@@ -323,6 +323,7 @@ int arena_read_stream(arena *out, int fd) {
   memcpy(base, hb, sizeof hb);
   r = read_all(fd, (char *)base + ANCDU_HDR_SIZE, (size_t)(size - ANCDU_HDR_SIZE));
   if (!r) r = arena_attach(out, base, (size_t)size);
+  if (!r && atomic_load(&out->h->count) == 0) r = -EINVAL; /* нет даже корня */
   if (!r) r = arena_validate(out);
   if (r) {
     munmap(base, (size_t)size);
@@ -363,6 +364,7 @@ int arena_open_file(arena *out, const char *path) {
   close(fd);
   if (base == MAP_FAILED) return -errno;
   int r = arena_attach(out, base, (size_t)st.st_size);
+  if (!r && atomic_load(&out->h->count) == 0) r = -EINVAL; /* нет даже корня */
   if (!r) r = arena_validate(out);
   if (r) {
     munmap(base, (size_t)st.st_size);
