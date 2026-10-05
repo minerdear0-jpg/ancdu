@@ -23,3 +23,8 @@ add_executable(ancdu_scan cli.c)
 target_link_libraries(ancdu_scan PRIVATE ancdu_core)
 target_compile_options(ancdu_scan PRIVATE -Wall -Wextra)
 set_target_properties(ancdu_scan PROPERTIES OUTPUT_NAME "libancdu_scan.so")
+
+if(ANDROID)
+  add_executable(memfd_probe ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/memfd_probe.c)
+  target_link_libraries(memfd_probe PRIVATE ancdu_core)
+endif()
