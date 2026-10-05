@@ -1,6 +1,6 @@
 #include "arena.h"
 #include "csr.h"
-#include "rmtree_stub.h"
+#include "rmtree.h"
 #include "scan.h"
 #include "test.h"
 
@@ -159,7 +159,7 @@ static void test_long_path(void) {
   CHECK_EQ_U(st, ST_DONE);
   CHECK(atomic_load(&a.h->errors) >= 1);
   arena_unmap(&a);
-  CHECK(system_rm(T) == 0);
+  CHECK(rm_tree(T) == 0);
 }
 
 /* Отмена из другого потока во время скана. */
@@ -192,7 +192,7 @@ static void test_cancel_midway(void) {
   pthread_join(th, NULL);
   CHECK(b.st == ST_CANCELLED || b.st == ST_DONE);
   arena_unmap(&a);
-  CHECK(system_rm(T) == 0);
+  CHECK(rm_tree(T) == 0);
 }
 
 int main(void) {
@@ -203,7 +203,7 @@ int main(void) {
   test_matches_reference(root, 4);
   test_edge_states(root);
   chmod(pj(root, "noperm"), 0755);
-  CHECK(system_rm(root) == 0);
+  CHECK(rm_tree(root) == 0);
   test_long_path();
   test_cancel_midway();
   CHECK(scan_default_threads("/") >= 1);

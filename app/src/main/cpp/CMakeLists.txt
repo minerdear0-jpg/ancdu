@@ -12,6 +12,7 @@ add_library(ancdu_core STATIC
   csr.c
   scan.c
   index.c
+  rmtree.c
 )
 target_include_directories(ancdu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ancdu_core PUBLIC _GNU_SOURCE)
