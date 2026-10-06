@@ -285,7 +285,27 @@ static void read_rm_progress(session *s, int fd) {
   }
 }
 
-int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper) {
+int media_path(const char *in, char *out, size_t cap) {
+  static const char pre[] = "/storage/emulated/";
+  if (strncmp(in, pre, sizeof pre - 1) != 0) return -EINVAL;
+  const char *user = in + sizeof pre - 1, *p = user;
+  while (*p >= '0' && *p <= '9') p++;
+  if (p == user || *p != '/') return -EINVAL;
+  const char *rest = p + 1;
+  for (const char *c = rest;;) { /* каждый компонент непуст и не «.»/«..» */
+    const char *e = strchr(c, '/');
+    size_t n = e ? (size_t)(e - c) : strlen(c);
+    if (n == 0 || (n == 1 && c[0] == '.') || (n == 2 && c[0] == '.' && c[1] == '.'))
+      return -EINVAL;
+    if (!e) break;
+    c = e + 1;
+  }
+  int k = snprintf(out, cap, "/data/media/%.*s/%s", (int)(p - user), user, rest);
+  return k < 0 || (size_t)k >= cap ? -ENAMETOOLONG : 0;
+}
+
+static int delete_node(session *s, uint32_t node, const char *const *prefix, const char *helper,
+                       int media) {
   arena *a = sess_arena(s);
   if (!a || node == 0 || node >= atomic_load(&a->h->count)) return -EINVAL;
   enum { PCAP = 65536 };
@@ -293,6 +313,13 @@ int sess_delete(session *s, uint32_t node, const char *const *prefix, const char
   if (!path) return -ENOMEM;
   int r = arena_path(a, node, path, PCAP);
   if (r < 0) { free(path); return r; }
+  if (media) { /* удаляется путь в /data/media, узел дерева — тот же */
+    char *mp = malloc(PCAP);
+    r = mp ? media_path(path, mp, PCAP) : -ENOMEM;
+    free(path);
+    if (r) { free(mp); return r; }
+    path = mp;
+  }
   atomic_store(&s->del_done, 0);
   atomic_store(&s->del_stop, 0);
   int gone;
@@ -354,4 +381,13 @@ int sess_delete(session *s, uint32_t node, const char *const *prefix, const char
   }
   a->flags[node] |= F_ERR;
   return r ? r : -EIO;
+}
+
+int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper) {
+  return delete_node(s, node, prefix, helper, 0);
+}
+
+int sess_delete_media(session *s, uint32_t node, const char *const *prefix, const char *helper) {
+  if (!prefix || !helper) return -EINVAL;
+  return delete_node(s, node, prefix, helper, 1);
 }

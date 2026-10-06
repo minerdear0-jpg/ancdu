@@ -82,6 +82,39 @@ object DeletePolicy {
         }
     }
 
+    const val NO_FAST = "путь нельзя сопоставить с /data/media"
+
+    /**
+     * Быстрый путь root в обход FUSE: /storage/emulated/<n>/X → /data/media/<n>/X, иначе null.
+     * <n> — только ASCII-цифры; X непуст, без пустых компонентов, «.» и «..» (и без «/» в конце).
+     * Те же правила, что у media_path в ядре (session_root.c).
+     */
+    fun mediaPath(path: String): String? {
+        val pre = "/storage/emulated/"
+        if (!path.startsWith(pre)) return null
+        val tail = path.substring(pre.length)
+        val slash = tail.indexOf('/')
+        if (slash <= 0) return null
+        val user = tail.substring(0, slash)
+        if (!user.all { it in '0'..'9' }) return null
+        val rest = tail.substring(slash + 1)
+        if (rest.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+        return "/data/media/$user/$rest"
+    }
+
+    /**
+     * Причина запрета быстрого удаления через /data/media или null. Исходный путь проверяет
+     * [blockReason]; здесь — что сопоставленный путь сам разрешён: строго внутри
+     * /data/media/<n>/, не /data/media/<n> и не /data/media/<n>/Android.
+     */
+    fun fastBlockReason(path: String): String? {
+        val m = mediaPath(path) ?: return NO_FAST
+        return if (isSystemPath(m)) SYSTEM else exactBlockReason(m) ?: dataBlockReason(m)
+    }
+
+    /** Галочка «быстро через root» включена по умолчанию от 1000 элементов. */
+    fun fastByDefault(items: Long): Boolean = items >= 1000
+
     private const val EPERM = 1
 
     /**

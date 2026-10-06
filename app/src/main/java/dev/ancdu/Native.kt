@@ -46,6 +46,9 @@ object Native {
     @JvmStatic external fun source(h: Long): Int
     /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; иное <0 — ошибка. */
     @JvmStatic external fun delete(h: Long, node: Int, rootHelper: String?): Int
+    /** Как delete через root ([rootHelper] под su), но узел /storage/emulated/<n>/X удаляется
+     *  как /data/media/<n>/X — в обход FUSE. Путь не сопоставляется — -EINVAL, ничего не запущено. */
+    @JvmStatic external fun deleteMedia(h: Long, node: Int, rootHelper: String): Int
     /** Сколько записей удалено идущим (или последним) delete. Параллельно с delete — можно. */
     @JvmStatic external fun deleteProgress(h: Long): Long
     /** Просит остановить идущий delete (он вернёт -EINTR). Параллельно с delete — можно. */

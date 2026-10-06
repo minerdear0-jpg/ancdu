@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
+import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -40,10 +41,13 @@ class DeletePreview(
     val kind: Kind,
     /** Время скана для Kind.CACHE («dd.MM HH:mm»), иначе null. */
     val cacheTime: String?,
+    /** Доступен быстрый путь root в обход FUSE (/storage/emulated/<n>/X через /data/media). */
+    val fast: Boolean = false,
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
-class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onDelete: () -> Unit) {
+/** [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен). */
+class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onDelete: (Boolean) -> Unit) {
     private val ui = Handler(Looper.getMainLooper())
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
     /** null — удаление запрещено ([blockText] вместо кнопки). */
@@ -56,6 +60,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Имена показанных детей (для тестов). */
     val childNames = ArrayList<String>()
     lateinit var cancelButton: TextView
+        private set
+    /** Галочка «быстро через root» (null — быстрый путь недоступен). */
+    var fastBox: CheckBox? = null
         private set
 
     private val hardlink = !p.dir && p.flags and F_HLDUP != 0
@@ -133,8 +140,26 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (hardlink) addView(act.label("жёсткая ссылка — место может не освободиться", 13f, C.WARN))
         if (p.kind == Kind.INDEX) addView(act.label("размер по индексу, приблизительно", 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label("размеры по скану от ${p.cacheTime}", 13f, C.MUTED))
+        if (p.block == null && p.fast) addView(fastRow())
         if (p.block == null) addView(act.label("Без корзины. Отменить нельзя.", 14f, C.DANGER))
         addView(buttons())
+    }
+
+    /** «быстро через root»: удаление через /data/media/<n>/ под su, затем пересканирование галереи. */
+    private fun fastRow(): View = act.vbox(2).apply {
+        val note = act.label("галерея обновится через несколько секунд", 12f, C.MUTED)
+        val box = CheckBox(act).apply {
+            text = "быстро через root (в обход FUSE)"
+            textSize = 14f
+            setTextColor(C.TEXT)
+            minHeight = act.dp(44)
+            isChecked = DeletePolicy.fastByDefault(p.items)
+            setOnCheckedChangeListener { _, on -> note.visibility = if (on) View.VISIBLE else View.GONE }
+        }
+        note.visibility = if (box.isChecked) View.VISIBLE else View.GONE
+        fastBox = box
+        addView(box)
+        addView(note)
     }
 
     private fun ownerRow(pkg: String): View = act.hbox(8).apply {
@@ -209,7 +234,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(cancelButton)
         if (b == null) {
             deleteButton = button(readyLabel, C.DANGER, Color.WHITE) {
-                if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete() }
+                if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete(fastBox?.isChecked == true) }
             }.apply {
                 contentDescription = "$readyLabel, «${p.name}»"
                 if (pause) { isEnabled = false; alpha = 0.5f }

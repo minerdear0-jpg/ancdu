@@ -38,6 +38,13 @@ arena *sess_arena(session *s);
  * -EIO — частично (выход 5), хелпер убит сигналом или waitpid не удался (исход неизвестен).
  * В начале обнуляет счётчик и флаг стопа удаления. */
 int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper);
+/* Как sess_delete через helper --rm под prefix (обязателен), но удаляет не путь узла
+ * /storage/emulated/<n>/X, а тот же файл без FUSE — /data/media/<n>/X (media_path).
+ * Путь узла не сопоставляется — -EINVAL, ничего не запущено. Итог и дерево — как у sess_delete. */
+int sess_delete_media(session *s, uint32_t node, const char *const *prefix, const char *helper);
+/* /storage/emulated/<n>/X → /data/media/<n>/X в out (cap байт): 0, -ENAMETOOLONG или -EINVAL —
+ * не тот префикс, <n> не из цифр, X пуст, компонент X пуст, «.» или «..» (в т.ч. «/» в конце). */
+int media_path(const char *in, char *out, size_t cap);
 /* Единственное исключение из «никаких параллельных вызовов на одной сессии»: эти две
  * функции трогают только атомики удаления (и под mu — stdin хелпера), их можно звать из
  * любого потока, пока идёт sess_delete. Ничего другого параллельно звать нельзя.

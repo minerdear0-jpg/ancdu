@@ -64,6 +64,8 @@ object Holder {
     var delTotal = 1L; private set
     var delStartMs = 0L; private set
     var delStopping = false; private set
+    /** Удаление идёт через su (root-сессия или быстрый путь /data/media). Только главный поток. */
+    var delRoot = false; private set
 
     /*
      * Удаление в полёте. Под [delLock]: [delHandle] != 0 только с вызова [delete] до возврата
@@ -111,14 +113,18 @@ object Holder {
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
      * [name] и [total] — для диалога прогресса. Стоп до начала (io ещё занят другим) — удаление
      * не запускается, результат -EINTR, ничего не удалено.
+     * [media] — Native.deleteMedia (нужен [helper]): узел удаляется через /data/media в обход FUSE.
+     * [afterIo] — на io сразу после Native.delete/deleteMedia, если удаление запускалось
+     * (например, пересканирование MediaStore).
      */
     fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
-               name: String = "", total: Long = 1L) {
+               name: String = "", total: Long = 1L, media: Boolean = false,
+               afterIo: (() -> Unit)? = null) {
         checkMain("Holder.delete")
         check(!deleting) { "удаление уже идёт" }
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
-        delStartMs = SystemClock.elapsedRealtime(); delStopping = false
+        delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
         synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
         io.execute {
             var r = -1
@@ -128,7 +134,8 @@ object Holder {
                     r = -DeleteProgress.EINTR
                 } else {
                     ran = true
-                    r = Native.delete(handle, node, helper)
+                    r = if (media && helper != null) Native.deleteMedia(handle, node, helper)
+                        else Native.delete(handle, node, helper)
                 }
             } finally {
                 synchronized(delLock) {
@@ -136,6 +143,7 @@ object Holder {
                     if (ran) delDone = runCatching { Native.deleteProgress(handle) }.getOrDefault(delDone)
                     delHandle = 0L
                 }
+                if (ran && afterIo != null) runCatching { afterIo() }
                 // И при исключении: deleting не должен остаться true навсегда.
                 main.post {
                     deleting = false

@@ -264,6 +264,16 @@ FN(void, deleteStop)(JNIEnv *e, jclass c, jlong h) {
   if (h) sess_delete_stop(SESS(h));
 }
 
+/* Удаление в обход FUSE: узел /storage/emulated/<n>/X удаляется как /data/media/<n>/X под su. */
+FN(jint, deleteMedia)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
+  (void)c;
+  if (!tree(h, node) || !helper) return -EINVAL;
+  const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
+  int r = sess_delete_media(SESS(h), (uint32_t)node, SU, hp);
+  (*e)->ReleaseStringUTFChars(e, helper, hp);
+  return r;
+}
+
 FN(jint, statfs)(JNIEnv *e, jclass c, jstring path, jlongArray out) {
   (void)c;
   const char *p = (*e)->GetStringUTFChars(e, path, NULL);

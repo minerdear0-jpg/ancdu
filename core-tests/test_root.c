@@ -78,8 +78,32 @@ static int launches(const char *cnt) {
   return n;
 }
 
+/* Только строки, без ФС: сопоставление /storage/emulated/<n>/X → /data/media/<n>/X. */
+static void media_cases(void) {
+  char o[256];
+  CHECK(media_path("/storage/emulated/0/DCIM", o, sizeof o) == 0 && !strcmp(o, "/data/media/0/DCIM"));
+  CHECK(media_path("/storage/emulated/10/a b/c\nd", o, sizeof o) == 0 &&
+        !strcmp(o, "/data/media/10/a b/c\nd"));
+  CHECK(media_path("/storage/emulated/0/.thumbnails/x", o, sizeof o) == 0 &&
+        !strcmp(o, "/data/media/0/.thumbnails/x"));
+  const char *bad[] = {"/storage/emulated/0",      "/storage/emulated/0/",   "/storage/emulated/",
+                       "/storage/emulated//x",     "/storage/emulated/a/x",  "/storage/emulated/0x/y",
+                       "/storage/emulated/0//x",   "/storage/emulated/0/x/", "/storage/emulated/0/..",
+                       "/storage/emulated/0/x/../y", "/storage/emulated/0/.", "/sdcard/x",
+                       "/storage/self/primary/x",  "storage/emulated/0/x",   "/data/media/0/x",
+                       "/storage/emulated/0/x//y"};
+  for (size_t i = 0; i < sizeof bad / sizeof *bad; i++) {
+    if (media_path(bad[i], o, sizeof o) != -EINVAL) {
+      fprintf(stderr, "media_path accepted: '%s'\n", bad[i]);
+      t_fail++;
+    }
+  }
+  CHECK(media_path("/storage/emulated/0/abcdef", o, 16) == -ENAMETOOLONG);
+}
+
 int main(void) {
   alarm(60); /* любое зависание — провал */
+  media_cases();
   char T[4096], W[4096], WD[4096], CNT[4200];
   snprintf(T, sizeof T, "%s", mk_tmp());
   mk_dir(pj(T, "d1"));
@@ -126,6 +150,15 @@ int main(void) {
   CHECK(sess_delete(p, prog, SH, ANCDU_CLI) == 0);
   CHECK(access(pj(T, "prog"), F_OK) != 0);
   CHECK_EQ_U(sess_delete_progress(p), 7);
+
+  /* обход FUSE: путь узла не под /storage/emulated/<n>/ — -EINVAL, хелпер не запускался */
+  {
+    uint32_t d1 = find(a, "d1");
+    CHECK(sess_delete_media(p, d1, SH, ANCDU_CLI) == -EINVAL);
+    CHECK(sess_delete_media(p, d1, NULL, ANCDU_CLI) == -EINVAL);
+    CHECK(access(pj(T, "d1/f1"), F_OK) == 0);
+    CHECK(!(a->flags[d1] & F_ERR));
+  }
 
   /* стоп через stdin хелпера: обёртка ждёт 0,3 с, стоп — через 0,1 с; хелпер стартует
    * с закрытым stdin, выход 6 → -EINTR; ничего не удалено, дерево цело, узел помечен */

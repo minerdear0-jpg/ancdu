@@ -2,6 +2,7 @@ package dev.ancdu
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.media.MediaScannerConnection
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -114,7 +115,7 @@ class BrowserActivity : Activity() {
                 when {
                     r == -DeleteProgress.EINTR -> report("Удаление остановлено",
                         DeleteProgress.stopped(Holder.deleteProgress(), Holder.delTotal))
-                    DeletePolicy.nothingDeleted(r, Holder.viaRoot) -> report("Не удалось удалить",
+                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
                         "Не удалось получить root — ничего не удалено (код $r).")
                     else -> report("Не удалось удалить полностью",
                         "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
@@ -342,7 +343,7 @@ class BrowserActivity : Activity() {
         val handle = h
         val target = kids[i]
         sheet?.dismiss()
-        sheet = DeleteSheet(this, preview(handle, target, nameAt(i))) { startDelete(handle, target) }
+        sheet = DeleteSheet(this, preview(handle, target, nameAt(i))) { fast -> startDelete(handle, target, fast) }
             .also { it.show() }
     }
 
@@ -370,7 +371,8 @@ class BrowserActivity : Activity() {
             name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
             flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
             block = blockReason(handle, target, path), kind = Holder.kind,
-            cacheTime = if (Holder.kind == Kind.CACHE) Holder.label.removePrefix("кэш от ") else null)
+            cacheTime = if (Holder.kind == Kind.CACHE) Holder.label.removePrefix("кэш от ") else null,
+            fast = fastAllowed(path))
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
@@ -385,6 +387,10 @@ class BrowserActivity : Activity() {
      * подтверждения), «N / M эл. · м:сс» и «Стоп». Данные — из Holder, поэтому новый экземпляр
      * после пересоздания показывает тот же диалог и продолжает опрос.
      */
+    /** Быстрый путь root в обход FUSE: путь сопоставляется с /data/media, оба разрешены, есть su. */
+    private fun fastAllowed(path: String): Boolean =
+        DeletePolicy.fastBlockReason(path) == null && Root.suExists()
+
     private fun showWait() {
         list.source = null
         footer.text = "Удаление…"
@@ -449,7 +455,7 @@ class BrowserActivity : Activity() {
      * Главный поток. Удаляет узел [target] сессии [handle] — ровно ту пару, что показал диалог.
      * Завершение получает живой экземпляр через Holder (onDeleted), затем [done].
      */
-    private fun startDelete(handle: Long, target: Int, done: (Int) -> Unit = {}): Boolean {
+    private fun startDelete(handle: Long, target: Int, fast: Boolean = false, done: (Int) -> Unit = {}): Boolean {
         if (busy || isDestroyed) return false
         if (handle != Holder.h || handle != h) {
             alert("Удаление отменено", "Дерево сменилось, пока был открыт диалог. Ничего не удалено.") {
@@ -458,12 +464,20 @@ class BrowserActivity : Activity() {
             return false
         }
         // Повторная проверка запретов: путь мимо диалога (тесты) тоже не удалит системное.
-        if (blockReason(handle, target, Native.str(Native.path(handle, target))) != null) return false
-        val helper = if (Holder.viaRoot) Root.helper(this) else null
+        val path = Native.str(Native.path(handle, target))
+        if (blockReason(handle, target, path) != null) return false
+        // Быстрый путь: и исходный, и сопоставленный /data/media-путь проверены политикой.
+        if (fast && !fastAllowed(path)) return false
+        val helper = if (Holder.viaRoot || fast) Root.helper(this) else null
         val items = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }[2]
         val name = Native.str(Native.name(handle, target))
+        val app = applicationContext
         keepScroll = list.scroll
-        Holder.delete(handle, target, helper, done, name, items)
+        Holder.delete(handle, target, helper, done, name, items, media = fast,
+            afterIo = if (!fast) null else {
+                // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки.
+                { MediaScannerConnection.scanFile(app, arrayOf(path), null, null) }
+            })
         showWait()
         return true
     }
