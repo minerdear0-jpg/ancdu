@@ -62,4 +62,20 @@ class ScanQueueTest {
         q.remove(storage)
         assertFalse(q.active(storage, running = data))
     }
+
+    /** root отклонён после постановки: su-цели выбрасываются, остальные идут по порядку. */
+    @Test fun deniedRootDropsSuTargets() {
+        val q = ScanQueue()
+        q += data
+        q += fixture
+        q += ScanTarget("/data/data", true)
+        q += storage
+        assertEquals(fixture, q.next(rootDenied = true))
+        assertEquals(storage, q.next(rootDenied = true))
+        assertNull(q.next(rootDenied = true))
+        assertTrue("su-цели выброшены, не отложены", q.isEmpty)
+        // root не отклонён — su-цель запускается как обычно
+        q += data
+        assertEquals(data, q.next(rootDenied = false))
+    }
 }

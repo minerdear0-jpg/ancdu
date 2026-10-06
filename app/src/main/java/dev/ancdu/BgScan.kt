@@ -178,7 +178,8 @@ object BgScan {
     private fun restart() {
         val ctx = app
         while (true) {
-            val t = queue.pop() ?: break
+            // root отклонён после постановки — su-цель выбрасывается (Magisk сам не спрашивает).
+            val t = queue.next(rootDenied = Root.state == RootState.DENIED) ?: break
             if (ctx != null && start(ctx, t)) return
         }
         changed()

@@ -744,8 +744,10 @@ class BrowserActivity : Activity() {
         return true
     }
 
-    /** Для тестов: синхронное удаление строки i. Вызывать с тестового потока, не с главного. */
-    /** [bulk] — для тестов: шаг вместо массового (на io до ядра), как у Holder.delete. */
+    /**
+     * Для тестов: синхронное удаление строки i. Вызывать с тестового потока, не с главного.
+     * [bulk] — шаг вместо массового (на io до ядра), как у Holder.delete.
+     */
     fun deleteBlocking(i: Int, bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): Int {
         check(Looper.myLooper() != Looper.getMainLooper()) { "deleteBlocking на главном потоке" }
         var r = Int.MIN_VALUE

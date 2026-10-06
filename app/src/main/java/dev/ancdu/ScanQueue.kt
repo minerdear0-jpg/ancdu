@@ -22,6 +22,17 @@ class ScanQueue {
     fun remove(t: ScanTarget) { q -= t }
     fun pop(): ScanTarget? = q.firstOrNull()?.also { q -= it }
 
+    /**
+     * Следующая цель к запуску. [rootDenied] — root отклонён с момента постановки: su-цели
+     * выбрасываются, чтобы запрос Magisk не всплыл сам (ждущий их запрос закончится провалом).
+     */
+    fun next(rootDenied: Boolean): ScanTarget? {
+        while (true) {
+            val t = pop() ?: return null
+            if (!(t.su && rootDenied)) return t
+        }
+    }
+
     /** Скан цели [t] идёт ([running] — цель идущего скана или null) или ждёт в очереди. */
     fun active(t: ScanTarget, running: ScanTarget?): Boolean = running == t || t in q
 }
