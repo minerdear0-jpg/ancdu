@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <unistd.h>
 
 #define RM_MAX_DEPTH 4096
@@ -269,3 +270,24 @@ int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic in
 }
 
 int rm_tree(const char *path) { return rm_tree_ex(path, 1, NULL, NULL); }
+
+#define RM_FUSE_SUPER_MAGIC 0x65735546
+
+int rm_default_threads(const char *path) {
+  struct statfs sf;
+  if (statfs(path, &sf) != 0 || (unsigned long)sf.f_type != RM_FUSE_SUPER_MAGIC) return 1;
+  long n = sysconf(_SC_NPROCESSORS_ONLN);
+  return n < 1 ? 1 : n > 6 ? 6 : (int)n;
+}
+
+int rm_parent_real(const char *path) {
+  char buf[PATH_MAX], real[PATH_MAX];
+  int v = rm_tree_target(path, buf, sizeof buf);
+  if (v) return v;
+  if (buf[0] != '/') return -EINVAL;
+  char *slash = strrchr(buf, '/');
+  if (slash == buf) return 0; /* родитель — «/» */
+  *slash = 0;
+  if (!realpath(buf, real)) return -errno;
+  return strcmp(real, buf) == 0 ? 0 : -ELOOP;
+}

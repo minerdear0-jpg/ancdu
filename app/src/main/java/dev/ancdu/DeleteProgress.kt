@@ -6,6 +6,8 @@ import java.util.Locale
 object DeleteProgress {
     /** Native.delete возвращает -EINTR, если удаление остановлено (удалено частично). */
     const val EINTR = 4
+    /** Хелпер отклонил путь: родитель проходит через симлинк, ничего не удалено. */
+    const val ELOOP = 40
 
     /** Знаменатель: items узла — уже вместе с самим узлом (arena: items = 1 + потомки). */
     fun total(items: Long): Long = maxOf(items, 1L)
@@ -34,6 +36,13 @@ object DeleteProgress {
         "${Fmt.count(clamp(done, total))} / ${Fmt.count(total)} эл. · ${elapsed(ms)}"
 
     fun announce(done: Long, total: Long): String = "Удалено ${decile(done, total) * 10}%"
+
+    /** Остановлено до первого удаления (ждало в очереди): ничего не тронуто. */
+    fun isCancelled(r: Int, done: Long): Boolean = r == -EINTR && done <= 0
+
+    const val CANCELLED = "Удаление отменено — ничего не удалено."
+
+    fun freed(disk: Long): String = "освобождено ${Fmt.size(disk)}"
 
     fun stopped(done: Long, total: Long): String =
         "Удаление остановлено — удалено ${Fmt.count(clamp(done, total))} из ${Fmt.count(total)}. Пересканируйте."

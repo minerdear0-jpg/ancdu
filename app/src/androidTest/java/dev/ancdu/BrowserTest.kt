@@ -96,6 +96,7 @@ class BrowserTest {
         assertEquals(0, r)
         assertTrue(waitFor { !act2.busy && act2.list.source != null })
         ins.runOnMainSync {
+            assertTrue(act2.footerText.toString(), act2.footerText.startsWith("освобождено "))
             assertEquals(1, act2.loads)
             val src = act2.list.source!!
             assertEquals(1, src.count)
@@ -149,8 +150,9 @@ class BrowserTest {
         assertTrue(waitFor { !act.busy && act.list.source != null })
         ins.runOnMainSync {
             assertNull(act.waitBar)
-            assertEquals("Удаление остановлено", act.lastAlert?.first)
-            assertEquals("Удаление остановлено — удалено 0 из 4. Пересканируйте.", act.lastAlert?.second)
+            // ещё не начиналось — «отменено», без «Пересканируйте»
+            assertEquals("Удаление отменено", act.lastAlert?.first)
+            assertEquals("Удаление отменено — ничего не удалено.", act.lastAlert?.second)
         }
         for (i in 0 until 3) assertTrue(File(sub, "f$i.bin").exists())
 

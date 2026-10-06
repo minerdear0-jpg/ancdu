@@ -30,6 +30,14 @@ class DeleteProgressTest {
         assertEquals(500, DeleteProgress.permille(3_000_000_000L, 6_000_000_000L))
     }
 
+    @Test fun cancelledVsStopped() {
+        assertEquals(true, DeleteProgress.isCancelled(-DeleteProgress.EINTR, 0))
+        assertEquals(false, DeleteProgress.isCancelled(-DeleteProgress.EINTR, 1))
+        assertEquals(false, DeleteProgress.isCancelled(0, 0))
+        assertEquals(false, DeleteProgress.isCancelled(-5, 0))
+        assertEquals("освобождено 1.5 MiB", DeleteProgress.freed(3L shl 19))
+    }
+
     @Test fun totalAndTexts() {
         assertEquals(1L, DeleteProgress.total(0))
         assertEquals(69_370L, DeleteProgress.total(69_370))

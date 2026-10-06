@@ -111,10 +111,15 @@ class BrowserActivity : Activity() {
         } else {
             list.source = src
             load(node, keepScroll)
+            if (r == 0) showFreed(Holder.delDisk)
             if (r != 0 && !isFinishing) {
+                val doneN = Holder.deleteProgress()
                 when {
+                    DeleteProgress.isCancelled(r, doneN) -> report("Удаление отменено", DeleteProgress.CANCELLED)
                     r == -DeleteProgress.EINTR -> report("Удаление остановлено",
-                        DeleteProgress.stopped(Holder.deleteProgress(), Holder.delTotal))
+                        DeleteProgress.stopped(doneN, Holder.delTotal))
+                    r == -DeleteProgress.ELOOP -> report("Не удалось удалить",
+                        "Путь проходит через символическую ссылку — ничего не удалено.")
                     DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
                         "Не удалось получить root — ничего не удалено (код $r).")
                     else -> report("Не удалось удалить полностью",
@@ -123,6 +128,21 @@ class BrowserActivity : Activity() {
             }
         }
     }
+
+    /** Полный успех: «освобождено …» в подвале на 4 с, затем обычная подсказка. */
+    private fun showFreed(disk: Long) {
+        val normal = footer.text
+        val freed = DeleteProgress.freed(disk)
+        footer.text = freed
+        ui.removeCallbacks(restoreFooter)
+        restoreFooter = Runnable { if (footer.text.toString() == freed) footer.text = normal }
+        ui.postDelayed(restoreFooter, 4000)
+    }
+
+    private var restoreFooter = Runnable {}
+
+    /** Для тестов: текст подвала. */
+    val footerText: CharSequence get() = footer.text
 
     private fun report(title: String, msg: String) {
         lastAlert = title to msg
@@ -234,6 +254,7 @@ class BrowserActivity : Activity() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
         dismissWait()
+        ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
         super.onDestroy()
     }
@@ -469,11 +490,13 @@ class BrowserActivity : Activity() {
         // Быстрый путь: и исходный, и сопоставленный /data/media-путь проверены политикой.
         if (fast && !fastAllowed(path)) return false
         val helper = if (Holder.viaRoot || fast) Root.helper(this) else null
-        val items = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }[2]
+        val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
+        val items = inf[2]
+        val disk = inf[0]
         val name = Native.str(Native.name(handle, target))
         val app = applicationContext
         keepScroll = list.scroll
-        Holder.delete(handle, target, helper, done, name, items, media = fast,
+        Holder.delete(handle, target, helper, done, name, items, disk, media = fast,
             afterIo = if (!fast) null else {
                 // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки.
                 { MediaScannerConnection.scanFile(app, arrayOf(path), null, null) }

@@ -6,6 +6,7 @@
 #include <dirent.h>
 
 #include "helper_proto.h"
+#include "rmtree.h"
 #include "session.h"
 #include "test.h"
 
@@ -119,6 +120,10 @@ int main(void) {
   mk_dir(pj(T, "prog/sub"));
   write_file(pj(T, "prog/sub/d"), 1);
   write_file(pj(T, "prog/sub/e"), 1);
+  mk_dir(pj(T, "pre"));
+  write_file(pj(T, "pre/x"), 1);
+  mk_dir(pj(T, "pre2"));
+  write_file(pj(T, "pre2/x"), 1);
   mk_dir(pj(T, "stopme"));
   write_file(pj(T, "stopme/keep"), 1);
   int err;
@@ -150,6 +155,18 @@ int main(void) {
   CHECK(sess_delete(p, prog, SH, ANCDU_CLI) == 0);
   CHECK(access(pj(T, "prog"), F_OK) != 0);
   CHECK_EQ_U(sess_delete_progress(p), 7);
+
+  /* стоп до начала удаления (пока оно ждало в очереди) срабатывает: хелпер стартует с
+   * закрытым stdin, ничего не удалено, -EINTR; флаг сброшен в конце — повтор удаляет */
+  {
+    uint32_t pre = find(a, "pre");
+    sess_delete_stop(p);
+    CHECK(sess_delete(p, pre, SH, ANCDU_CLI) == -EINTR);
+    CHECK_EQ_U(sess_delete_progress(p), 0);
+    CHECK(access(pj(T, "pre/x"), F_OK) == 0);
+    CHECK(sess_delete(p, pre, SH, ANCDU_CLI) == 0);
+    CHECK(access(pj(T, "pre"), F_OK) != 0);
+  }
 
   /* обход FUSE: путь узла не под /storage/emulated/<n>/ — -EINVAL, хелпер не запускался */
   {
@@ -261,6 +278,17 @@ int main(void) {
   CHECK_EQ_U(sess_delete_progress(ip), 2);
   CHECK(sess_delete(ip, 0, NULL, NULL) == -EINVAL); /* корень нельзя */
 
+  /* то же в процессе: стоп до начала — -EINTR, ничего не удалено; повтор удаляет */
+  {
+    uint32_t pre2 = find(a, "pre2");
+    sess_delete_stop(ip);
+    CHECK(sess_delete(ip, pre2, NULL, NULL) == -EINTR);
+    CHECK_EQ_U(sess_delete_progress(ip), 0);
+    CHECK(access(pj(T, "pre2/x"), F_OK) == 0);
+    CHECK(sess_delete(ip, pre2, NULL, NULL) == 0);
+    CHECK(access(pj(T, "pre2"), F_OK) != 0);
+  }
+
   /* частичное удаление: дерево не меняется, узел помечен */
   if (geteuid() != 0) {
     mk_dir(pj(T, "part"));
@@ -298,6 +326,37 @@ int main(void) {
   int st = sess_wait(cx);
   CHECK(st == ST_CANCELLED || st == ST_DONE);
   sess_free(cx);
+
+  /* хелпер --rm не идёт через симлинк в родителе пути: корень скана — ссылка TL/link на
+   * соседний mkdtemp TA; удаление TL/link/victim отклонено (-ELOOP, выход 7), TA цел.
+   * Всё внутри двух собственных mkdtemp. */
+  {
+    char TA[4096], TL[4096], LR[4200];
+    snprintf(TA, sizeof TA, "%s", mk_tmp());
+    snprintf(TL, sizeof TL, "%s", mk_tmp());
+    mk_dir(pj(TA, "victim"));
+    write_file(pj(TA, "victim/sentinel"), 10);
+    snprintf(LR, sizeof LR, "%s/link", TL);
+    CHECK(symlink(TA, LR) == 0);
+    CHECK(rm_parent_real(pj(LR, "victim")) == -ELOOP);
+    CHECK(rm_parent_real(pj(TA, "victim")) == 0);
+    CHECK(rm_parent_real(LR) == 0); /* сама ссылка — последний компонент, не родитель */
+    CHECK(rm_parent_real("/x") == 0);
+    CHECK(rm_parent_real("rel/x") == -EINVAL);
+    session *ls = sess_scan_start(LR, 1, 2, &err);
+    CHECK_EQ_U(sess_wait(ls), ST_DONE);
+    arena *la = sess_arena(ls);
+    uint32_t vic = la ? find(la, "victim") : ANCDU_NONE;
+    CHECK(vic != ANCDU_NONE);
+    if (vic != ANCDU_NONE) CHECK(sess_delete(ls, vic, SH, ANCDU_CLI) == -ELOOP);
+    CHECK(access(pj(TA, "victim/sentinel"), F_OK) == 0);
+    struct stat lst;
+    CHECK(lstat(LR, &lst) == 0 && S_ISLNK(lst.st_mode));
+    sess_free(ls);
+    rm_dir_tree_for_tests(TL); /* удаляет ссылку, не цель */
+    CHECK(access(pj(TA, "victim/sentinel"), F_OK) == 0);
+    rm_dir_tree_for_tests(TA);
+  }
 
   /* стоп удаления в процессе из другого потока (после 50 записей): -EINTR, удалённое
    * удалено, остальное на месте, дерево не меняется, узел помечен */

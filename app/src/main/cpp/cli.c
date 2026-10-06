@@ -95,7 +95,9 @@ static void *watch_stdin(void *p) {
 /* --rm: удаление с прогрессом и остановкой.
  * stderr: «progress N» не чаще раза в 100 мс и итоговая строка; N — удалено записей.
  * --watch-stdin: EOF на stdin (приложение закрыло его, работает и через su) — стоп.
- * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично). */
+ * Родитель пути не должен проходить через симлинк (rm_parent_real): иначе отказ до
+ * удаления, выход 7 (ничего не удалено).
+ * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — путь отклонён. */
 typedef struct {
   _Atomic uint64_t done;
   _Atomic int stop;
@@ -125,6 +127,11 @@ static void *rm_progress(void *p) {
 }
 
 static int run_rm(const char *path, int threads, int watch) {
+  int pr = rm_parent_real(path);
+  if (pr) {
+    fprintf(stderr, "progress 0\nrm: refused: %s\n", strerror(-pr));
+    return 7;
+  }
   if (watch) {
     /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */
     struct pollfd pf = {.fd = STDIN_FILENO, .events = POLLIN};
@@ -135,7 +142,7 @@ static int run_rm(const char *path, int threads, int watch) {
   }
   pthread_t pth;
   int have_progress = pthread_create(&pth, NULL, rm_progress, NULL) == 0;
-  int r = rm_tree_ex(path, threads > 0 ? threads : scan_default_threads(path), &rms.done,
+  int r = rm_tree_ex(path, threads > 0 ? threads : rm_default_threads(path), &rms.done,
                      &rms.stop);
   atomic_store(&rms.fin, 1);
   if (have_progress) pthread_join(pth, NULL);

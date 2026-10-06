@@ -104,6 +104,9 @@ int main(void) {
     CHECK(access(pj(t, "keep/important"), F_OK) == 0);
   }
 
+  /* /tmp (tmpfs и прочие не-FUSE): по умолчанию один поток */
+  CHECK(rm_default_threads(t) == 1);
+
   /* одиночный файл с потоками: просто unlink, done = 1 */
   write_file(pj(t, "single"), 1);
   _Atomic uint64_t d1 = 0;

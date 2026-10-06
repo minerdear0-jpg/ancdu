@@ -66,6 +66,8 @@ object Holder {
     var delStopping = false; private set
     /** Удаление идёт через su (root-сессия или быстрый путь /data/media). Только главный поток. */
     var delRoot = false; private set
+    /** Размер узла на диске на момент подтверждения — для «освобождено …». Только главный поток. */
+    var delDisk = 0L; private set
 
     /*
      * Удаление в полёте. Под [delLock]: [delHandle] != 0 только с вызова [delete] до возврата
@@ -82,18 +84,20 @@ object Holder {
      * Любой поток (всё под замком; экран зовёт с главного). Сколько записей удалено идущим
      * (или последним) удалением.
      * Единственный вызов Native на дескрипторе во время delete наряду с [deleteStop].
-     * Пока стоп запрошен, повторяет deleteStop: ядро сбрасывает флаг стопа в начале delete,
-     * и стоп, нажатый ровно в этот миг, не теряется.
      */
     fun deleteProgress(): Long = synchronized(delLock) {
-        if (delHandle != 0L) {
-            if (delStopAsked) Native.deleteStop(delHandle)
-            delDone = Native.deleteProgress(delHandle)
-        }
+        if (delHandle != 0L) delDone = Native.deleteProgress(delHandle)
         delDone
     }
 
-    /** Только главный поток. Просит остановить идущее удаление; оно вернёт -EINTR. */
+    /**
+     * Только главный поток. Просит остановить идущее удаление; оно вернёт -EINTR. Стоп, пока
+     * удаление ждёт в очереди io, ядро тоже соблюдает (флаг сбрасывается в конце sess_delete),
+     * а [delete] его даже не запускает. Вызов только пока [delHandle] != 0 — после возврата
+     * Native.delete флаг ядра уже не трогается (остаётся окно в микросекунды между сбросом в
+     * ядре и снятием [delHandle]; худший исход — следующее удаление этой сессии сразу
+     * остановится, ничего не удалив).
+     */
     fun deleteStop() {
         checkMain("Holder.deleteStop")
         if (!deleting) return
@@ -118,13 +122,14 @@ object Holder {
      * (например, пересканирование MediaStore).
      */
     fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
-               name: String = "", total: Long = 1L, media: Boolean = false,
+               name: String = "", total: Long = 1L, disk: Long = 0L, media: Boolean = false,
                afterIo: (() -> Unit)? = null) {
         checkMain("Holder.delete")
         check(!deleting) { "удаление уже идёт" }
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
+        delDisk = disk
         synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
         io.execute {
             var r = -1

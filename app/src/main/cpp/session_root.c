@@ -320,11 +320,12 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     if (r) { free(mp); return r; }
     path = mp;
   }
+  /* del_stop здесь НЕ сбрасывается: стоп, пришедший пока удаление ждало в очереди,
+   * должен сработать. Сброс — в конце. */
   atomic_store(&s->del_done, 0);
-  atomic_store(&s->del_stop, 0);
   int gone;
   if (!prefix) {
-    r = rm_tree_ex(path, scan_default_threads(path), &s->del_done, &s->del_stop);
+    r = rm_tree_ex(path, rm_default_threads(path), &s->del_done, &s->del_stop);
     struct stat st;
     gone = r == 0 || (lstat(path, &st) != 0 && errno == ENOENT);
   } else {
@@ -338,7 +339,8 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
       free(path);
       return -ENAMETOOLONG;
     }
-    snprintf(cmd, qcap, "%s --rm %s --watch-stdin", qh, qp);
+    /* media: /data/media — не FUSE, один поток (явно, не полагаясь на statfs под su). */
+    snprintf(cmd, qcap, "%s --rm %s --watch-stdin%s", qh, qp, media ? " --threads 1" : "");
     char *pfx[4] = {0};
     for (int i = 0; i < 3 && prefix[i]; i++) pfx[i] = (char *)prefix[i];
     int in_w = -1, err_r = -1;
@@ -364,6 +366,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
      * -EPERM — хелпер до rm_tree не дошёл, ничего не удалено: su не запустился (pid < 0),
      * отказал или хелпер не нашёлся/не стартовал (выход не 0, 5, 6, < 128).
      * -EINTR — выход 6: остановлен через stdin (sess_delete_stop), удалено частично.
+     * -ELOOP — выход 7: родитель пути проходит через симлинк, ничего не удалено.
      * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
     free(cmd);
@@ -371,6 +374,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     if (gone) r = 0;
     else if (pid < 0) r = -EPERM;
     else if (code == 6) r = -EINTR;
+    else if (code == 7) r = -ELOOP;
     else if (code < 0 || code == 5 || code >= 128) r = -EIO;
     else r = -EPERM;
   }
@@ -383,11 +387,18 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
   return r ? r : -EIO;
 }
 
+/* Флаг стопа сбрасывается в конце любого исхода: стоп относился к этому удалению. */
+static int delete_and_reset(session *s, uint32_t node, const char *const *prefix,
+                            const char *helper, int media) {
+  int r = media && (!prefix || !helper) ? -EINVAL : delete_node(s, node, prefix, helper, media);
+  atomic_store(&s->del_stop, 0);
+  return r;
+}
+
 int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper) {
-  return delete_node(s, node, prefix, helper, 0);
+  return delete_and_reset(s, node, prefix, helper, 0);
 }
 
 int sess_delete_media(session *s, uint32_t node, const char *const *prefix, const char *helper) {
-  if (!prefix || !helper) return -EINVAL;
-  return delete_node(s, node, prefix, helper, 1);
+  return delete_and_reset(s, node, prefix, helper, 1);
 }
