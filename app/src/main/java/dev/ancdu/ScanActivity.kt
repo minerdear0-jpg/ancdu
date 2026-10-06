@@ -131,7 +131,7 @@ class ScanActivity : LangActivity() {
         }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(C.ACCENT)
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(C.AMBER)
         }
         val grid = GridLayout(this).apply { columnCount = 2 }
         val names = arrayOf(t.s(R.string.tile_files), t.s(R.string.tile_size), t.s(R.string.tile_speed), t.s(R.string.tile_time))
@@ -139,7 +139,7 @@ class ScanActivity : LangActivity() {
         for (i in 0 until 4) {
             val cell = vbox(6).apply {
                 setPadding(pad, pad, pad, pad)
-                background = rounded(C.SURFACE, dp(14).toFloat())
+                background = box(C.PANEL)
                 addView(label(names[i], 13f, C.MUTED))
                 addView(tiles[i])
             }
@@ -160,7 +160,7 @@ class ScanActivity : LangActivity() {
             addView(grid, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(vbox(6).apply {
                 setPadding(pad, pad, pad, pad)
-                background = rounded(C.SURFACE, dp(14).toFloat())
+                background = box(C.PANEL)
                 addView(label(t.s(R.string.scan_now), 13f, C.MUTED)); addView(cur)
             })
             if (!attach) addView(label(t.s(R.string.scan_largest), 13f, C.MUTED))

@@ -125,7 +125,7 @@ class MainActivity : LangActivity() {
         }
         appsBox.addView(hbox().apply {
             addView(label(x.s(R.string.apps_title), 15f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(x.s(R.string.apps_all), 14f, C.ACCENT).apply {
+            addView(label(x.s(R.string.apps_all), 14f, C.AMBER).apply {
                 minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
                 setOnClickListener { openApps() }
             })

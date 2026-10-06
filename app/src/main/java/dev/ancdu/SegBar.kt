@@ -33,7 +33,7 @@ class SegBar(ctx: Context) : View(ctx) {
         r.set(0f, 0f, width.toFloat(), height.toFloat())
         clip.reset(); clip.addRoundRect(r, rad, rad, Path.Direction.CW)
         c.save(); c.clipPath(clip)
-        paint.color = C.CHIP
+        paint.color = C.PANEL2
         c.drawRect(r, paint)
         val s = segs
         if (s != null) {
@@ -46,7 +46,7 @@ class SegBar(ctx: Context) : View(ctx) {
                 x += w
             }
         } else {
-            paint.color = C.ACCENT
+            paint.color = C.AMBER
             c.drawRect(0f, 0f, width * used, height.toFloat(), paint)
         }
         c.restore()

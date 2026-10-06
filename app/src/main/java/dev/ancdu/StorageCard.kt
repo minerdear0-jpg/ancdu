@@ -49,7 +49,7 @@ class StorageCard(private val a: MainActivity) {
     private fun build(): LinearLayout = a.vbox(12).apply {
         setPadding(a.dp(18), a.dp(18), a.dp(18), a.dp(10))
         val r = a.dp(16).toFloat()
-        background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), rounded(C.SURFACE, r), rounded(C.TEXT, r))
+        background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), a.box(C.PANEL), a.box(C.TEXT))
         isClickable = true; isFocusable = true
         contentDescription = t.s(R.string.card_desc)
         setOnClickListener { onTap() }
@@ -58,7 +58,7 @@ class StorageCard(private val a: MainActivity) {
         addView(usedTxt)
         bar = SegBar(a)
         addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        freeTxt = a.label("", 13f, C.FREE_TXT, mono = true)
+        freeTxt = a.label("", 13f, C.BLUE_HI, mono = true)
         addView(freeTxt)
         legend = a.vbox(2)
         addView(legend)
@@ -67,7 +67,7 @@ class StorageCard(private val a: MainActivity) {
             addView(View(a).apply { setBackgroundColor(C.LINE) }, LinearLayout.LayoutParams(MATCH_PARENT, a.dp(1)))
             scanLine = ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
                 isIndeterminate = true
-                indeterminateTintList = ColorStateList.valueOf(C.ACCENT)
+                indeterminateTintList = ColorStateList.valueOf(C.AMBER)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 visibility = View.INVISIBLE
             }
@@ -132,9 +132,9 @@ class StorageCard(private val a: MainActivity) {
     fun render() {
         if (!Perms.files()) {
             storeTitle.text = t.s(R.string.open_tree_need_access)
-            storeTitle.setTextColor(C.WARN)
+            storeTitle.setTextColor(C.AMBER)
             storeTotal.text = ""
-            storeArrow.setTextColor(C.WARN)
+            storeArrow.setTextColor(C.AMBER)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
             scanLine.visibility = View.INVISIBLE
@@ -182,7 +182,7 @@ class StorageCard(private val a: MainActivity) {
         val tappable = !running && line.endsWith(Freshness.refresh(t))
         freshTxt.isClickable = tappable; freshTxt.isFocusable = tappable
         freshTxt.minHeight = if (tappable) a.dp(48) else 0
-        freshTxt.setTextColor(if (tappable) C.ACCENT else C.MUTED)
+        freshTxt.setTextColor(if (tappable) C.AMBER else C.MUTED)
         freshTxt.contentDescription = if (tappable) t.s(R.string.refresh_desc) else null
         // Дельта — только к показанному дереву этого самого скана.
         val prev = last?.prevDisk

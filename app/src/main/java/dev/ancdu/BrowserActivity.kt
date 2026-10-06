@@ -203,10 +203,10 @@ class BrowserActivity : LangActivity() {
             row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
             row.bar = ListMath.bar(v, maxV)
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
-            row.barColor = if (dir) C.ACCENT else C.FILE
+            row.barColor = if (dir) C.AMBER else C.BLUE
             row.nameColor = if (dir) C.TEXT else 0xFFB8C7D9.toInt()
             when {
-                flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.WARN }
+                flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.AMBER }
                 flags and F_OTHERFS != 0 -> row.mark = "↪"
                 flags and F_HLDUP != 0 -> row.mark = "≡"
             }
@@ -259,14 +259,14 @@ class BrowserActivity : LangActivity() {
         }
         // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
         // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
-        badge = label("", 12f, C.ACCENT, mono = true).apply {
+        badge = label("", 12f, C.AMBER, mono = true).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END
         }
-        newer = label(txt.s(R.string.newer_chip), 12f, ON_ACCENT, mono = true, bold = true).apply {
+        newer = label(txt.s(R.string.newer_chip), 12f, C.INK, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44)
             setPadding(dp(10), 0, dp(10), 0)
-            background = rounded(C.ACCENT, dp(10).toFloat())
+            background = box(C.AMBER)
             isClickable = true; isFocusable = true
             contentDescription = txt.s(R.string.newer_desc)
             setOnClickListener { promotePending() }
@@ -526,7 +526,7 @@ class BrowserActivity : LangActivity() {
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
         badge.text = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
-        badge.setTextColor(if (full) C.WARN else C.ACCENT)
+        badge.setTextColor(if (full) C.AMBER else C.AMBER)
         hint = txt.s(R.string.browser_hint) +
             if (p[3] > 0) "   ⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else ""
         footer.text = idleFooter()

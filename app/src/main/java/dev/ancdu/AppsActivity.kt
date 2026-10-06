@@ -57,7 +57,7 @@ class AppsActivity : LangActivity() {
                 Perms.askUsage(this@AppsActivity)
             })
         }
-        errorText = label("", 15f, C.WARN).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
+        errorText = label("", 15f, C.AMBER).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(header())
@@ -116,7 +116,7 @@ class AppsActivity : LangActivity() {
 
     private fun legend(): LinearLayout = hbox(16).apply {
         setPadding(dp(16), 0, dp(16), dp(10))
-        for ((c, t) in listOf(C.FILE to "APK", C.ACCENT to tx.s(R.string.legend_data), C.CACHE to tx.s(R.string.legend_cache))) {
+        for ((c, t) in listOf(C.BLUE to "APK", C.AMBER to tx.s(R.string.legend_data), C.MUTED to tx.s(R.string.legend_cache))) {
             val s = android.text.SpannableString("■ $t")
             s.setSpan(android.text.style.ForegroundColorSpan(c), 0, 1, 0)
             addView(label(s, 12f, C.MUTED))

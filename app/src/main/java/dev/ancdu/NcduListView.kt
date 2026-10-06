@@ -20,7 +20,7 @@ class Row {
     var size = ""
     var pct = ""
     var bar = 0f
-    var barColor = C.ACCENT
+    var barColor = C.AMBER
     var nameColor = C.TEXT
     var mark = ""
     var segs: FloatArray? = null
@@ -29,7 +29,7 @@ class Row {
     var desc = ""
 
     fun reset() {
-        name = ""; size = ""; pct = ""; bar = 0f; barColor = C.ACCENT; nameColor = C.TEXT
+        name = ""; size = ""; pct = ""; bar = 0f; barColor = C.AMBER; nameColor = C.TEXT
         mark = ""; segs = null; segColors = null; sub = null; desc = ""
     }
 }
@@ -171,7 +171,7 @@ class NcduListView(ctx: Context) : View(ctx) {
             val total = barW * row.bar
             for (k in segs.indices) {
                 val ww = total * segs[k]
-                fill.color = row.segColors?.getOrNull(k) ?: C.ACCENT
+                fill.color = row.segColors?.getOrNull(k) ?: C.AMBER
                 c.drawRect(sx, bt, sx + ww, bt + bh, fill)
                 sx += ww
             }

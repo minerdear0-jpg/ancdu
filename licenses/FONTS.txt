@@ -1,0 +1,12 @@
+Bundled fonts (app/src/main/res/font), both under the SIL Open Font License 1.1:
+
+- JetBrains Mono 2.304, "NL" (no ligatures) Regular and Bold
+  https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304
+  License: OFL-JetBrainsMono.txt
+- Exo 2, static 400 and 600 instances of Exo2[wght].ttf
+  https://github.com/google/fonts/tree/main/ofl/exo2
+  License: OFL-Exo2.txt
+
+Modifications: Exo 2 weights instantiated with fontTools varLib.instancer; all four files
+subset with pyftsubset to Basic Latin, Latin-1, Cyrillic (U+0400-045F, U+0490-0491) and the
+punctuation/symbols the UI uses, hinting removed.

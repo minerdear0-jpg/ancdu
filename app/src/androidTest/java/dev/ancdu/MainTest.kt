@@ -242,7 +242,7 @@ class MainTest {
             val a = launch().also { act = it }
             ins.runOnMainSync {
                 assertEquals(a.getString(R.string.open_tree_need_access), a.storage.storeTitle.text.toString())
-                assertEquals(C.WARN, a.storage.storeTitle.currentTextColor)
+                assertEquals(C.AMBER, a.storage.storeTitle.currentTextColor)
                 assertEquals(View.GONE, a.storage.permBox.visibility)
                 a.storage.view.performClick()
                 assertEquals(View.VISIBLE, a.storage.permBox.visibility)
@@ -285,13 +285,13 @@ class MainTest {
             }
             gate.countDown()
             assertTrue(waitFor(5_000) { onMain { pill!!.text.toString() == "root ✓" } })
-            ins.runOnMainSync { assertEquals(C.OK_TXT, pill!!.currentTextColor) }
+            ins.runOnMainSync { assertEquals(C.OK, pill!!.currentTextColor) }
             assertTrue(prefs("root").getString("root_last", "")!!.startsWith("granted|"))
 
             ok = false   // таймаут
             ins.runOnMainSync { pill!!.performClick() }
             assertTrue(waitFor(5_000) { onMain { pill!!.text.toString() == "root ✗" } })
-            ins.runOnMainSync { assertEquals(C.WARN, pill!!.currentTextColor) }
+            ins.runOnMainSync { assertEquals(C.AMBER, pill!!.currentTextColor) }
             assertNotNull(findText(a, a.getString(R.string.root_denied_hint)))
             assertTrue(prefs("root").getString("root_last", "")!!.startsWith("denied|"))
         } finally {

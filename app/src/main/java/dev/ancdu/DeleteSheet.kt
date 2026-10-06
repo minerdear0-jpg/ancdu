@@ -129,7 +129,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     private fun build(): View = act.vbox(10).apply {
         val r = act.dp(16).toFloat()
         background = GradientDrawable().apply {
-            setColor(C.SURFACE); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+            setColor(C.PANEL); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
         }
         setPadding(act.dp(20), act.dp(20), act.dp(20), act.dp(16))
 
@@ -140,7 +140,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             if (p.viaRoot) addView(act.label(t.s(R.string.as_root), 11f, Color.WHITE, mono = true, bold = true).apply {
                 setPadding(act.dp(8), act.dp(3), act.dp(8), act.dp(3))
-                background = rounded(C.DANGER, act.dp(10).toFloat())
+                background = act.box(C.DANGER_FILL)
                 contentDescription = t.s(R.string.as_root_desc)
             })
         })
@@ -151,11 +151,11 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         p.owner?.let { addView(ownerRow(it)) }
         addView(sizeLine())
         if (p.dir && p.top.isNotEmpty()) addView(children())
-        if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.WARN))
+        if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER))
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())
-        if (p.block == null) addView(act.label(t.s(R.string.no_trash), 14f, C.DANGER))
+        if (p.block == null) addView(act.label(t.s(R.string.no_trash), 14f, C.DANGER_TEXT))
         addView(buttons())
     }
 
@@ -231,7 +231,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     addView(View(act).apply { setBackgroundColor(C.LINE) }, FrameLayout.LayoutParams(barMax, act.dp(8)))
                     val w = (barMax * ListMath.bar(size, p.disk)).toInt().coerceAtLeast(if (size > 0) 1 else 0)
-                    addView(View(act).apply { setBackgroundColor(if (nm.endsWith("/")) C.ACCENT else C.FILE) },
+                    addView(View(act).apply { setBackgroundColor(if (nm.endsWith("/")) C.AMBER else C.BLUE) },
                         FrameLayout.LayoutParams(w, act.dp(8)))
                 }
                 addView(frame, LinearLayout.LayoutParams(barMax, act.dp(8)))
@@ -255,10 +255,10 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             blockText = act.label(b, 13f, C.MUTED).apply { contentDescription = b }
             addView(blockText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         }
-        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), C.CHIP, C.TEXT) { dialog.dismiss() }
+        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), C.PANEL2, C.TEXT) { dialog.dismiss() }
         addView(cancelButton)
         if (b == null) {
-            deleteButton = button(readyLabel, C.DANGER, Color.WHITE) {
+            deleteButton = button(readyLabel, C.DANGER_FILL, Color.WHITE) {
                 if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete(fastBox?.isChecked == true) }
             }.apply {
                 contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
@@ -273,7 +273,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             gravity = Gravity.CENTER
             minHeight = act.dp(44); minWidth = act.dp(88)
             setPadding(act.dp(16), 0, act.dp(16), 0)
-            background = rounded(bg, act.dp(10).toFloat())
+            background = act.box(bg)
             isClickable = true; isFocusable = true
             setOnClickListener { onClick() }
         }

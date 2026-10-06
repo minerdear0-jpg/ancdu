@@ -59,16 +59,16 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
         val p = pill ?: return
         val t = a.tx
         val look = when (Root.state) {
-            RootState.UNKNOWN -> Look("su", C.MUTED, C.SURFACE, t.s(R.string.su_desc_ask), outline = true)
-            RootState.ASKING -> Look("su…", C.TEXT, C.SURFACE, t.s(R.string.su_desc_asking), outline = true)
-            RootState.GRANTED -> Look("root ✓", C.OK_TXT, C.OK_BG, t.s(R.string.su_desc_granted))
-            RootState.DENIED -> Look("root ✗", C.WARN, C.SURFACE, t.s(R.string.su_desc_denied))
+            RootState.UNKNOWN -> Look("su", C.MUTED, C.PANEL, t.s(R.string.su_desc_ask), outline = true)
+            RootState.ASKING -> Look("su…", C.TEXT, C.PANEL, t.s(R.string.su_desc_asking), outline = true)
+            RootState.GRANTED -> Look("root ✓", C.OK, C.OK_BG, t.s(R.string.su_desc_granted))
+            RootState.DENIED -> Look("root ✗", C.AMBER, C.PANEL, t.s(R.string.su_desc_denied))
         }
         p.text = look.text
         p.setTextColor(look.fg)
         p.contentDescription = look.desc
         // Касание 44dp, видимая пилюля ниже.
-        val shape = rounded(look.bg, a.dp(10).toFloat()) // тот же радиус, что у chip()
+        val shape = a.box(look.bg)
         if (look.outline) shape.setStroke(a.dp(1), C.LINE)
         p.background = InsetDrawable(shape, 0, a.dp(7), 0, a.dp(7))
         // setBackground подменяет padding на padding drawable (0): вернуть отступы текста.

@@ -44,7 +44,7 @@ object AppRows {
         row.pct = Fmt.pct(total, sum)
         val f = { v: Long -> if (total <= 0) 0f else (v.toDouble() / total).toFloat() }
         row.segs = floatArrayOf(f(a.app), f(a.data - a.cache), f(a.cache))
-        row.segColors = intArrayOf(C.FILE, C.ACCENT, C.CACHE)
+        row.segColors = intArrayOf(C.BLUE, C.AMBER, C.MUTED)
         row.desc = t.s(R.string.app_desc, a.label, row.size, Fmt.size(a.app, t), Fmt.size(a.data - a.cache, t), Fmt.size(a.cache, t))
     }
 }

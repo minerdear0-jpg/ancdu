@@ -16,13 +16,13 @@ object Segments {
         val known = video + image + audio + apps + other
         val system = (used - known).coerceAtLeast(0)
         return listOf(
-            Seg(R.string.seg_video, video, C.ACCENT),
-            Seg(R.string.seg_photo, image, C.FILE),
-            Seg(R.string.seg_audio, audio, C.AUDIO),
-            Seg(R.string.seg_apps, apps, C.APPS),
-            Seg(R.string.seg_other, other, C.OTHER),
-            Seg(R.string.seg_system, system, C.SYS),
-            Seg(R.string.seg_free, free.coerceAtLeast(0), C.CHIP),
+            Seg(R.string.seg_video, video, C.AMBER),
+            Seg(R.string.seg_photo, image, C.BLUE),
+            Seg(R.string.seg_audio, audio, C.OK),
+            Seg(R.string.seg_apps, apps, C.BLUE_HI),
+            Seg(R.string.seg_other, other, C.MUTED),
+            Seg(R.string.seg_system, system, C.FRAME),
+            Seg(R.string.seg_free, free.coerceAtLeast(0), C.LINE),
         )
     }
 }
