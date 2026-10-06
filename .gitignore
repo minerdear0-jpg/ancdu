@@ -2,3 +2,6 @@
 /core-tests/build*/
 *.o
 /.superpowers/
+/.gradle/
+/app/build/
+/local.properties
