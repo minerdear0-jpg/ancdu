@@ -660,7 +660,7 @@ class BrowserActivity : Activity() {
         }
         val dec = DeleteProgress.decile(done, total)
         if (dec != lastDecile) {
-            if (lastDecile >= 0) bar.announceForAccessibility(DeleteProgress.announce(done, total))
+            if (lastDecile >= 0 && bar.a11yOn()) bar.announceForAccessibility(DeleteProgress.announce(done, total))
             lastDecile = dec
         }
     }

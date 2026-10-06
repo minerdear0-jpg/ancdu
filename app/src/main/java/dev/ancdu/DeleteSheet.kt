@@ -87,7 +87,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 b.alpha = 1f
                 b.text = readyLabel
                 b.contentDescription = "$readyLabel, «${p.name}»"
-                b.announceForAccessibility("Кнопка «Удалить» доступна")
+                if (b.a11yOn()) b.announceForAccessibility("Кнопка «Удалить» доступна")
             }
         }
     }

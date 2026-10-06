@@ -6,6 +6,8 @@ import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
+import android.view.accessibility.AccessibilityManager
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -59,6 +61,15 @@ fun Context.hbox(gapDp: Int = 0): LinearLayout = LinearLayout(this).apply {
 }
 
 const val ON_ACCENT = 0xFF15120C.toInt()
+
+/**
+ * Включена ли доступность. Любая отправка AccessibilityEvent / announceForAccessibility при
+ * выключенной обязана быть за этой проверкой: на Android 17 AccessibilityManager бросает
+ * IllegalStateException("Accessibility off"). Не чистая функция (нужен системный сервис),
+ * поэтому без JVM-теста.
+ */
+fun View.a11yOn(): Boolean =
+    (context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager)?.isEnabled == true
 
 fun Context.chip(text: String, selected: Boolean, onClick: () -> Unit): TextView =
     label(text, 13f, if (selected) ON_ACCENT else C.TEXT, mono = true, bold = selected).apply {

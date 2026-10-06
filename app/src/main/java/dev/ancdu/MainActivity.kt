@@ -96,7 +96,7 @@ class MainActivity : Activity() {
         addView(label("ancdu", 26f, mono = true, bold = true))
         addView(label("0.1", 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         // Только когда su есть: без него пилюли нет совсем.
-        rootPanel.pill?.let { addView(it) }
+        rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))

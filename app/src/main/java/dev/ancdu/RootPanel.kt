@@ -51,15 +51,15 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
         setOnClickListener { Root.request(a) }
     }
 
-    private class Look(val text: String, val fg: Int, val bg: Int, val desc: String)
+    private class Look(val text: String, val fg: Int, val bg: Int, val desc: String, val outline: Boolean = false)
 
     /** Пилюля и подсказка — по Root.state. */
     fun render() {
         hint?.visibility = if (su && Root.state == RootState.DENIED) View.VISIBLE else View.GONE
         val p = pill ?: return
         val look = when (Root.state) {
-            RootState.UNKNOWN -> Look("su", C.MUTED, C.SURFACE, "su: запросить root")
-            RootState.ASKING -> Look("su…", C.TEXT, C.SURFACE, "su: идёт запрос root")
+            RootState.UNKNOWN -> Look("su", C.MUTED, C.SURFACE, "su: запросить root", outline = true)
+            RootState.ASKING -> Look("su…", C.TEXT, C.SURFACE, "su: идёт запрос root", outline = true)
             RootState.GRANTED -> Look("root ✓", C.OK_TXT, C.OK_BG, "root выдан; нажмите, чтобы проверить снова")
             RootState.DENIED -> Look("root ✗", C.WARN, C.SURFACE, "root отклонён; нажмите, чтобы запросить снова")
         }
@@ -67,7 +67,11 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
         p.setTextColor(look.fg)
         p.contentDescription = look.desc
         // Касание 44dp, видимая пилюля ниже.
-        p.background = InsetDrawable(rounded(look.bg, a.dp(999).toFloat()), 0, a.dp(7), 0, a.dp(7))
+        val shape = rounded(look.bg, a.dp(10).toFloat()) // тот же радиус, что у chip()
+        if (look.outline) shape.setStroke(a.dp(1), C.LINE)
+        p.background = InsetDrawable(shape, 0, a.dp(7), 0, a.dp(7))
+        // setBackground подменяет padding на padding drawable (0): вернуть отступы текста.
+        p.setPadding(a.dp(12), a.dp(7), a.dp(12), a.dp(7))
         ui.removeCallbacks(asking)
         if (Root.state == RootState.ASKING) { dots = 2; ui.postDelayed(asking, 400) }
     }

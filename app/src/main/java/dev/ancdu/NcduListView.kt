@@ -61,7 +61,7 @@ class NcduListView(ctx: Context) : View(ctx) {
             val changed = n != field
             field = n
             invalidate()
-            if (changed) {
+            if (changed && a11yOn()) {
                 val ev = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED)
                 onInitializeAccessibilityEvent(ev)
                 ev.scrollY = n
@@ -121,7 +121,7 @@ class NcduListView(ctx: Context) : View(ctx) {
     fun refresh() {
         scroll = scroll // повторное ограничение под новое число строк
         invalidate()
-        sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+        if (a11yOn()) sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean = gestures.onTouchEvent(e) || super.onTouchEvent(e)
