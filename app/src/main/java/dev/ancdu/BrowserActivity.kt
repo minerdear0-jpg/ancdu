@@ -95,7 +95,8 @@ class BrowserActivity : Activity() {
     lateinit var gallery: TextView
         private set
     private val onClean: () -> Unit = { renderGallery() }
-    private lateinit var chips: LinearLayout
+    lateinit var chips: LinearLayout
+        private set
     /** Шапка целиком: её высота не зависит от папки, сортировки, режима размера и чипа «новее». */
     lateinit var header: LinearLayout
         private set
@@ -449,14 +450,17 @@ class BrowserActivity : Activity() {
         gallery.text = "галерея: очистка ${Fmt.count(MediaClean.cleaned)}…"
     }
 
+    /** Не setSingleLine: он делает setLines(1) и затирает minHeight (общее поле mMinimum) — чип стал бы плоским. */
+    private fun TextView.oneLine() { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+
     private fun renderChips() {
         chips.removeAllViews()
         // Равные веса: ширина чипов не зависит от текста. Зазор — SHOW_DIVIDER_MIDDLE у hbox(6).
         val lp = { LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f) }
-        chips.addView(chip("размер", sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { setSingleLine(true) }, lp())
-        chips.addView(chip("имя", sort == SORT_NAME) { setSort(SORT_NAME) }.apply { setSingleLine(true) }, lp())
+        chips.addView(chip("размер", sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { oneLine() }, lp())
+        chips.addView(chip("имя", sort == SORT_NAME) { setSort(SORT_NAME) }.apply { oneLine() }, lp())
         chips.addView(chip(if (apparent) "видимый" else "на диске", false) { setApparent(!apparent) }.apply {
-            setSingleLine(true)
+            oneLine()
             contentDescription = if (apparent) "Размер: видимый; нажмите — на диске" else "Размер: на диске; нажмите — видимый"
         }, lp())
     }

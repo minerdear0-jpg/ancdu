@@ -297,6 +297,13 @@ class BrowserTest {
         fun height(): Int { ins.waitForIdleSync(); var v = 0; ins.runOnMainSync { v = act.header.height }; return v }
         try {
             val h0 = height()
+            ins.runOnMainSync {
+                val min = (44 * ctx.resources.displayMetrics.density).toInt()
+                val kids = (0 until act.chips.childCount).map { act.chips.getChildAt(it) }
+                assertEquals(3, kids.size)
+                kids.forEach { assertTrue("чип ниже 44dp: ${it.height}", it.height >= min) }
+                assertEquals(1, kids.map { it.width }.distinct().size)
+            }
             assertTrue("шапка не измерена", h0 > 0)
             ins.runOnMainSync { act.setApparent(true) }
             assertEquals("видимый", h0, height())
