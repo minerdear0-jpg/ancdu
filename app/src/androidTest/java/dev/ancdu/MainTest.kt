@@ -72,6 +72,7 @@ class MainTest {
         ins.runOnMainSync { Root.reset() }
         val copy = cacheCopy
         if (copy != null) { copy.copyTo(storageCache, overwrite = true); copy.delete() }
+        else storageCache.delete()   // кэша у пользователя не было — созданный тестом убираем
     }
 
     /** Все задачи io (free, saveCache, запись «caches») выполнились. */
@@ -128,18 +129,49 @@ class MainTest {
             val a = launch().also { act = it }
             assertNull(findDesc(a, "Сканировать хранилище"))
             assertNull(findDesc(a, "Быстрый обзор"))
-            assertNotNull(findDesc(a, MainActivity.CARD_DESC))
+            assertNotNull(findDesc(a, StorageCard.DESC))
             assertEquals(listOf("Последний скан: /some/dir"), a.lastScans())
             assertEquals(listOf("Последний скан: /data"), a.rootScans())
             ins.runOnMainSync {
-                assertEquals("Общее хранилище", a.storeTitle.text.toString())
-                assertEquals("120.6 KiB · 5 000 эл.", a.storeTotal.text.toString())
-                assertTrue(a.freshTxt.text.toString(), a.freshTxt.text.startsWith("кэш "))
+                assertEquals("Общее хранилище", a.storage.storeTitle.text.toString())
+                assertEquals("120.6 KiB · 5 000 эл.", a.storage.storeTotal.text.toString())
+                assertTrue(a.storage.freshTxt.text.toString(), a.storage.freshTxt.text.startsWith("кэш "))
                 assertNotNull(a.window.decorView.findViewWithTag<SegBar>("segbar"))
-                assertTrue(a.card.isClickable)
+                assertTrue(a.storage.view.isClickable)
             }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
+        }
+    }
+
+    /**
+     * Время на карточке — от показанного дерева, а не от записи «caches»: свежая запись (новый
+     * фоновый скан, ещё не подставленный) не даёт «только что» рядом со старыми итогами.
+     */
+    @Test fun cardTimeComesFromTheShownTree() {
+        val dir = java.nio.file.Files.createTempDirectory(ctx.cacheDir.toPath(), "card").toFile()
+        File(dir, "a.bin").writeBytes(ByteArray(4096))
+        var act: MainActivity? = null
+        try {
+            Perms.filesOverride = true
+            val h = Native.scanStart(dir.path, true, 1, IntArray(1))
+            val p = LongArray(6)
+            assertTrue(waitFor(10_000) { Native.progress(h, p); p[0] != ST_RUNNING.toLong() })
+            val old = 1_759_700_000_000L
+            ins.runOnMainSync { Holder.set(h, Kind.CACHE, Scans.STORAGE, "кэш от 05.10 21:33", false, old) }
+            prefs.edit().putString(storageCache.name,
+                CacheMeta(Scans.STORAGE, false, 999, 1, System.currentTimeMillis(), 999_999_999, 999).format()).commit()
+            val a = launch().also { act = it }
+            ins.runOnMainSync {
+                val line = a.storage.freshTxt.text.toString()
+                assertTrue(line, line.startsWith("кэш "))
+                assertFalse(line, line.endsWith("только что"))
+                assertTrue(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.endsWith(" · 2 эл."))
+            }
+        } finally {
+            act?.let { a -> ins.runOnMainSync { a.finish() } }
+            ins.runOnMainSync { Holder.clear() }
+            dir.deleteRecursively()
         }
     }
 
@@ -165,12 +197,12 @@ class MainTest {
                 onMain { !BgScan.active && (Scans.lastStorage?.time ?: 0) >= t0 }
             })
             assertTrue("карточка не обновилась", waitFor(5_000) {
-                onMain { a.freshTxt.text.endsWith("только что") && a.storeTotal.text.contains("эл.") }
+                onMain { a.storage.freshTxt.text.endsWith("только что") && a.storage.storeTotal.text.contains("эл.") }
             })
             ins.runOnMainSync {
                 assertEquals(Scans.STORAGE, Holder.root)
                 assertEquals(Kind.SCAN, Holder.kind)
-                a.card.performClick()
+                a.storage.view.performClick()
             }
             val b = ins.waitForMonitorWithTimeout(mon, 5_000)
             assertNotNull("BrowserActivity не открыт", b)
@@ -188,15 +220,15 @@ class MainTest {
             Perms.filesOverride = false
             val a = launch().also { act = it }
             ins.runOnMainSync {
-                assertEquals("Открыть дерево: разрешите доступ ко всем файлам", a.storeTitle.text.toString())
-                assertEquals(C.WARN, a.storeTitle.currentTextColor)
-                assertEquals(View.GONE, a.permBox.visibility)
-                a.card.performClick()
-                assertEquals(View.VISIBLE, a.permBox.visibility)
+                assertEquals("Открыть дерево: разрешите доступ ко всем файлам", a.storage.storeTitle.text.toString())
+                assertEquals(C.WARN, a.storage.storeTitle.currentTextColor)
+                assertEquals(View.GONE, a.storage.permBox.visibility)
+                a.storage.view.performClick()
+                assertEquals(View.VISIBLE, a.storage.permBox.visibility)
             }
             assertNotNull(findDesc(a, "Открыть настройки"))
             assertNotNull(findText(a, "«Доступ ко всем файлам»"))
-            ins.runOnMainSync { a.card.performClick(); assertEquals(View.GONE, a.permBox.visibility) }
+            ins.runOnMainSync { a.storage.view.performClick(); assertEquals(View.GONE, a.storage.permBox.visibility) }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
         }
@@ -218,7 +250,7 @@ class MainTest {
                 if (ok) Root.Probe(0, "uid=0(root) gid=0(root)", false) else Root.Probe(null, "", true)
             }
             val a = launch().also { act = it }
-            val pill = a.pill
+            val pill = a.rootPanel.pill
             assertNotNull("нет пилюли su", pill)
             ins.runOnMainSync {
                 assertEquals("su", pill!!.text.toString())
@@ -253,7 +285,7 @@ class MainTest {
         try {
             Root.suCheck = { false }
             val a = launch().also { act = it }
-            assertNull(a.pill)
+            assertNull(a.rootPanel.pill)
             assertNull(findText(a, "root: нет"))
         } finally {
             Root.suCheck = prevCheck
