@@ -709,16 +709,27 @@ class BrowserActivity : LangActivity() {
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 1000
+            progressDrawable = framedProgress()
             contentDescription = txt.s(R.string.delete_progress_desc)
         }
         val text = label("", 13f, C.MUTED, mono = true)
         val stop = Button(this).apply {
-            minHeight = dp(44)
+            minHeight = dp(48); minimumHeight = dp(48)
+            setPadding(dp(20), 0, dp(20), 0)
+            stateListAnimator = null
+            isAllCaps = false
+            textSize = 15f
+            typeface = Fonts.get(this@BrowserActivity, mono = false, bold = true)
+            setTextColor(android.content.res.ColorStateList(
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(C.MUTED, C.TEXT)))
+            background = pressable(android.graphics.Color.TRANSPARENT, C.FRAME)
             setOnClickListener { stopDelete() }
         }
-        val body = vbox(10).apply {
-            setPadding(dp(24), dp(16), dp(24), dp(8))
-            addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        val body = vbox(12).apply {
+            setPadding(dp(20), dp(20), dp(20), dp(16))
+            background = Brackets(this@BrowserActivity, C.PANEL)
+            addView(label(DeleteProgress.title(txt, Holder.delName), 18f, C.TEXT, bold = true))
+            addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, dp(8)))
             addView(text)
             addView(stop, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
                 gravity = Gravity.END
@@ -727,7 +738,10 @@ class BrowserActivity : LangActivity() {
         waitBar = bar; waitText = text; waitStop = stop
         lastDecile = -1
         wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle(DeleteProgress.title(txt, Holder.delName)).setView(body).setCancelable(false).show()
+            .setView(body).setCancelable(false).create().apply {
+                window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                show()
+            }
         renderWait()
         ui.postDelayed(poll, 100)
     }

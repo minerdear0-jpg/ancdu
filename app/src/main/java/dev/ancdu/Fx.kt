@@ -105,6 +105,45 @@ class Sweep(ctx: Context) : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
+/** Галочка 20dp: контур амбером; отмечена — амберная заливка и тёмная «✓». */
+class Check(ctx: Context) : Drawable() {
+    private val size = ctx.dp(20)
+    private val one = ctx.dp(1).toFloat()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = ctx.dp(2).toFloat(); strokeCap = Paint.Cap.SQUARE }
+    private var on = false
+
+    override fun isStateful() = true
+    override fun onStateChange(state: IntArray): Boolean {
+        val v = android.R.attr.state_checked in state
+        if (v == on) return false
+        on = v; invalidateSelf(); return true
+    }
+    override fun getIntrinsicWidth() = size
+    override fun getIntrinsicHeight() = size
+
+    override fun draw(c: Canvas) {
+        val b = bounds
+        val l = b.left.toFloat(); val t = b.top.toFloat(); val r = l + size; val bt = t + size
+        paint.style = Paint.Style.FILL
+        paint.color = C.AMBER
+        if (on) c.drawRect(l, t, r, bt, paint)
+        else { c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
+               c.drawRect(l, t, l + one, bt, paint); c.drawRect(r - one, t, r, bt, paint) }
+        if (on) {
+            paint.color = C.INK
+            paint.style = Paint.Style.STROKE
+            val s = size.toFloat()
+            c.drawLine(l + s * 0.25f, t + s * 0.52f, l + s * 0.43f, t + s * 0.70f, paint)
+            c.drawLine(l + s * 0.43f, t + s * 0.70f, l + s * 0.76f, t + s * 0.32f, paint)
+        }
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(cf: ColorFilter?) {}
+    @Deprecated("Drawable API")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+}
+
 /** Полоса ProgressBar: контур 1dp FRAME, заполнение амбером. */
 fun Context.framedProgress(): Drawable {
     val inset = dp(1)

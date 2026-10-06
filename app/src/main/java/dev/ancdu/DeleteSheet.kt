@@ -2,25 +2,26 @@ package dev.ancdu
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
+import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -111,6 +112,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             setLayout(MATCH_PARENT, WRAP_CONTENT)
             setGravity(Gravity.BOTTOM)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0.6f)
         }
         dialog.setOnDismissListener { ui.removeCallbacks(tick); onClose() }
     }
@@ -127,25 +130,22 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     fun dismiss() = dialog.dismiss()
 
     private fun build(): View = act.vbox(10).apply {
-        val r = act.dp(16).toFloat()
-        background = GradientDrawable().apply {
-            setColor(C.PANEL); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
-        }
+        background = Brackets(act, C.PANEL, bottom = false)
         setPadding(act.dp(20), act.dp(20), act.dp(20), act.dp(16))
 
         val title = t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, p.name)
         addView(act.hbox(8).apply {
-            addView(act.label(title, 18f, C.TEXT, bold = true).apply {
+            addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            if (p.viaRoot) addView(act.label(t.s(R.string.as_root), 11f, Color.WHITE, mono = true, bold = true).apply {
-                setPadding(act.dp(8), act.dp(3), act.dp(8), act.dp(3))
-                background = act.box(C.DANGER_FILL)
+            if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
+                setPadding(act.dp(8), act.dp(4), act.dp(8), act.dp(4))
+                background = act.box(Color.TRANSPARENT, C.FRAME)
                 contentDescription = t.s(R.string.as_root_desc)
             })
         })
+        // Путь целиком, с переносами.
         addView(act.label(p.path, 12f, C.MUTED, mono = true).apply {
-            setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
             contentDescription = t.s(R.string.path_desc, p.path)
         })
         p.owner?.let { addView(ownerRow(it)) }
@@ -155,7 +155,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())
-        if (p.block == null) addView(act.label(t.s(R.string.no_trash), 14f, C.DANGER_TEXT))
+        // Предупреждение — сразу над кнопками.
+        if (p.block == null) addView(act.label("⚠ " + t.s(R.string.no_trash), 14f, C.DANGER_TEXT, bold = true))
         addView(buttons())
     }
 
@@ -166,7 +167,10 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             text = t.s(R.string.fast_box)
             textSize = 14f
             setTextColor(C.TEXT)
-            minHeight = act.dp(44)
+            typeface = Fonts.get(act, mono = false, bold = false)
+            buttonDrawable = Check(act)
+            setPadding(act.dp(12), 0, 0, 0)
+            minHeight = act.dp(48)
             isChecked = DeletePolicy.fastByDefault(p.items, p.root)
             setOnCheckedChangeListener { _, on -> note.visibility = if (on) View.VISIBLE else View.GONE }
         }
@@ -205,7 +209,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         val main = Fmt.size(p.disk, t) + if (p.dir) " · " + t.items(p.items) else ""
         val apparent = t.s(R.string.apparent_size, Fmt.size(p.apparent, t))
         val text = SpannableStringBuilder(main.replace(' ', Fmt.NBSP))
-        text.setSpan(StyleSpan(Typeface.BOLD), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.setSpan(TypefaceSpan(Fonts.get(act, mono = true, bold = true)), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         if (p.apparent != p.disk) {
             text.append("   ")
             val at = text.length
@@ -227,12 +231,14 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         for ((nm, size) in p.top) {
             childNames += nm
             addView(act.hbox(8).apply {
+                // Мини-полоса в контуре 1dp FRAME, заполнение > 0 — не меньше 1px.
+                val one = act.dp(1)
                 val frame = FrameLayout(act).apply {
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    addView(View(act).apply { setBackgroundColor(C.LINE) }, FrameLayout.LayoutParams(barMax, act.dp(8)))
-                    val w = (barMax * ListMath.bar(size, p.disk)).toInt().coerceAtLeast(if (size > 0) 1 else 0)
+                    foreground = act.box(Color.TRANSPARENT, C.FRAME)
+                    val w = ((barMax - 2 * one) * ListMath.bar(size, p.disk)).toInt().coerceAtLeast(if (size > 0) 1 else 0)
                     addView(View(act).apply { setBackgroundColor(if (nm.endsWith("/")) C.AMBER else C.BLUE) },
-                        FrameLayout.LayoutParams(w, act.dp(8)))
+                        FrameLayout.LayoutParams(w, act.dp(8) - 2 * one).apply { setMargins(one, one, 0, 0) })
                 }
                 addView(frame, LinearLayout.LayoutParams(barMax, act.dp(8)))
                 addView(act.label(nm, 13f, C.TEXT, mono = true).apply {
@@ -247,38 +253,88 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
-    private fun buttons(): View = act.hbox(10).apply {
-        gravity = Gravity.CENTER_VERTICAL or Gravity.END
+    /**
+     * Запрет: причина и «Закрыть» во всю ширину. Иначе «Отмена» (контур) и «Удалить» (красная
+     * заливка) — две равные колонки 56dp; подпись не влезает в половину — друг под другом,
+     * «Удалить» сверху.
+     */
+    private fun buttons(): View = act.vbox(10).apply {
         setPadding(0, act.dp(6), 0, 0)
         val b = p.block?.let { t.s(it.res) }
         if (b != null) {
-            blockText = act.label(b, 13f, C.MUTED).apply { contentDescription = b }
-            addView(blockText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            blockText = act.label(b, 14f, C.MUTED).apply { contentDescription = b }
+            addView(blockText)
         }
-        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), C.PANEL2, C.TEXT) { dialog.dismiss() }
-        addView(cancelButton)
-        if (b == null) {
-            deleteButton = button(readyLabel, C.DANGER_FILL, Color.WHITE) {
-                if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete(fastBox?.isChecked == true) }
-            }.apply {
-                contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
-                if (pause) { isEnabled = false; alpha = 0.5f }
-            }
-            addView(deleteButton)
+        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), null, C.TEXT) { dialog.dismiss() }
+        if (b != null) { addView(cancelButton, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)); return@apply }
+        val del = button(readyLabel, C.DANGER_FILL, Color.WHITE) {
+            if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete(fastBox?.isChecked == true) }
+        }.apply {
+            contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
+            if (pause) { isEnabled = false; alpha = 0.5f }
         }
+        deleteButton = del
+        addView(ButtonPair(act, del, cancelButton, listOf(readyLabel, t.s(R.string.delete_in, Fmt.count(9, t.locale)))),
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
-    private fun button(text: String, bg: Int, fg: Int, onClick: () -> Unit): TextView =
+    /** Кнопка 56dp: [bg] — заливка, null — контур FRAME. */
+    private fun button(text: String, bg: Int?, fg: Int, onClick: () -> Unit): TextView =
         act.label(text, 15f, fg, bold = true).apply {
             gravity = Gravity.CENTER
-            minHeight = act.dp(44); minWidth = act.dp(88)
-            setPadding(act.dp(16), 0, act.dp(16), 0)
-            background = act.box(bg)
+            minHeight = act.dp(56)
+            setPadding(act.dp(12), act.dp(8), act.dp(12), act.dp(8))
+            background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else act.box(bg)
             isClickable = true; isFocusable = true
             setOnClickListener { onClick() }
         }
 
     companion object {
         const val PAUSE_MS = 1500L
+    }
+}
+
+/**
+ * Две кнопки равными колонками; если подпись [first] (с учётом [labels] — всех её вариантов)
+ * или [second] не влезает в половину ширины — друг под другом, [first] сверху.
+ * В строку: [second] слева, [first] справа.
+ */
+private class ButtonPair(ctx: Context, private val first: TextView, private val second: TextView,
+                         private val labels: List<String>) : ViewGroup(ctx) {
+    private val gap = ctx.dp(10)
+    private var stacked = false
+
+    init { addView(second); addView(first) }
+
+    private fun need(v: TextView, texts: List<CharSequence>): Float =
+        texts.maxOf { v.paint.measureText(it.toString()) } + v.totalPaddingLeft + v.totalPaddingRight
+
+    override fun onMeasure(ws: Int, hs: Int) {
+        val w = MeasureSpec.getSize(ws)
+        val half = (w - gap) / 2
+        stacked = need(first, labels + first.text) > half || need(second, listOf(second.text)) > half
+        val cw = if (stacked) w else half
+        val spec = MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY)
+        val free = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        first.measure(spec, free); second.measure(spec, free)
+        val h = if (stacked) first.measuredHeight + gap + second.measuredHeight
+                else maxOf(first.measuredHeight, second.measuredHeight)
+        if (!stacked && first.measuredHeight != second.measuredHeight) {
+            val eq = MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
+            first.measure(spec, eq); second.measure(spec, eq)
+        }
+        setMeasuredDimension(w, h)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        if (stacked) {
+            first.layout(0, 0, first.measuredWidth, first.measuredHeight)
+            val y = first.measuredHeight + gap
+            second.layout(0, y, second.measuredWidth, y + second.measuredHeight)
+        } else {
+            second.layout(0, 0, second.measuredWidth, second.measuredHeight)
+            val x = width - first.measuredWidth
+            first.layout(x, 0, x + first.measuredWidth, first.measuredHeight)
+        }
     }
 }
