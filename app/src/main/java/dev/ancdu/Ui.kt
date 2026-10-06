@@ -49,6 +49,8 @@ object C {
     const val OK = 0xFF8FD18F.toInt()
     const val OK_BG = 0xFF142017.toInt()
     const val OK_LINE = 0xFF2E4A32.toInt()
+    /** Тёмная ступень амбера — только заливки сегментов яруса 0 (не текст). */
+    const val AMBER_DIM = 0xFFA87628.toInt()
 }
 
 /** Шрифты из res/font: Exo 2 — подписи и текст, JetBrains Mono — только данные. Главный поток. */

@@ -116,6 +116,7 @@ class MainActivity : LangActivity() {
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))
 
     private fun renderTier0(t: Tier0) {
+        t.segs?.let { storage.showSegs(it) }
         appsBox.removeAllViews()
         val apps = t.apps
         val x = tx

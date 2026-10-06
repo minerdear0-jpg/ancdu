@@ -60,3 +60,40 @@ class SegBar(ctx: Context) : View(ctx) {
         c.drawRect(0f, 0f, one, h, paint); c.drawRect(w - one, 0f, w, h, paint)
     }
 }
+
+/**
+ * Вторичная полоса 6dp яруса 0: категории занятого (без «свободно») в долях от их суммы,
+ * контур FRAME, как у прочих полос. Без анимации.
+ */
+class CatBar(ctx: Context) : View(ctx) {
+    var segs: List<Seg> = emptyList()
+        set(v) {
+            field = v
+            val t = context.tx
+            contentDescription = v.joinToString { "${t.s(it.label)} ${Fmt.size(it.bytes, t)}" }
+            invalidate()
+        }
+    private val paint = Paint()
+    private val one = ctx.dp(1).toFloat()
+
+    init { tag = "catbar" }
+
+    override fun onMeasure(w: Int, h: Int) =
+        setMeasuredDimension(MeasureSpec.getSize(w), context.dp(6))
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val total = segs.sumOf { it.bytes }.coerceAtLeast(1)
+        var x = one
+        val inner = w - 2 * one
+        for (s in segs) {
+            val sw = inner * (s.bytes.toFloat() / total)
+            paint.color = s.color
+            c.drawRect(x, one, x + sw, h - one, paint)
+            x += sw
+        }
+        paint.color = C.FRAME
+        c.drawRect(0f, 0f, w, one, paint); c.drawRect(0f, h - one, w, h, paint)
+        c.drawRect(0f, 0f, one, h, paint); c.drawRect(w - one, 0f, w, h, paint)
+    }
+}

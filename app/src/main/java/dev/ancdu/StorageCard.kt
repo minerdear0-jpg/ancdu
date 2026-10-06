@@ -22,6 +22,10 @@ class StorageCard(private val a: MainActivity) {
     private lateinit var usedVal: TextView
     private lateinit var freeVal: TextView
     private lateinit var bar: SegBar
+    /** Ярус 0: вторичная полоса категорий и её легенда (скрыты без сегментов). */
+    private lateinit var cats: LinearLayout
+    private lateinit var catBar: CatBar
+    private lateinit var catLegend: Flow
     /** Нижняя строка: «Общее хранилище» или амберный запрос доступа. */
     lateinit var storeTitle: TextView
         private set
@@ -72,6 +76,15 @@ class StorageCard(private val a: MainActivity) {
             addView(legendItem(C.AMBER, R.string.legend_used, usedVal))
             addView(legendItem(C.BLUE, R.string.seg_free, freeVal))
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(10) })
+        // Ярус 0 (только с доступом к истории использования): категории занятого.
+        cats = a.vbox().apply {
+            visibility = View.GONE
+            catBar = CatBar(a)
+            addView(catBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            catLegend = Flow(a, a.dp(12), a.dp(4))
+            addView(catLegend, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(8) })
+        }
+        addView(cats, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(14) })
         hairline(topDp = 14)
         // Под линией 2dp амберная полоса, пока идёт скан.
         scanLine = ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -122,6 +135,19 @@ class StorageCard(private val a: MainActivity) {
         addView(a.label("■", 12f, color).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
         addView(a.caps(t.s(labelRes)))
         addView(value)
+    }
+
+    /** Категории яруса 0 (без «свободно», ненулевые, по убыванию) под главной полосой. */
+    fun showSegs(segs: List<Seg>) {
+        val used = segs.filter { it.label != R.string.seg_free && it.bytes > 0 }.sortedByDescending { it.bytes }
+        cats.visibility = if (used.isEmpty()) View.GONE else View.VISIBLE
+        catBar.segs = used
+        catLegend.removeAllViews()
+        for (s in used) catLegend.addView(a.hbox(5).apply {
+            addView(a.label("■", 12f, s.color).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
+            addView(a.label(t.s(s.label), 12f, C.MUTED))
+            addView(a.label(Fmt.size(s.bytes, t), 12f, C.TEXT, mono = true))
+        })
     }
 
     fun showStatfs() {

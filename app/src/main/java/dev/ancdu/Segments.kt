@@ -18,8 +18,8 @@ object Segments {
         return listOf(
             Seg(R.string.seg_video, video, C.AMBER),
             Seg(R.string.seg_photo, image, C.BLUE),
-            Seg(R.string.seg_audio, audio, C.OK),
-            Seg(R.string.seg_apps, apps, C.BLUE_HI),
+            Seg(R.string.seg_audio, audio, C.BLUE_HI),
+            Seg(R.string.seg_apps, apps, C.AMBER_DIM),
             Seg(R.string.seg_other, other, C.MUTED),
             Seg(R.string.seg_system, system, C.FRAME),
             Seg(R.string.seg_free, free.coerceAtLeast(0), C.LINE),
