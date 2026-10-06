@@ -48,6 +48,54 @@ object Holder {
     /** Только главный поток. Сессии больше нет; прежняя освобождается на [io]. */
     fun clear() = set(0L, Kind.SCAN, "", "", false)
 
+    /*
+     * Более новое дерево, ещё не показанное (фоновый скан закончился, пока его нельзя было
+     * подставить: открыт браузер). Поля пишет только главный поток. Native на [pending] до
+     * [promote] никто не вызывает, кроме saveCache, поставленного на io раньше [offer].
+     */
+    @Volatile var pending = 0L; private set
+    var pendingKind = Kind.SCAN; private set
+    var pendingRoot = ""; private set
+    var pendingLabel = ""; private set
+    var pendingViaRoot = false; private set
+
+    /**
+     * Только главный поток. Кладёт [handle] в слот ожидания. Слушателей НЕ вызывает: живые экраны
+     * продолжают показывать своё дерево. Прежний непоказанный pending освобождается на [io].
+     */
+    fun offer(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean) {
+        checkMain("Holder.offer")
+        val old = pending
+        pending = handle; pendingKind = kind; pendingRoot = root; pendingLabel = label; pendingViaRoot = viaRoot
+        if (old != 0L && old != handle) io.execute { Native.free(old) }
+    }
+
+    /** Только главный поток. [set] из слота ожидания, затем слот очищается. false — слот пуст. */
+    fun promote(): Boolean {
+        checkMain("Holder.promote")
+        val p = pending
+        if (p == 0L) return false
+        set(p, pendingKind, pendingRoot, pendingLabel, pendingViaRoot)
+        pending = 0L
+        return true
+    }
+
+    /** Только главный поток. Непоказанное дерево устарело («грязное»): освобождается на [io]. */
+    fun dropPending() {
+        checkMain("Holder.dropPending")
+        val old = pending
+        pending = 0L
+        if (old != 0L) io.execute { Native.free(old) }
+    }
+
+    /**
+     * Сколько живых BrowserActivity закрепили дескриптор (onCreate с h != 0 … onDestroy).
+     * Только главный поток. Пока > 0, фоновый скан не подставляется через [set], а [offer]-ится.
+     */
+    var browsers = 0; private set
+    fun pinBrowser() { checkMain("Holder.pinBrowser"); browsers++ }
+    fun unpinBrowser() { checkMain("Holder.unpinBrowser"); if (browsers > 0) browsers-- }
+
     /** Только главный поток. Слушатель вызывается внутри [set] при смене дескриптора, до free(old). */
     fun addSessionListener(l: () -> Unit) { sessionListeners += l }
     fun removeSessionListener(l: () -> Unit) { sessionListeners -= l }

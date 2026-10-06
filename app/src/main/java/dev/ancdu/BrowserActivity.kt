@@ -89,6 +89,13 @@ class BrowserActivity : Activity() {
         private set
     private lateinit var footer: TextView
     private lateinit var chips: LinearLayout
+    /** Амберный чип «новее · обновить»: в Holder ждёт более новое дерево того же корня. */
+    lateinit var newer: TextView
+        private set
+    /** Экземпляр закрепил дескриптор в Holder.browsers (снимается в onDestroy). */
+    private var pinned = false
+    /** Идёт [promotePending]: смену сессии экран обрабатывает сам, без recreate. */
+    private var promoting = false
 
     /**
      * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
@@ -99,7 +106,7 @@ class BrowserActivity : Activity() {
         if (Holder.h != h) {
             list.source = null
             h = 0L
-            if (!busy) { if (Holder.h == 0L) finish() else recreate() }
+            if (!busy && !promoting) { if (Holder.h == 0L) finish() else recreate() }
         }
     }
 
@@ -193,6 +200,8 @@ class BrowserActivity : Activity() {
         darkBars()
         h = Holder.h
         if (h == 0L) { finish(); return }
+        Holder.pinBrowser(); pinned = true
+        Root.load(this)
         val top = vbox(12).apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
         title = label("", 20f, C.TEXT, bold = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
@@ -211,10 +220,23 @@ class BrowserActivity : Activity() {
         })
         summary = label("", 13f, C.MUTED, mono = true)
         badge = label(Holder.label, 12f, C.ACCENT, mono = true)
+        newer = label("новее · обновить", 12f, ON_ACCENT, mono = true, bold = true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(44)
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rounded(C.ACCENT, dp(10).toFloat())
+            isClickable = true; isFocusable = true
+            contentDescription = "Есть более новое дерево — обновить"
+            setOnClickListener { promotePending() }
+            visibility = View.GONE
+        }
         chips = hbox(6)
         top.addView(hbox(8).apply {
             setPadding(dp(8), 0, 0, 0)
-            addView(vbox().apply { addView(summary); addView(badge) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(vbox().apply {
+                addView(summary)
+                addView(hbox(8).apply { addView(badge); addView(newer) })
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(chips)
         })
         list = NcduListView(this).apply { longClickLabel = "Удалить или подробнее" }
@@ -247,12 +269,56 @@ class BrowserActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // Сессию сменили, пока экран был скрыт: старые id узлов к новому дереву не относятся.
-        if (!busy && Holder.h != h) { list.source = null; recreate() }
+        if (!busy && Holder.h != h) { list.source = null; recreate(); return }
+        refreshPending()
+    }
+
+    /** Есть ли в Holder более новое дерево того же корня. Главный поток. */
+    private fun hasNewer(): Boolean = Holder.pending != 0L && Holder.pendingRoot == Holder.root
+
+    /** Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт. */
+    fun refreshPending() {
+        if (!::newer.isInitialized) return
+        newer.visibility = if (hasNewer() && h != 0L) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * «новее · обновить»: подставляет ждущее дерево и открывает ТОТ ЖЕ путь по именам — от корня
+     * нового дерева; не нашлось — ближайший существующий предок. Имена читаются из старого
+     * дескриптора ДО promote (set освобождает его на io после слушателей). Прокрутка — по
+     * возможности: та же, если путь найден целиком.
+     */
+    fun promotePending() {
+        if (busy || h == 0L || !hasNewer()) return
+        val names = crumbNodes.drop(1).map { nameOf(it) }
+        val keep = list.scroll
+        list.source = null
+        promoting = true
+        try { Holder.promote() } finally { promoting = false }
+        h = Holder.h
+        scrollAt.clear()
+        if (h == 0L) { finish(); return }
+        list.source = src
+        val hit = PathWalk.resolve(names) { nd, nm -> childDir(nd, nm) }
+        load(hit.node, if (hit.exact) keep else 0)
+        refreshPending()
+    }
+
+    /** Ребёнок-каталог [nd] с именем [nm] в дереве [h] или null. */
+    private fun childDir(nd: Int, nm: String): Int? {
+        val c = IntArray(Native.childCount(h, nd))
+        val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
+        if (k == 0) return null
+        val inf = LongArray(4 * k).also { Native.nodeInfo(h, c, k, it) }
+        for (i in 0 until k)
+            if (inf[4 * i + 3].toInt() and F_DIR != 0 && nameOf(c[i]) == nm) return c[i]
+        return null
     }
 
     override fun onDestroy() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
+        if (pinned) { Holder.unpinBrowser(); pinned = false }
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
@@ -298,6 +364,7 @@ class BrowserActivity : Activity() {
         badge.setTextColor(if (full) C.WARN else C.ACCENT)
         footer.text = "тап — открыть · долгий — подробнее, удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
         renderChips()
+        refreshPending()
         list.refresh()
         list.scroll = restore
     }
@@ -393,14 +460,14 @@ class BrowserActivity : Activity() {
             flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
             block = blockReason(handle, target, path), kind = Holder.kind,
             cacheTime = if (Holder.kind == Kind.CACHE) Holder.label.removePrefix("кэш от ") else null,
-            fast = fastAllowed(path))
+            fast = fastAllowed(path), root = Root.state)
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
     private fun blockReason(handle: Long, target: Int, path: String): String? {
         val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
         return DeletePolicy.blockReason(path, target == 0, Native.parent(handle, target) == 0,
-            Holder.root, inf[3].toInt(), Holder.kind)
+            Holder.root, inf[3].toInt(), Holder.kind, pending = hasNewer())
     }
 
     /**

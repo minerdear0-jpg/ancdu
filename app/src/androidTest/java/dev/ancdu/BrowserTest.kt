@@ -1,6 +1,7 @@
 package dev.ancdu
 
 import android.content.Intent
+import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -276,5 +277,99 @@ class BrowserTest {
 
         ins.runOnMainSync { act.finish() }
         dir.deleteRecursively()
+    }
+
+    /** Свежий каталог теста (mkdtemp) под cacheDir приложения — абсолютный путь. */
+    private fun tmpDir(prefix: String): File =
+        java.nio.file.Files.createTempDirectory(ins.targetContext.cacheDir.toPath(), prefix).toFile()
+
+    /**
+     * Ждущее дерево: offer не трогает экран, чип «новее · обновить» виден; тап подставляет его и
+     * открывает тот же путь по именам; пропавший путь — ближайший существующий предок.
+     */
+    @Test fun pendingChipPromotesAndKeepsPath() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("pend")
+        File(dir, "sub/deep").mkdirs()
+        File(dir, "sub/deep/a.bin").writeBytes(ByteArray(20_000))
+        File(dir, "z.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        val row = Row()
+        fun name(i: Int): String {
+            var s = ""
+            ins.runOnMainSync { row.reset(); act.list.source!!.bind(i, row); s = row.name }
+            return s
+        }
+        fun count(): Int { var c = 0; ins.runOnMainSync { c = act.list.source!!.count }; return c }
+        fun path(): String { var s = ""; ins.runOnMainSync { s = Native.str(Native.path(Holder.h, act.node)) }; return s }
+        try {
+            assertEquals("sub/", name(0))
+            ins.runOnMainSync { act.list.source!!.click(0) }
+            assertEquals("deep/", name(0))
+            ins.runOnMainSync { act.list.source!!.click(0) }
+            assertEquals(File(dir, "sub/deep").path, path())
+            ins.runOnMainSync { assertEquals(View.GONE, act.newer.visibility) }
+
+            File(dir, "sub/deep/b.bin").writeBytes(ByteArray(10))
+            val h2 = scanned(dir)
+            var h1 = 0L
+            ins.runOnMainSync {
+                h1 = Holder.h
+                Holder.offer(h2, Kind.SCAN, dir.path, "скан · новее", false)
+                act.refreshPending()
+            }
+            ins.runOnMainSync {
+                assertEquals(h1, Holder.h)               // offer не подставил дерево
+                assertEquals(View.VISIBLE, act.newer.visibility)
+                act.newer.performClick()
+            }
+            ins.runOnMainSync {
+                assertEquals(h2, Holder.h)
+                assertEquals(0L, Holder.pending)
+                assertEquals(View.GONE, act.newer.visibility)
+                assertEquals("скан · новее", act.badge.text.toString())
+            }
+            assertEquals(File(dir, "sub/deep").path, path())
+            assertEquals(2, count())
+
+            // путь пропал — ближайший предок
+            File(dir, "sub/deep").deleteRecursively()
+            val h3 = scanned(dir)
+            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, "скан", false); act.refreshPending() }
+            ins.runOnMainSync { act.newer.performClick() }
+            ins.runOnMainSync { assertEquals(h3, Holder.h) }
+            assertEquals(File(dir, "sub").path, path())
+            assertEquals(0, count())
+        } finally {
+            ins.runOnMainSync { Holder.dropPending(); act.finish() }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Кэш + ждущее более новое дерево: не удаляются ни каталоги, ни файлы. */
+    @Test fun cacheWithPendingRefusesFileDelete() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("pendc")
+        File(dir, "f.txt").writeBytes(ByteArray(10))
+        val h = scanned(dir)
+        val h2 = scanned(dir)
+        ins.runOnMainSync {
+            Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false)
+            Holder.offer(h2, Kind.SCAN, dir.path, "скан", false)
+        }
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
+            assertEquals(Int.MIN_VALUE, act.deleteBlocking(0))   // отказ: удаление не запускалось
+            assertTrue(File(dir, "f.txt").exists())
+        } finally {
+            ins.runOnMainSync { Holder.dropPending(); act.finish() }
+            dir.deleteRecursively()
+        }
     }
 }

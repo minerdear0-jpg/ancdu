@@ -58,7 +58,7 @@ fun Context.hbox(gapDp: Int = 0): LinearLayout = LinearLayout(this).apply {
     if (gapDp > 0) { dividerDrawable = spacer(dp(gapDp), 0); showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE }
 }
 
-private const val ON_ACCENT = 0xFF15120C.toInt()
+const val ON_ACCENT = 0xFF15120C.toInt()
 
 fun Context.chip(text: String, selected: Boolean, onClick: () -> Unit): TextView =
     label(text, 13f, if (selected) ON_ACCENT else C.TEXT, mono = true, bold = selected).apply {
