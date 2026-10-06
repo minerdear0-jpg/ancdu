@@ -1,5 +1,9 @@
 #include <errno.h>
+#include <pthread.h>
+#include <sched.h>
 #include <signal.h>
+
+#include <dirent.h>
 
 #include "helper_proto.h"
 #include "session.h"
@@ -30,6 +34,41 @@ static void write_wrapper(const char *path, const char *cnt, const char *err_lin
   chmod(path, 0755);
 }
 
+/* Стоп удаления из другого потока: после delay_ms или когда прогресс дошёл до at. */
+typedef struct {
+  session *s;
+  int delay_ms;
+  uint64_t at;
+  _Atomic int ready;
+} stopper;
+
+static void *stop_later(void *p) {
+  stopper *x = p;
+  atomic_store(&x->ready, 1);
+  if (x->delay_ms) usleep((useconds_t)x->delay_ms * 1000);
+  else
+    while (sess_delete_progress(x->s) < x->at) sched_yield();
+  sess_delete_stop(x->s);
+  return NULL;
+}
+
+static uint64_t entries(const char *p) {
+  struct stat st;
+  if (lstat(p, &st) != 0) return 0;
+  uint64_t n = 1;
+  if (!S_ISDIR(st.st_mode)) return n;
+  DIR *d = opendir(p);
+  struct dirent *e;
+  while (d && (e = readdir(d))) {
+    if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+    char c[4400];
+    snprintf(c, sizeof c, "%s/%s", p, e->d_name);
+    n += entries(c);
+  }
+  if (d) closedir(d);
+  return n;
+}
+
 static int launches(const char *cnt) {
   FILE *f = fopen(cnt, "r");
   if (!f) return 0;
@@ -48,6 +87,16 @@ int main(void) {
   write_file(pj(T, "it's\nodd"), 4096);
   mk_dir(pj(T, "gone"));
   write_file(pj(T, "gone/x"), 10);
+  /* 7 записей: удаление через хелпер, прогресс из строк «progress N» */
+  mk_dir(pj(T, "prog"));
+  write_file(pj(T, "prog/a"), 1);
+  write_file(pj(T, "prog/b"), 1);
+  write_file(pj(T, "prog/c"), 1);
+  mk_dir(pj(T, "prog/sub"));
+  write_file(pj(T, "prog/sub/d"), 1);
+  write_file(pj(T, "prog/sub/e"), 1);
+  mk_dir(pj(T, "stopme"));
+  write_file(pj(T, "stopme/keep"), 1);
   int err;
 
   session *ref = sess_scan_start(T, 1, 2, &err);
@@ -71,6 +120,36 @@ int main(void) {
   CHECK(sess_delete(p, odd, SH, ANCDU_CLI) == 0);
   CHECK(access(pj(T, "it's\nodd"), F_OK) != 0);
   CHECK_EQ_U(a->disk[0], before - odd_disk);
+  CHECK_EQ_U(sess_delete_progress(p), 1);
+
+  uint32_t prog = find(a, "prog");
+  CHECK(sess_delete(p, prog, SH, ANCDU_CLI) == 0);
+  CHECK(access(pj(T, "prog"), F_OK) != 0);
+  CHECK_EQ_U(sess_delete_progress(p), 7);
+
+  /* стоп через stdin хелпера: обёртка ждёт 0,3 с, стоп — через 0,1 с; хелпер стартует
+   * с закрытым stdin, выход 6 → -EINTR; ничего не удалено, дерево цело, узел помечен */
+  {
+    char SW[4096], SWS[4200];
+    snprintf(SW, sizeof SW, "%s", mk_tmp());
+    snprintf(SWS, sizeof SWS, "%s/slow.sh", SW);
+    FILE *f = fopen(SWS, "w");
+    fprintf(f, "#!/bin/sh\nsleep 0.3\nexec '%s' \"$@\"\n", ANCDU_CLI);
+    fclose(f);
+    chmod(SWS, 0755);
+    uint32_t sm = find(a, "stopme");
+    uint64_t total = a->disk[0];
+    stopper x = {.s = p, .delay_ms = 100};
+    pthread_t th;
+    CHECK(pthread_create(&th, NULL, stop_later, &x) == 0);
+    while (!atomic_load(&x.ready)) sched_yield();
+    CHECK(sess_delete(p, sm, SH, SWS) == -EINTR);
+    pthread_join(th, NULL);
+    CHECK(access(pj(T, "stopme/keep"), F_OK) == 0);
+    CHECK(a->flags[sm] & F_ERR);
+    CHECK_EQ_U(a->disk[0], total);
+    rm_dir_tree_for_tests(SW);
+  }
 
   /* root не получен — хелпер не запускался, ничего не удалено: -EPERM (в UI «ничего не
    * удалено»). Убит сигналом — мог успеть удалить часть: -EIO, как выход 5. */
@@ -146,6 +225,7 @@ int main(void) {
   a = sess_arena(ip);
   CHECK(sess_delete(ip, find(a, "gone"), NULL, NULL) == 0);
   CHECK(access(pj(T, "gone"), F_OK) != 0);
+  CHECK_EQ_U(sess_delete_progress(ip), 2);
   CHECK(sess_delete(ip, 0, NULL, NULL) == -EINVAL); /* корень нельзя */
 
   /* частичное удаление: дерево не меняется, узел помечен */
@@ -185,6 +265,37 @@ int main(void) {
   int st = sess_wait(cx);
   CHECK(st == ST_CANCELLED || st == ST_DONE);
   sess_free(cx);
+
+  /* стоп удаления в процессе из другого потока (после 50 записей): -EINTR, удалённое
+   * удалено, остальное на месте, дерево не меняется, узел помечен */
+  char BG[4096];
+  snprintf(BG, sizeof BG, "%s", mk_tmp());
+  {
+    mk_dir(pj(BG, "big"));
+    for (int i = 0; i < 20000; i++) {
+      char fp[4300];
+      snprintf(fp, sizeof fp, "%s/big/f%d", BG, i);
+      write_file(fp, 1);
+    }
+    session *ss = sess_scan_start(BG, 1, 2, &err);
+    CHECK_EQ_U(sess_wait(ss), ST_DONE);
+    arena *sa = sess_arena(ss);
+    uint32_t big = find(sa, "big");
+    uint64_t total = sa->disk[0], n = entries(pj(BG, "big"));
+    stopper x = {.s = ss, .at = 50};
+    pthread_t th;
+    CHECK(pthread_create(&th, NULL, stop_later, &x) == 0);
+    while (!atomic_load(&x.ready)) sched_yield();
+    CHECK(sess_delete(ss, big, NULL, NULL) == -EINTR);
+    pthread_join(th, NULL);
+    uint64_t dn = sess_delete_progress(ss);
+    CHECK(dn >= 50 && dn < n);
+    CHECK_EQ_U(entries(pj(BG, "big")), n - dn);
+    CHECK(sa->flags[big] & F_ERR);
+    CHECK_EQ_U(sa->disk[0], total);
+    sess_free(ss);
+  }
+  rm_dir_tree_for_tests(BG);
 
   rm_dir_tree_for_tests(B);
   rm_dir_tree_for_tests(T);

@@ -18,7 +18,10 @@ const val SRC_SCAN = 0
 const val SRC_INDEX = 1
 
 /** Мост к нативному ядру. Дескриптор 0 — ошибка (код в err[0]). Имена и пути — байты.
- *  Потоки: чтения дерева — с главного потока, delete/saveCache/free — на Holder.io, никогда параллельно на одном h. */
+ *  Потоки: чтения дерева — с главного потока, delete/saveCache/free — на Holder.io, никогда параллельно на одном h.
+ *  Единственное исключение: [deleteProgress] и [deleteStop] трогают только атомики удаления и
+ *  ДОПУСТИМЫ с любого потока параллельно с идущим [delete] на том же h (дескриптор должен
+ *  быть жив — free ещё не вызван; см. Holder.deleteProgress). Ничего другого параллельно с delete. */
 object Native {
     init { System.loadLibrary("ancdu") }
 
@@ -41,7 +44,12 @@ object Native {
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int
     @JvmStatic external fun source(h: Long): Int
+    /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; иное <0 — ошибка. */
     @JvmStatic external fun delete(h: Long, node: Int, rootHelper: String?): Int
+    /** Сколько записей удалено идущим (или последним) delete. Параллельно с delete — можно. */
+    @JvmStatic external fun deleteProgress(h: Long): Long
+    /** Просит остановить идущий delete (он вернёт -EINTR). Параллельно с delete — можно. */
+    @JvmStatic external fun deleteStop(h: Long)
     @JvmStatic external fun statfs(path: String, out: LongArray): Int
     @JvmStatic external fun free(h: Long)
 

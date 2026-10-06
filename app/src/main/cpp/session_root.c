@@ -262,6 +262,29 @@ session *sess_root_start(const char *const *prefix, const char *helper, const ch
   return s;
 }
 
+/* Строки «progress N» от хелпера --rm — в del_done; прочие строки игнорируются.
+ * Читает до EOF (хелпер завершился). */
+static void read_rm_progress(session *s, int fd) {
+  char buf[512];
+  size_t len = 0;
+  for (;;) {
+    ssize_t r = read(fd, buf + len, sizeof buf - 1 - len);
+    if (r < 0 && errno == EINTR) continue;
+    if (r <= 0) break;
+    len += (size_t)r;
+    char *nl;
+    while ((nl = memchr(buf, '\n', len))) {
+      *nl = 0;
+      unsigned long long n;
+      if (sscanf(buf, "progress %llu", &n) == 1) atomic_store(&s->del_done, n);
+      size_t used = (size_t)(nl - buf) + 1;
+      memmove(buf, nl + 1, len - used);
+      len -= used;
+    }
+    if (len == sizeof buf - 1) len = 0; /* слишком длинная строка — отбросить */
+  }
+}
+
 int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper) {
   arena *a = sess_arena(s);
   if (!a || node == 0 || node >= atomic_load(&a->h->count)) return -EINVAL;
@@ -270,9 +293,11 @@ int sess_delete(session *s, uint32_t node, const char *const *prefix, const char
   if (!path) return -ENOMEM;
   int r = arena_path(a, node, path, PCAP);
   if (r < 0) { free(path); return r; }
+  atomic_store(&s->del_done, 0);
+  atomic_store(&s->del_stop, 0);
   int gone;
   if (!prefix) {
-    r = rm_tree(path);
+    r = rm_tree_ex(path, scan_default_threads(path), &s->del_done, &s->del_stop);
     struct stat st;
     gone = r == 0 || (lstat(path, &st) != 0 && errno == ENOENT);
   } else {
@@ -286,18 +311,41 @@ int sess_delete(session *s, uint32_t node, const char *const *prefix, const char
       free(path);
       return -ENAMETOOLONG;
     }
-    snprintf(cmd, qcap, "%s --rm %s", qh, qp);
+    snprintf(cmd, qcap, "%s --rm %s --watch-stdin", qh, qp);
     char *pfx[4] = {0};
     for (int i = 0; i < 3 && prefix[i]; i++) pfx[i] = (char *)prefix[i];
-    pid_t pid = spawn_cmd(pfx, cmd, NULL, NULL, NULL);
-    /* -EPERM — хелпер до rm_tree не дошёл, ничего не удалено: su не запустился (pid < 0),
-     * отказал или хелпер не нашёлся/не стартовал (выход не 0 и не 5, < 128).
+    int in_w = -1, err_r = -1;
+    pid_t pid = spawn_cmd(pfx, cmd, &in_w, NULL, &err_r);
+    int code = -EPERM;
+    if (pid >= 0) {
+      pthread_mutex_lock(&s->mu);
+      s->del_in = in_w;
+      if (atomic_load(&s->del_stop)) { /* стоп пришёл до запуска */
+        close(s->del_in);
+        s->del_in = -1;
+      }
+      pthread_mutex_unlock(&s->mu);
+      read_rm_progress(s, err_r);
+      close(err_r);
+      code = exit_status(pid);
+      pthread_mutex_lock(&s->mu);
+      if (s->del_in >= 0) close(s->del_in);
+      s->del_in = -1;
+      pthread_mutex_unlock(&s->mu);
+    }
+    /* P7: exit_status не выдаёт сбой ожидания за 0. Коды:
+     * -EPERM — хелпер до rm_tree не дошёл, ничего не удалено: su не запустился (pid < 0),
+     * отказал или хелпер не нашёлся/не стартовал (выход не 0, 5, 6, < 128).
+     * -EINTR — выход 6: остановлен через stdin (sess_delete_stop), удалено частично.
      * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
-    int code = pid < 0 ? -EPERM : exit_status(pid);
     free(cmd);
     gone = code == 0;
-    r = gone ? 0 : pid < 0 ? -EPERM : (code < 0 || code == 5 || code >= 128) ? -EIO : -EPERM;
+    if (gone) r = 0;
+    else if (pid < 0) r = -EPERM;
+    else if (code == 6) r = -EINTR;
+    else if (code < 0 || code == 5 || code >= 128) r = -EIO;
+    else r = -EPERM;
   }
   free(path);
   if (gone) {

@@ -30,7 +30,11 @@ struct session {
   pthread_t err_th;
   int have_err_th;
   _Atomic uint64_t p_files, p_bytes, p_errors;
-  pthread_mutex_t mu; /* cur, err, in_fd */
+  /* удаление: только атомики (sess_delete_progress/stop) и del_in под mu */
+  _Atomic uint64_t del_done;
+  _Atomic int del_stop;
+  int del_in; /* stdin хелпера --rm; закрытие — стоп */
+  pthread_mutex_t mu; /* cur, err, in_fd, del_in */
   char cur[512];
   char err[1024];
 };

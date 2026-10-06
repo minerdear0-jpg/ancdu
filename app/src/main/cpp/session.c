@@ -15,7 +15,7 @@ session *sess_alloc(void) {
   if (!s) return NULL;
   pthread_mutex_init(&s->mu, NULL);
   s->pid = -1;
-  s->in_fd = s->out_fd = s->err_fd = s->mem_fd = -1;
+  s->in_fd = s->out_fd = s->err_fd = s->mem_fd = s->del_in = -1;
   s->started_ns = ancdu_now_ns();
   atomic_store(&s->state, ST_RUNNING);
   return s;
@@ -177,6 +177,18 @@ void sess_cancel(session *s) {
   pthread_mutex_unlock(&s->mu);
 }
 
+uint64_t sess_delete_progress(session *s) { return atomic_load(&s->del_done); }
+
+void sess_delete_stop(session *s) {
+  atomic_store(&s->del_stop, 1);
+  pthread_mutex_lock(&s->mu);
+  if (s->del_in >= 0) { /* хелпер --rm видит EOF на stdin и останавливается */
+    close(s->del_in);
+    s->del_in = -1;
+  }
+  pthread_mutex_unlock(&s->mu);
+}
+
 int sess_wait(session *s) {
   if (s->have_thread) {
     pthread_join(s->th, NULL);
@@ -199,6 +211,7 @@ void sess_free(session *s) {
   if (s->ib) index_end(s->ib);
   pthread_mutex_lock(&s->mu);
   if (s->in_fd >= 0) close(s->in_fd);
+  if (s->del_in >= 0) close(s->del_in);
   pthread_mutex_unlock(&s->mu);
   if (s->out_fd >= 0) close(s->out_fd);
   if (s->err_fd >= 0) close(s->err_fd);

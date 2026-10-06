@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +22,7 @@ static int usage(void) {
         " [--watch-stdin]\n"
         "       libancdu_scan.so --memfd PATH [--root DIR] [--cross-fs] [--threads N]"
         " [--watch-stdin]\n"
-        "       libancdu_scan.so --rm PATH\n",
+        "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin]\n",
         stderr);
   return 2;
 }
@@ -91,6 +92,60 @@ static void *watch_stdin(void *p) {
   return NULL;
 }
 
+/* --rm: удаление с прогрессом и остановкой.
+ * stderr: «progress N» не чаще раза в 100 мс и итоговая строка; N — удалено записей.
+ * --watch-stdin: EOF на stdin (приложение закрыло его, работает и через su) — стоп.
+ * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично). */
+typedef struct {
+  _Atomic uint64_t done;
+  _Atomic int stop;
+  _Atomic int fin;
+} rm_state;
+
+static rm_state rms; /* поток stdin не ждём: живёт до выхода процесса */
+
+static void *rm_watch_stdin(void *p) {
+  (void)p;
+  char buf[64];
+  ssize_t r;
+  while ((r = read(STDIN_FILENO, buf, sizeof buf)) > 0 || (r < 0 && errno == EINTR)) {
+  }
+  atomic_store(&rms.stop, 1);
+  return NULL;
+}
+
+static void *rm_progress(void *p) {
+  (void)p;
+  while (!atomic_load(&rms.fin)) {
+    usleep(100000);
+    if (atomic_load(&rms.fin)) break;
+    fprintf(stderr, "progress %llu\n", (unsigned long long)atomic_load(&rms.done));
+  }
+  return NULL;
+}
+
+static int run_rm(const char *path, int threads, int watch) {
+  if (watch) {
+    /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */
+    struct pollfd pf = {.fd = STDIN_FILENO, .events = POLLIN};
+    if (poll(&pf, 1, 0) == 1 && (pf.revents & (POLLHUP | POLLERR | POLLNVAL)))
+      atomic_store(&rms.stop, 1);
+    pthread_t wth;
+    if (pthread_create(&wth, NULL, rm_watch_stdin, NULL) == 0) pthread_detach(wth);
+  }
+  pthread_t pth;
+  int have_progress = pthread_create(&pth, NULL, rm_progress, NULL) == 0;
+  int r = rm_tree_ex(path, threads > 0 ? threads : scan_default_threads(path), &rms.done,
+                     &rms.stop);
+  atomic_store(&rms.fin, 1);
+  if (have_progress) pthread_join(pth, NULL);
+  fprintf(stderr, "progress %llu\n", (unsigned long long)atomic_load(&rms.done));
+  struct stat st;
+  if (r == 0 || (lstat(path, &st) != 0 && errno == ENOENT)) return 0;
+  fprintf(stderr, "rm: %s\n", strerror(-r));
+  return r == -EINTR ? 6 : 5;
+}
+
 int main(int argc, char **argv) {
   const char *root = NULL, *memfd = NULL;
   int mode = -1, one_fs = 1, threads = 0;
@@ -107,13 +162,7 @@ int main(int argc, char **argv) {
     else return usage();
   }
   if (mode < 0 || (mode != MODE_MEMFD && !root)) return usage();
-  if (mode == MODE_RM) {
-    int r = rm_tree(root);
-    struct stat st;
-    if (r == 0 || (lstat(root, &st) != 0 && errno == ENOENT)) return 0;
-    fprintf(stderr, "rm: %s\n", strerror(-r));
-    return 5;
-  }
+  if (mode == MODE_RM) return run_rm(root, threads, watch);
 
   arena a;
   if (mode == MODE_MEMFD) {

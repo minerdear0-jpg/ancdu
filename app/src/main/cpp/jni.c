@@ -252,6 +252,18 @@ FN(jint, delete)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
   return r;
 }
 
+/* Единственные вызовы, допустимые параллельно с идущим delete на том же h:
+ * трогают только атомики удаления (sess_delete_progress / sess_delete_stop). */
+FN(jlong, deleteProgress)(JNIEnv *e, jclass c, jlong h) {
+  (void)e; (void)c;
+  return h ? (jlong)sess_delete_progress(SESS(h)) : 0;
+}
+
+FN(void, deleteStop)(JNIEnv *e, jclass c, jlong h) {
+  (void)e; (void)c;
+  if (h) sess_delete_stop(SESS(h));
+}
+
 FN(jint, statfs)(JNIEnv *e, jclass c, jstring path, jlongArray out) {
   (void)c;
   const char *p = (*e)->GetStringUTFChars(e, path, NULL);
