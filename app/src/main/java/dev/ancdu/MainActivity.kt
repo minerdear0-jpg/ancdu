@@ -107,8 +107,8 @@ class MainActivity : Activity() {
         BgScan.addListener(onBg)
         Root.addListener(onRoot)
         // Скан закончился, пока был открыт браузер: здесь его уже никто не держит — подставляем.
-        if (Holder.pending != 0L && Holder.pendingRoot == Scans.STORAGE && Holder.browsers == 0 && !Holder.deleting)
-            Holder.promote()
+        if (Holder.pending != 0L && Holder.pendingRoot == Scans.STORAGE && Holder.browsers == 0 &&
+            !Holder.deleting && BgScan.ownsHolder()) Holder.promote()
         gate = BgScan.maybeStart(this)
         renderLast()
         renderStore()

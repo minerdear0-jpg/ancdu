@@ -148,15 +148,20 @@ object BgScan {
     /**
      * Подставить готовое дерево: главный экран (или ждущий ScanActivity) на виду и ни один
      * браузер не держит дескриптор — сразу Holder.set; иначе — Holder.offer (без рывка дерева).
+     * Сессию другого корня (root-скан /data и т. п.) фоновый скан сам не вытесняет: тоже offer,
+     * подставит тап по карточке.
      */
     private fun publish(handle: Long, kind: Kind, label: String) {
-        if ((mainResumed || attached > 0) && Holder.browsers == 0 && !Holder.deleting) {
+        if ((mainResumed || attached > 0) && Holder.browsers == 0 && !Holder.deleting && ownsHolder()) {
             Holder.set(handle, kind, ROOT, label, false)
             if (Holder.pending != 0L && Holder.pendingRoot == ROOT) Holder.dropPending()
         } else {
             Holder.offer(handle, kind, ROOT, label, false)
         }
     }
+
+    /** В Holder пусто или дерево общего хранилища без root — его можно заменить свежим. */
+    fun ownsHolder(): Boolean = Holder.h == 0L || (Holder.root == ROOT && !Holder.viaRoot)
 
     /** Есть ли что показать на карточке, кроме идущего скана: дерево, ожидание или кэш. */
     private fun noTree(): Boolean {
