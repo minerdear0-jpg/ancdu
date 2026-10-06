@@ -61,10 +61,11 @@ class StorageCard(private val a: MainActivity) {
         // «ВНУТРЕННЯЯ ПАМЯТЬ ·» — подпись прописными, «/data» — путь, mono, как есть.
         val head = t.s(R.string.internal_title)
         val cut = head.indexOf(" · ")
-        addView(a.hbox(6).apply {
+        // Flow: при крупном шрифте «/data» уходит на следующую строку, а не сжимается в столбик.
+        addView(Flow(a, a.dp(6), a.dp(2)).apply {
             addView(a.caps(if (cut < 0) head else head.substring(0, cut + 2)))
             if (cut >= 0) addView(a.label(head.substring(cut + 3), 12f, C.MUTED, mono = true))
-        })
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         addView(a.hbox(12).apply {
             gravity = Gravity.BOTTOM
             usedTxt = FitText(a, 40f).apply {
@@ -108,10 +109,13 @@ class StorageCard(private val a: MainActivity) {
             setPadding(0, a.dp(4), 0, a.dp(6))
             addView(a.hbox(8).apply {
                 minimumHeight = a.dp(40)
-                storeTitle = a.caps(t.s(R.string.shared_title), C.TEXT)
-                addView(storeTitle, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                storeTotal = a.label("", 13f, C.TEXT, mono = true)
-                addView(storeTotal)
+                // Название и итог — Flow: не помещаются в строку — итог переносится, ничто не сжимается.
+                addView(Flow(a, a.dp(12), a.dp(2), endLast = true).apply {
+                    storeTitle = a.caps(t.s(R.string.shared_title), C.TEXT)
+                    addView(storeTitle)
+                    storeTotal = a.label("", 13f, C.TEXT, mono = true)
+                    addView(storeTotal)
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 storeArrow = a.label("›", 18f, C.MUTED)
                 addView(storeArrow)
             })
