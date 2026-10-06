@@ -56,6 +56,13 @@ object Freshness {
 
     const val REFRESH = "обновить ›"
 
+    /**
+     * Время показанного дерева для строки свежести: у индекса (Kind.INDEX) времени скана нет —
+     * null, чтобы строка оставалась «приблизительно · обновить ›» (ручной повтор) или
+     * «приблизительно · N эл. · первый скан». 0 — неизвестно.
+     */
+    fun treeTime(kind: Kind, time: Long): Long? = if (kind == Kind.INDEX || time <= 0) null else time
+
     private fun ago(d: Long, at: Long, tz: TimeZone): String = when {
         d < 60_000 -> "только что"
         d < 3_600_000 -> "${d / 60_000} мин назад"

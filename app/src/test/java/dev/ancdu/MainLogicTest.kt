@@ -67,6 +67,26 @@ class FreshnessTest {
         assertEquals("приблизительно · обновить ›", line(approx = true))
     }
 
+    /** Индекс — не скан: у него нет времени, даже если в Holder записано «сейчас». */
+    @Test fun indexTreeHasNoTime() {
+        assertNull(Freshness.treeTime(Kind.INDEX, t))
+        assertNull(Freshness.treeTime(Kind.SCAN, 0))
+        assertEquals(t, Freshness.treeTime(Kind.SCAN, t))
+        assertEquals(t, Freshness.treeTime(Kind.CACHE, t))
+    }
+
+    /** Карточка с индексом: после неудачного скана — повтор «обновить ›», пока идёт — «первый скан». */
+    @Test fun indexLinesFailedAndRunning() {
+        val idx = Freshness.treeTime(Kind.INDEX, t)
+        val failed = line(cache = idx, scanned = false, approx = true)
+        assertEquals("приблизительно · обновить ›", failed)
+        assertTrue(failed.endsWith(Freshness.REFRESH))     // тап по строке — ручной повтор
+        assertEquals("приблизительно · 1 234 эл. · первый скан",
+            line(running = true, live = 1234, cache = idx, approx = true))
+        // и под энергосбережением — тот же повтор
+        assertEquals("приблизительно · обновить ›", line(cache = idx, blocked = true, approx = true))
+    }
+
     @Test fun delta() {
         assertEquals("+1.5 MiB с прошлого скана", Freshness.delta(1_572_864))
         assertEquals("−2.0 KiB с прошлого скана", Freshness.delta(-2048))

@@ -156,7 +156,7 @@ class StorageCard(private val a: MainActivity) {
             // Главный поток, опубликованный дескриптор — обычное чтение дерева.
             val inf = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(0), 1, it) }
             disk = inf[0]; items = inf[2]
-            time = Holder.time.takeIf { it > 0 }
+            time = Freshness.treeTime(Holder.kind, Holder.time)
             scanned = Holder.kind == Kind.SCAN
             approx = Holder.kind == Kind.INDEX
         } else if (last != null) {

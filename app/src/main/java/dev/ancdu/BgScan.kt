@@ -198,7 +198,8 @@ object BgScan {
                     return@post
                 }
                 if (!noTree()) { Holder.io.execute { Native.free(ih) }; return@post }
-                publish(ih, Kind.INDEX, "индекс · приблизительно", System.currentTimeMillis())
+                // У индекса нет времени скана: карточка не скажет «только что».
+                publish(ih, Kind.INDEX, "индекс · приблизительно", 0L)
                 changed()
             }
         }, "ancdu-index").apply { isDaemon = true }.start()
