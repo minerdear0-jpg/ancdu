@@ -84,7 +84,7 @@ class ListViewTest {
         assertTrue(hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
     }
 
-    /** Крупный шрифт: строка не меньше 48 dp и вмещает текст (sp) с отступами 8 dp. */
+    /** Крупный шрифт: строка не меньше 48 dp и вмещает текст (sp) с отступами 8 dp; имени остаётся место. */
     @Test fun rowsFitLargeFonts() {
         val base = ins.targetContext
         for (scale in listOf(1.0f, 1.3f, 2.0f)) {
@@ -98,6 +98,10 @@ class ListViewTest {
             }.fontMetricsInt.let { it.descent - it.ascent }
             assertTrue("scale=$scale", v.rowHeight >= ctx.dp(48))
             assertTrue("scale=$scale: ${v.rowHeight} < $textH + 16dp", v.rowHeight >= textH + 2 * ctx.dp(8))
+            // Узкий экран (360dp): при крупном шрифте имени остаётся не меньше 40% строки.
+            val w = ctx.dp(360)
+            if (scale > 1.3f) assertTrue("scale=$scale: name ${v.nameWidthFor(w)} < 40% of $w", v.nameWidthFor(w) >= w * 0.4f)
+            assertTrue("scale=$scale: name ${v.nameWidthFor(w)}", v.nameWidthFor(w) > 0)
         }
     }
 

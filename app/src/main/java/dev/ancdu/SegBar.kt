@@ -16,8 +16,8 @@ class SegBar(ctx: Context) : View(ctx) {
         set(v) {
             field = v
             contentDescription = context.tx.s(R.string.bar_used, "${(v * 100).toInt()}%")
-            if (first) {
-                first = false
+            if (!filledOnce) {
+                filledOnce = true
                 if (Motion.on()) {
                     fill = ValueAnimator.ofFloat(0f, v).apply {
                         duration = 400
@@ -35,7 +35,6 @@ class SegBar(ctx: Context) : View(ctx) {
     /** Для тестов: анимация первого заполнения (null — её не было: анимации выключены). */
     var fill: ValueAnimator? = null
         private set
-    private var first = true
     private var shown = 0f
     private val paint = Paint()
     private val one = ctx.dp(1).toFloat()
@@ -44,6 +43,17 @@ class SegBar(ctx: Context) : View(ctx) {
 
     override fun onMeasure(w: Int, h: Int) =
         setMeasuredDimension(MeasureSpec.getSize(w), context.dp(12))
+
+    override fun onDetachedFromWindow() {
+        fill?.cancel()
+        shown = used
+        super.onDetachedFromWindow()
+    }
+
+    companion object {
+        /** Заполнение анимируется один раз на процесс (не при каждом пересоздании экрана). Для тестов — сбрасываемо. */
+        @Volatile var filledOnce = false
+    }
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()

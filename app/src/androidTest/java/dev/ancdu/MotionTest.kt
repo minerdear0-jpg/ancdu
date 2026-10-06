@@ -17,6 +17,7 @@ class MotionTest {
 
     @Test fun noSweepAndNoFillWhenAnimationsOff() {
         Motion.override = false
+        SegBar.filledOnce = false
         ins.runOnMainSync {
             val sweep = Sweep(ins.targetContext).also { it.start() }
             assertNull(sweep.animator)
@@ -27,6 +28,7 @@ class MotionTest {
 
     @Test fun sweepAndFillRunWhenAnimationsOn() {
         Motion.override = true
+        SegBar.filledOnce = false
         ins.runOnMainSync {
             val sweep = Sweep(ins.targetContext).also { it.start() }
             assertNotNull(sweep.animator)
@@ -35,6 +37,8 @@ class MotionTest {
             val bar = SegBar(ins.targetContext).also { it.used = 0.5f }
             assertNotNull(bar.fill)
             bar.fill!!.end()
+            // Второй экран того же процесса — без анимации.
+            assertNull(SegBar(ins.targetContext).also { it.used = 0.5f }.fill)
         }
     }
 }

@@ -88,6 +88,18 @@ class NcduListView(ctx: Context) : View(ctx) {
     // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val pctW = maxOf(ctx.dp(34), pctPaint.measureText("100%").toInt())
+    /** Крупный шрифт (> 130%): без полосы, колонка размера сужается — имени остаётся ≥40% строки. */
+    private val compact = ctx.resources.configuration.fontScale > 1.3f
+    private val fitPaint = TextPaint(sizePaint)
+
+    /** Ширина колонки размера при ширине строки [w]; не влезающий размер рисуется мельче. */
+    fun sizeColFor(w: Int): Int =
+        if (!compact) sizeW
+        else minOf(sizeW, maxOf(context.dp(48), (w * 0.58f).toInt() - 2 * pad - 2 * gap - pctW))
+
+    /** Ширина колонки имени при ширине строки [w]. */
+    fun nameWidthFor(w: Int): Int =
+        w - 2 * pad - sizeColFor(w) - gap - (if (compact) 0 else barW + gap) - pctW - gap
     private val mainH = mono.fontMetricsInt.let { it.descent - it.ascent }
     private val subH = small.fontMetricsInt.let { it.descent - it.ascent }
     private val subGap = ctx.dp(2)
@@ -185,10 +197,32 @@ class NcduListView(ctx: Context) : View(ctx) {
         val mid = blockTop + mainH / 2
         var x = pad
         // размер (по правому краю колонки)
+        val col = sizeColFor(w)
         val sw = sizePaint.measureText(row.size)
-        c.drawText(row.size, x + sizeW - sw, base, sizePaint)
-        x += sizeW + gap
-        // полоса 64×8dp в контуре 1dp; заполнение > 0 — не меньше 1px
+        if (sw <= col) c.drawText(row.size, x + col - sw, base, sizePaint)
+        else {
+            fitPaint.textSize = sizePaint.textSize * col / sw
+            c.drawText(row.size, x.toFloat(), base, fitPaint)
+        }
+        x += col + gap
+        if (!compact) drawBar(c, x, mid)
+        if (!compact) x += barW + gap
+        // процент (по правому краю колонки)
+        c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
+        x += pctW + gap
+        // имя: метка не режется, имя — до конца строки с многоточием в конце
+        mono.color = row.nameColor
+        val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
+        val avail = (w - pad - x).toFloat() - mono.measureText(mark)
+        c.drawText(mark + TextUtils.ellipsize(row.name, mono, maxOf(avail, 0f), TextUtils.TruncateAt.END), x.toFloat(), base, mono)
+        if (sub != null) {
+            val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
+            c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)
+        }
+    }
+
+    /** Полоса 64×8dp в контуре 1dp; заполнение > 0 — не меньше 1px. [x] — левый край, [mid] — центр по высоте. */
+    private fun drawBar(c: Canvas, x: Int, mid: Int) {
         val bt = (mid - barH / 2).toFloat()
         val inL = (x + one).toFloat(); val inW = (barW - 2 * one).toFloat()
         val segs = row.segs
@@ -211,19 +245,6 @@ class NcduListView(ctx: Context) : View(ctx) {
         c.drawRect(x.toFloat(), bt + barH - one, (x + barW).toFloat(), bt + barH, fill)
         c.drawRect(x.toFloat(), bt, (x + one).toFloat(), bt + barH, fill)
         c.drawRect((x + barW - one).toFloat(), bt, (x + barW).toFloat(), bt + barH, fill)
-        x += barW + gap
-        // процент (по правому краю колонки)
-        c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
-        x += pctW + gap
-        // имя: метка не режется, имя — до конца строки с многоточием в конце
-        mono.color = row.nameColor
-        val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
-        val avail = (w - pad - x).toFloat() - mono.measureText(mark)
-        c.drawText(mark + TextUtils.ellipsize(row.name, mono, maxOf(avail, 0f), TextUtils.TruncateAt.END), x.toFloat(), base, mono)
-        if (sub != null) {
-            val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
-            c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)
-        }
     }
 
     // ---------- доступность: каждая видимая строка — виртуальный узел ----------

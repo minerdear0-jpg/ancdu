@@ -116,6 +116,7 @@
     <string name="sort_name">имя</string>
     <string name="size_apparent">видимый</string>
     <string name="size_disk">на диске</string>
+    <string name="size_mode_desc">Размер: %1$s</string>
     <string name="folder_empty">пусто</string>
     <string name="folder_no_access">⚠ нет доступа</string>
     <string name="browser_hint">тап — открыть · долгий — подробнее, удалить</string>

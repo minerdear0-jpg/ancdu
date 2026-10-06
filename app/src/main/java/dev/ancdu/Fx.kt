@@ -24,14 +24,24 @@ import kotlin.math.max
  * Фон фокусной панели: заливка [fill] и угловые скобки (плечи 12dp, 1dp, FRAME). Одна такая
  * панель на экран. [bottom] = false — скобки только у верхних углов (лист удаления).
  */
-class Brackets(ctx: Context, private val fill: Int, private val bottom: Boolean = true) : Drawable() {
+class Brackets(ctx: Context, private val fill: Int, private val bottom: Boolean = true,
+               private val pressedFill: Int? = null) : Drawable() {
     private val arm = ctx.dp(12).toFloat()
     private val w = ctx.dp(1).toFloat()
     private val paint = Paint()
+    private var down = false
+
+    /** С [pressedFill] — нажатие и фокус панели перекрашивают заливку. */
+    override fun isStateful() = pressedFill != null
+    override fun onStateChange(state: IntArray): Boolean {
+        val v = pressedFill != null && (android.R.attr.state_pressed in state || android.R.attr.state_focused in state)
+        if (v == down) return false
+        down = v; invalidateSelf(); return true
+    }
 
     override fun draw(c: Canvas) {
         val b = bounds
-        paint.color = fill
+        paint.color = if (down) pressedFill!! else fill
         c.drawRect(b, paint)
         paint.color = C.FRAME
         val l = b.left.toFloat(); val t = b.top.toFloat(); val r = b.right.toFloat(); val bt = b.bottom.toFloat()
@@ -111,12 +121,14 @@ class Check(ctx: Context) : Drawable() {
     private val one = ctx.dp(1).toFloat()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = ctx.dp(2).toFloat(); strokeCap = Paint.Cap.SQUARE }
     private var on = false
+    private var focused = false
 
     override fun isStateful() = true
     override fun onStateChange(state: IntArray): Boolean {
         val v = android.R.attr.state_checked in state
-        if (v == on) return false
-        on = v; invalidateSelf(); return true
+        val f = android.R.attr.state_focused in state
+        if (v == on && f == focused) return false
+        on = v; focused = f; invalidateSelf(); return true
     }
     override fun getIntrinsicWidth() = size
     override fun getIntrinsicHeight() = size
@@ -129,6 +141,12 @@ class Check(ctx: Context) : Drawable() {
         if (on) c.drawRect(l, t, r, bt, paint)
         else { c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
                c.drawRect(l, t, l + one, bt, paint); c.drawRect(r - one, t, r, bt, paint) }
+        if (focused) {
+            // Фокус (клавиатура, переключатели): контур цвета текста.
+            paint.color = C.TEXT
+            c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
+            c.drawRect(l, t, l + one, bt, paint); c.drawRect(r - one, t, r, bt, paint)
+        }
         if (on) {
             paint.color = C.INK
             paint.style = Paint.Style.STROKE
@@ -205,20 +223,32 @@ class Flow(ctx: Context, private val hGap: Int, private val vGap: Int, private v
 }
 
 /**
- * Одна строка крупного числа: не влезает в ширину — шрифт уменьшается (не переносится, не
- * режется). [maxSp] — размер при достаточной ширине (с учётом масштаба шрифта).
+ * Крупное число в одну строку: не влезает в ширину — шрифт уменьшается до [minSp]; не влезает
+ * и так — переносится на вторую строку (никогда не режется). [maxSp] — размер при достаточной
+ * ширине; оба — с учётом масштаба шрифта.
  */
-class FitText(ctx: Context, private val maxSp: Float) : TextView(ctx) {
+class FitText(ctx: Context, private val maxSp: Float, private val minSp: Float = 14f) : TextView(ctx) {
     init { maxLines = 1; textSize = maxSp }
+
+    /** Новое значение (тик скана) — пересчитать размер, даже если ширина view не меняется. */
+    override fun onTextChanged(text: CharSequence?, start: Int, before: Int, after: Int) {
+        super.onTextChanged(text, start, before, after)
+        requestLayout()
+    }
 
     override fun onMeasure(ws: Int, hs: Int) {
         if (MeasureSpec.getMode(ws) != MeasureSpec.UNSPECIFIED) {
             val avail = MeasureSpec.getSize(ws) - totalPaddingLeft - totalPaddingRight
-            val max = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, maxSp, resources.displayMetrics)
+            val dm = resources.displayMetrics
+            val max = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, maxSp, dm)
+            val min = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, minSp, dm)
             val cur = textSize
             val need = paint.measureText(text.toString()) * max / cur
-            val px = if (need <= avail || need <= 0f) max else max * avail / need * 0.98f
+            val fit = if (need <= avail || need <= 0f) max else max * avail / need * 0.98f
+            val px = maxOf(fit, min)
             if (px != cur) setTextSize(TypedValue.COMPLEX_UNIT_PX, px)
+            val lines = if (fit < min) 2 else 1
+            if (maxLines != lines) maxLines = lines
         }
         super.onMeasure(ws, hs)
     }

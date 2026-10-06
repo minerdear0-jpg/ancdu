@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -25,6 +26,7 @@ import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -129,10 +131,23 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
 
     fun dismiss() = dialog.dismiss()
 
+    /**
+     * Тело листа (заголовок … галочка) прокручивается; предупреждение и кнопки — под ним, всегда
+     * видны (и при крупном шрифте).
+     */
     private fun build(): View = act.vbox(10).apply {
         background = Brackets(act, C.PANEL, bottom = false)
         setPadding(act.dp(20), act.dp(20), act.dp(20), act.dp(16))
+        addView(ScrollView(act).apply {
+            isFillViewport = false
+            addView(body())
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
+        // Предупреждение — сразу над кнопками.
+        if (p.block == null) addView(act.label("⚠ " + t.s(R.string.no_trash), 14f, C.DANGER_TEXT, bold = true))
+        addView(buttons())
+    }
 
+    private fun body(): View = act.vbox(10).apply {
         val title = t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, p.name)
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
@@ -155,9 +170,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())
-        // Предупреждение — сразу над кнопками.
-        if (p.block == null) addView(act.label("⚠ " + t.s(R.string.no_trash), 14f, C.DANGER_TEXT, bold = true))
-        addView(buttons())
     }
 
     /** «быстро через root»: удаление через /data/media/<n>/ под su, затем очистка галереи в фоне (MediaClean). */
@@ -284,13 +296,19 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             gravity = Gravity.CENTER
             minHeight = act.dp(56)
             setPadding(act.dp(12), act.dp(8), act.dp(12), act.dp(8))
-            background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else act.box(bg)
+            background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), act.box(DANGER_PRESSED))
+                addState(intArrayOf(android.R.attr.state_focused), act.box(bg, Color.WHITE))
+                addState(intArrayOf(), act.box(bg))
+            }
             isClickable = true; isFocusable = true
             setOnClickListener { onClick() }
         }
 
     companion object {
         const val PAUSE_MS = 1500L
+        /** Нажатая «Удалить»: темнее DANGER_FILL (белый текст на нём контрастнее). */
+        private const val DANGER_PRESSED = 0xFF8C1D17.toInt()
     }
 }
 

@@ -27,7 +27,7 @@ class TokenContrastTest {
         val grounds = mapOf("BG" to C.BG, "PANEL" to C.PANEL, "PANEL2" to C.PANEL2)
         val pairs = texts.flatMap { (tn, t) -> grounds.map { (gn, g) -> "$tn/$gn" to ratio(t, g) } } +
             listOf("INK/AMBER" to ratio(C.INK, C.AMBER), "WHITE/DANGER_FILL" to ratio(C.WHITE, C.DANGER_FILL),
-                "OK/OK_BG" to ratio(C.OK, C.OK_BG))
+                "OK/OK_BG" to ratio(C.OK, C.OK_BG), "OK/PANEL2" to ratio(C.OK, C.PANEL2))
         val bad = pairs.filter { it.second < 4.5 }
         assertTrue("ниже 4.5:1: $bad", bad.isEmpty())
     }

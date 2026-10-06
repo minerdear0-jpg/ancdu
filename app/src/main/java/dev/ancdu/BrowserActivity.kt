@@ -172,10 +172,10 @@ class BrowserActivity : LangActivity() {
         }
     }
 
-    /** Текст подвала; пустой — подвал скрыт. */
+    /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). */
     private fun setFooter(text: CharSequence) {
         footer.text = text
-        footer.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+        footer.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
     }
 
     /** Подвал: [text] на 4 с, затем обычная подсказка. */
@@ -276,7 +276,13 @@ class BrowserActivity : LangActivity() {
             gravity = Gravity.CENTER
             minHeight = dp(44)
             setPadding(dp(12), 0, dp(12), 0)
-            background = box(C.AMBER)
+            background = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER))
+                addState(intArrayOf(android.R.attr.state_focused), box(C.PANEL2, C.AMBER))
+                addState(intArrayOf(), box(C.AMBER))
+            }
+            setTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
+                intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER, C.AMBER, C.INK)))
             isClickable = true; isFocusable = true
             contentDescription = txt.s(R.string.newer_desc)
             setOnClickListener { promotePending() }
@@ -303,7 +309,7 @@ class BrowserActivity : LangActivity() {
         }
         footer = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), dp(10), dp(16), dp(10))
-            visibility = View.GONE
+            visibility = View.INVISIBLE
         }
         gallery = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), 0, dp(16), dp(10))
@@ -322,8 +328,10 @@ class BrowserActivity : LangActivity() {
         })
         // Подсказка подвала — только первые HINT_SESSIONS открытий браузера (не пересозданий).
         val uiPrefs = getSharedPreferences(LangPrefs.PREFS, MODE_PRIVATE)
-        val sessions = uiPrefs.getInt(K_SESSIONS, 0) + if (savedInstanceState == null) 1 else 0
-        if (savedInstanceState == null) uiPrefs.edit().putInt(K_SESSIONS, sessions).apply()
+        val seen = uiPrefs.getInt(K_SESSIONS, 0)
+        val sessions = seen + if (savedInstanceState == null) 1 else 0
+        // После HINT_SESSIONS счётчик больше не пишется.
+        if (savedInstanceState == null && seen <= HINT_SESSIONS) uiPrefs.edit().putInt(K_SESSIONS, sessions).apply()
         showHint = sessions <= HINT_SESSIONS
         Holder.addDeleteListener(onDeleted)
         MediaClean.addListener(onClean)
@@ -527,10 +535,10 @@ class BrowserActivity : LangActivity() {
         val sizes = segmented(listOf(txt.s(R.string.size_disk), txt.s(R.string.size_apparent)),
             if (apparent) 1 else 0, amber = false) { setApparent(it == 1) }
         sortSeg = sorts; sizeSeg = sizes
-        chips.addView(hbox(10).apply {
-            addView(caps(txt.s(R.string.sort_label)))
-            addView(sorts)
-        })
+        sizes.contentDescription = txt.s(R.string.size_mode_desc, txt.s(if (apparent) R.string.size_apparent else R.string.size_disk))
+        // Подпись и сегменты — отдельные дети Flow: при крупном шрифте переносятся, не сжимаются.
+        chips.addView(caps(txt.s(R.string.sort_label)).apply { minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL })
+        chips.addView(sorts)
         chips.addView(sizes)
     }
 
@@ -743,6 +751,8 @@ class BrowserActivity : LangActivity() {
         wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setView(body).setCancelable(false).create().apply {
                 window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                // Заголовок окна — для TalkBack (видимый заголовок — в теле).
+                window?.setTitle(DeleteProgress.title(txt, Holder.delName))
                 show()
             }
         renderWait()

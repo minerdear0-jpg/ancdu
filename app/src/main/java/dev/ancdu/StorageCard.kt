@@ -46,17 +46,25 @@ class StorageCard(private val a: MainActivity) {
     /** Тексты в языке экрана. */
     private val t: Txt = a.tx
 
-    /** Строка входа в дерево: один кликабельный элемент (≥56dp). */
-    lateinit var view: LinearLayout
-        private set
-
-    /** Вся фокусная панель (фон со скобками). */
+    /** Вся фокусная панель (фон со скобками): один кликабельный элемент — вход в дерево. */
     val panel: LinearLayout = build()
+
+    /** То же, что [panel]: касание открывает дерево (без доступа — раскрывает объяснение). */
+    val view: LinearLayout get() = panel
 
     private fun build(): LinearLayout = a.vbox().apply {
         setPadding(a.dp(16), a.dp(16), a.dp(16), a.dp(4))
-        background = Brackets(a, C.PANEL)
-        addView(a.caps(t.s(R.string.internal_title)))
+        background = Brackets(a, C.PANEL, pressedFill = C.PANEL2)
+        isClickable = true; isFocusable = true
+        contentDescription = t.s(R.string.card_desc)
+        setOnClickListener { onTap() }
+        // «ВНУТРЕННЯЯ ПАМЯТЬ ·» — подпись прописными, «/data» — путь, mono, как есть.
+        val head = t.s(R.string.internal_title)
+        val cut = head.indexOf(" · ")
+        addView(a.hbox(6).apply {
+            addView(a.caps(if (cut < 0) head else head.substring(0, cut + 2)))
+            if (cut >= 0) addView(a.label(head.substring(cut + 3), 12f, C.MUTED, mono = true))
+        })
         addView(a.hbox(12).apply {
             gravity = Gravity.BOTTOM
             usedTxt = FitText(a, 40f).apply {
@@ -94,14 +102,10 @@ class StorageCard(private val a: MainActivity) {
             visibility = View.INVISIBLE
         }
         addView(scanLine, LinearLayout.LayoutParams(MATCH_PARENT, a.dp(2)))
-        view = a.vbox().apply {
+        addView(a.vbox().apply {
             minimumHeight = a.dp(56)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, a.dp(4), 0, a.dp(6))
-            background = a.pressable(C.PANEL)
-            isClickable = true; isFocusable = true
-            contentDescription = t.s(R.string.card_desc)
-            setOnClickListener { onTap() }
             addView(a.hbox(8).apply {
                 minimumHeight = a.dp(40)
                 storeTitle = a.caps(t.s(R.string.shared_title), C.TEXT)
@@ -119,8 +123,7 @@ class StorageCard(private val a: MainActivity) {
             addView(freshTxt)
             deltaTxt = a.label("", 12f, C.MUTED, mono = true).apply { visibility = View.GONE }
             addView(deltaTxt)
-        }
-        addView(view, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         permBox = a.vbox(12).apply {
             visibility = View.GONE
             setPadding(0, a.dp(4), 0, a.dp(12))
@@ -132,7 +135,7 @@ class StorageCard(private val a: MainActivity) {
 
     /** «■ ПОДПИСЬ значение»: квадрат цвета полосы, подпись прописными, значение — данные. */
     private fun legendItem(color: Int, labelRes: Int, value: TextView): LinearLayout = a.hbox(6).apply {
-        addView(a.label("■", 12f, color).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
+        addView(swatch(color))
         addView(a.caps(t.s(labelRes)))
         addView(value)
     }
@@ -144,10 +147,17 @@ class StorageCard(private val a: MainActivity) {
         catBar.segs = used
         catLegend.removeAllViews()
         for (s in used) catLegend.addView(a.hbox(5).apply {
-            addView(a.label("■", 12f, s.color).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
+            addView(swatch(s.color))
             addView(a.label(t.s(s.label), 12f, C.MUTED))
             addView(a.label(Fmt.size(s.bytes, t), 12f, C.TEXT, mono = true))
         })
+    }
+
+    /** Квадрат 8dp цвета полосы (не текст). */
+    private fun swatch(color: Int): View = View(a).apply {
+        background = a.box(color)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        layoutParams = LinearLayout.LayoutParams(a.dp(8), a.dp(8))
     }
 
     fun showStatfs() {

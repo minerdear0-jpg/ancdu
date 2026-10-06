@@ -7,11 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.util.Log
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
-import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -133,18 +133,25 @@ class ScanActivity : LangActivity() {
             addView(label(root, 22f, mono = true))
         }
         // Фокусная панель: скобки и развёртка (пока идёт скан), сетка 2×2.
-        val grid = GridLayout(this).apply { columnCount = 2 }
+        // Сетка 2×2 из весовых рядов: ширина ячейки точная — FitText уменьшает число, а не режет.
+        val grid = vbox()
         val names = arrayOf(t.s(R.string.tile_files), t.s(R.string.tile_size), t.s(R.string.tile_speed), t.s(R.string.tile_time))
-        tiles = Array(4) { label("—", 24f, if (it == 1) C.AMBER else C.TEXT, mono = true, bold = true).apply { maxLines = 1 } }
-        for (i in 0 until 4) {
-            val cell = vbox(4).apply {
-                setPadding(pad, dp(12), pad, dp(12))
-                addView(caps(names[i]))
-                addView(tiles[i])
+        tiles = Array(4) {
+            FitText(this, 24f).apply {
+                text = "—"; setTextColor(if (it == 1) C.AMBER else C.TEXT); typeface = Fonts.get(this@ScanActivity, mono = true, bold = true)
             }
-            grid.addView(cell, GridLayout.LayoutParams(
-                GridLayout.spec(i / 2, 1f), GridLayout.spec(i % 2, 1f)).apply { width = 0 })
         }
+        for (r in 0 until 2) grid.addView(hbox().apply {
+            gravity = Gravity.TOP
+            for (k in 0 until 2) {
+                val i = r * 2 + k
+                addView(vbox(4).apply {
+                    setPadding(pad, dp(12), pad, dp(12))
+                    addView(caps(names[i]))
+                    addView(tiles[i], LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         val focal = FrameLayout(this).apply {
             background = Brackets(this@ScanActivity, C.PANEL)
             setPadding(0, dp(4), 0, dp(4))
@@ -296,6 +303,17 @@ class ScanActivity : LangActivity() {
     @Deprecated("Activity API")
     override fun onBackPressed() {
         if (finished || attach) { finished = true; finish() } else abort(true)
+    }
+
+    /** Развёртка только на виду и только пока идёт скан. */
+    override fun onStart() {
+        super.onStart()
+        if (built && !finished) sweep?.start()
+    }
+
+    override fun onStop() {
+        sweep?.stop()
+        super.onStop()
     }
 
     override fun onDestroy() {
