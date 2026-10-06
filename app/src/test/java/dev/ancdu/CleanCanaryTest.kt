@@ -15,12 +15,22 @@ class CleanCanaryTest {
         val deleteCount: Int? = null,
         val throwOnDelete: Exception? = null,
         val rowStays: Boolean = false,
+        /** Прочие строки MediaStore под base: путь → _id. */
+        val otherRows: MutableMap<String, Long> = mutableMapOf(),
+        /** Прочие пути, существующие на диске. */
+        val present: Set<String> = emptySet(),
+        val dirStays: Boolean = false,
     ) : CanaryEnv {
+        val base = "/storage/emulated/0/Android/media/dev.ancdu"
         val created: String? get() = dirMade?.let { "$it/canary.txt" }
         var file = false
         var row = false
+        var dir = false
         var cleaned: String? = null
-        override fun makeDir(): String? = dirMade
+        val rowOnlyDeleted = ArrayList<String>()
+        val scanned = ArrayList<String>()
+        init { dirMade?.let { otherRows[it] = 99L } } // строка самого каталога канарейки
+        override fun makeDir(): String? = dirMade.also { dir = it != null }
         override fun writeFile(dir: String): String {
             throwOnWrite?.let { throw it }
             file = true
@@ -28,14 +38,26 @@ class CleanCanaryTest {
         }
         override fun awaitRow(path: String): Long? = if (rowAppears) { row = true; 7L } else null
         override fun deleteRowOnly(id: Long, path: String): Int {
+            if (path != created) {
+                check(otherRows[path] == id) { "чужой _id для $path" }
+                rowOnlyDeleted += path; otherRows.remove(path); return 1
+            }
             throwOnDelete?.let { throw it }
             if (!rowStays) row = false
             if (unlinks) file = false
             return deleteCount ?: if (rowStays) 0 else 1
         }
-        override fun fileExists(path: String) = file
+        override fun fileExists(path: String) = when (path) {
+            created -> file
+            dirMade -> dir
+            else -> path in present
+        }
         override fun rowExists(path: String) = row
-        override fun cleanup(dir: String) { cleaned = dir; file = false }
+        override fun cleanup(dir: String) { cleaned = dir; file = false; if (!dirStays) this.dir = false }
+        override fun base() = base
+        override fun rowPaths(base: String) = otherRows.keys.filter { it.startsWith("$base/") }
+        override fun rowId(path: String) = otherRows[path]
+        override fun scan(path: String) { scanned += path }
     }
 
     @Test fun passesOnlyWhenRowGoneAndFileKept() {
@@ -67,6 +89,10 @@ class CleanCanaryTest {
             override fun fileExists(path: String): Boolean = throw AssertionError()
             override fun rowExists(path: String): Boolean = throw AssertionError()
             override fun cleanup(dir: String) = throw AssertionError()
+            override fun base(): String? = throw AssertionError()
+            override fun rowPaths(base: String): List<String> = throw AssertionError()
+            override fun rowId(path: String): Long? = throw AssertionError()
+            override fun scan(path: String) = throw AssertionError()
         }
         assertFalse(CleanCanary.rowsOnlyWorks(boom))
     }
@@ -124,5 +150,54 @@ class CleanCanaryTest {
             override fun delete(ids: LongArray, where: String, args: Array<String>) = 0
         }
         assertTrue(CleanCanary.needsScanAfter(MediaBulk.run(stuck, d, true, chunk = 1, stopped = { false }) {}))
+    }
+
+    @Test fun provenCanaryDropsItsOwnDirRowOnly() {
+        val e = Env()
+        assertTrue(CleanCanary.rowsOnlyWorks(e))
+        assertEquals(listOf(e.dirMade), e.rowOnlyDeleted)
+        assertEquals(emptyList<String>(), e.scanned)
+    }
+
+    @Test fun failedCanaryScansItsDirInstead() {
+        val e = Env(unlinks = true)
+        assertFalse(CleanCanary.rowsOnlyWorks(e))
+        assertEquals(emptyList<String>(), e.rowOnlyDeleted)
+        assertEquals(listOf(e.dirMade), e.scanned)
+    }
+
+    @Test fun dirThatSurvivedCleanupKeepsItsRow() {
+        val e = Env(dirStays = true)
+        assertTrue(CleanCanary.rowsOnlyWorks(e))
+        assertEquals(emptyList<String>(), e.rowOnlyDeleted)
+        assertEquals(emptyList<String>(), e.scanned)
+    }
+
+    @Test fun sweepsOnlyAbsentEarlierCanaryDirs() {
+        val b = "/storage/emulated/0/Android/media/dev.ancdu"
+        val rows = mutableMapOf("$b/canary-old" to 1L, "$b/canary-live" to 2L, "$b/canary-x/canary.txt" to 3L,
+            "$b/other" to 4L, "$b/canary-" to 5L, "$b/canary-old2" to 6L)
+        val e = Env(otherRows = rows, present = setOf("$b/canary-live"))
+        assertTrue(CleanCanary.rowsOnlyWorks(e))
+        assertEquals(setOf(e.dirMade, "$b/canary-old", "$b/canary-old2"), e.rowOnlyDeleted.toSet())
+        assertEquals(setOf("$b/canary-live", "$b/canary-x/canary.txt", "$b/other", "$b/canary-"), rows.keys)
+    }
+
+    @Test fun sweepAfterFailedCanaryUsesScan() {
+        val b = "/storage/emulated/0/Android/media/dev.ancdu"
+        val e = Env(rowAppears = false, otherRows = mutableMapOf("$b/canary-old" to 1L))
+        assertFalse(CleanCanary.rowsOnlyWorks(e))
+        assertEquals(emptyList<String>(), e.rowOnlyDeleted)
+        assertEquals(setOf(e.dirMade, "$b/canary-old"), e.scanned.toSet())
+    }
+
+    @Test fun canaryDirGuard() {
+        val b = "/storage/emulated/0/Android/media/dev.ancdu"
+        assertTrue(CleanCanary.isCanaryDir("$b/canary-123", b))
+        for (p in listOf("$b/canary-", "$b/canary-1/x", "$b/canaryx", "$b/other", "$b", "/storage/emulated/0/canary-1",
+                "$b-evil/canary-1", "$b/sub/canary-1"))
+            assertFalse(p, CleanCanary.isCanaryDir(p, b))
+        assertFalse(CleanCanary.isCanaryDir("/x/canary-1", "/x/"))
+        assertFalse(CleanCanary.isCanaryDir("x/canary-1", "x"))
     }
 }

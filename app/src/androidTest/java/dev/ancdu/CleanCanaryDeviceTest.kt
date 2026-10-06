@@ -25,5 +25,11 @@ class CleanCanaryDeviceTest {
         val after = base.listFiles()?.filter { it.name.startsWith("canary-") }?.toSet() ?: emptySet()
         assertEquals("канарейка не убрана", before, after)
         assertTrue("deletedata=false не подтверждён — MediaClean уйдёт на scanFile", ok)
+        // Строк каталогов канареек (этой и прошлых) в MediaStore не осталось.
+        val env = MediaClean.Canary(ctx, ctx.contentResolver) // только чтение строк
+        fun left() = env.rowPaths(base.absolutePath).filter { CleanCanary.isCanaryDir(it, base.absolutePath) }
+        val deadline = System.currentTimeMillis() + 5_000
+        while (left().isNotEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(200)
+        assertEquals(emptyList<String>(), left())
     }
 }

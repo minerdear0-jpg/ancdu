@@ -140,6 +140,20 @@ object MediaClean {
             d.delete()
         }
 
+        override fun base(): String? = base?.absolutePath
+
+        override fun rowPaths(base: String): List<String> {
+            val q = MediaBulk.pageSelection(MediaBulk.selection(base, dir = true), Long.MIN_VALUE)
+            return rows.page(q.where, q.args, 500).mapNotNull { it.data }
+                .filter { MediaBulk.inside(it, base, true) && it != base }
+        }
+
+        override fun rowId(path: String): Long? = find(path)
+
+        override fun scan(path: String) {
+            MediaScannerConnection.scanFile(ctx, arrayOf(path), null, null)
+        }
+
         private companion object { const val FILE = "canary.txt" }
     }
 }
