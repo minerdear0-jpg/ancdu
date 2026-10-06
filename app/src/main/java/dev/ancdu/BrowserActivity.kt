@@ -215,11 +215,20 @@ class BrowserActivity : Activity() {
         val handle = h
         val target = kids[i]
         val path = Native.str(Native.path(handle, target))
+        val reason = blockReason(handle, target, path)
+        if (reason != null) { alert("«${nameAt(i)}»", "$path\n\n$reason"); return }
         val approx = if (Holder.kind == Kind.INDEX) "\n(размер по индексу, приблизительно)" else ""
         alert("Удалить «${nameAt(i)}»?",
             "$path\n\nОсвободится: ${Fmt.size(info[o])}$approx\nЭлементов: ${Fmt.count(info[o + 2])}\n\n" +
                 "Без корзины. Действие необратимо.",
             ok = "Удалить", cancel = "Отмена") { startDelete(handle, target) }
+    }
+
+    /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
+    private fun blockReason(handle: Long, target: Int, path: String): String? {
+        val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
+        return DeletePolicy.blockReason(path, target == 0, Native.parent(handle, target) == 0,
+            Holder.root, inf[3].toInt(), Holder.kind)
     }
 
     private fun showWait() {
@@ -241,6 +250,8 @@ class BrowserActivity : Activity() {
             }
             return false
         }
+        // Повторная проверка запретов: путь мимо диалога (тесты) тоже не удалит системное.
+        if (blockReason(handle, target, Native.str(Native.path(handle, target))) != null) return false
         val helper = if (Holder.viaRoot) Root.helper(this) else null
         keepScroll = list.scroll
         showWait()
