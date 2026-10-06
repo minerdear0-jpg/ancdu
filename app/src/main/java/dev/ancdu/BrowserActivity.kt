@@ -19,6 +19,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -602,20 +604,37 @@ class BrowserActivity : Activity() {
         val app = applicationContext
         keepScroll = list.scroll
         // Без root в общем хранилище: сначала пачками через MediaProvider, затем ядро — как всегда.
-        val bulkPath = MediaBulk.target(pathBytes, viaRoot = Holder.viaRoot, fast = fast)
+        // Индекс флагов ссылок не знает — для него массового шага нет.
+        val bulkPath = if (Holder.kind == Kind.INDEX) null
+            else MediaBulk.target(pathBytes, viaRoot = Holder.viaRoot, fast = fast)
+        if (bulkPath == null && !fast && !Holder.viaRoot && MediaBulk.exactPath(pathBytes) == null)
+            Log.i("ancdu", "bulk delete skipped: path is not valid UTF-8")
         val cr = app.contentResolver
         val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
+        val rootFlags = inf[3].toInt()
         Holder.delete(handle, target, helper, done, name, items, disk, media = fast,
             bulk = bulkPath?.let { p -> { stopped, add ->
-                val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
-                out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
+                // На io, под правилами delete: чтение дерева [handle] (экран его сейчас не читает).
+                // MediaProvider канонизирует путь перед unlink — ссылка в поддереве увела бы
+                // удаление за пределы узла.
+                if (MediaBulk.subtreeHas(target, rootFlags, F_SYMLINK) { nd -> kidsWithFlags(handle, nd) } ||
+                    Files.isSymbolicLink(Paths.get(p))) {
+                    Log.i("ancdu", "bulk delete skipped: symlink in subtree")
+                } else {
+                    val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
+                    out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
+                }
             } },
             afterIo = if (!fast) null else { r ->
                 // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки:
                 // путь исчез — пачками в фоне (MediaClean); частично — пересканирование, как раньше
                 // (удаление строк через MediaProvider удалило бы и оставшиеся файлы).
                 if (r == 0 && cleanPath != null) MediaClean.enqueue(app, cleanPath, dir)
-                else MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
+                else {
+                    // Путь не точный UTF-8: Native.str дал U+FFFD — scanFile этого пути ничего не найдёт.
+                    if (cleanPath == null) Log.w("ancdu", "gallery cleanup: path is not valid UTF-8, scanFile is a no-op")
+                    MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
+                }
             })
         showWait()
         return true
@@ -632,4 +651,14 @@ class BrowserActivity : Activity() {
         check(latch.await(60, TimeUnit.SECONDS)) { "удаление не завершилось за 60 с" }
         return r
     }
+}
+
+/** Живые дети [nd] дерева [handle] и их флаги. Вызывается на io из массового шага удаления
+ * (вне экрана: лямбда удаления не держит Activity). */
+private fun kidsWithFlags(handle: Long, nd: Int): Pair<IntArray, IntArray> {
+    val c = IntArray(Native.childCount(handle, nd))
+    val k = maxOf(0, Native.children(handle, nd, SORT_NAME, false, c))
+    if (k == 0) return IntArray(0) to IntArray(0)
+    val inf = LongArray(4 * k).also { Native.nodeInfo(handle, c, k, it) }
+    return c.copyOf(k) to IntArray(k) { inf[4 * it + 3].toInt() }
 }

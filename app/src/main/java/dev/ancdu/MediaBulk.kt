@@ -11,8 +11,13 @@ class MediaRow(val id: Long, val data: String?)
 interface MediaRows {
     /** До [limit] строк по [where]/[args], по возрастанию _id. */
     fun page(where: String, args: Array<String>, limit: Int): List<MediaRow>
-    /** Удаляет строки (и их файлы, если они есть) с этими _id; возвращает число удалённых строк. */
-    fun delete(ids: LongArray): Int
+    /**
+     * Удаляет строки с этими _id, которые В МОМЕНТ удаления всё ещё подходят под [where]/[args]
+     * (`_id IN (…) AND (where)`): строку, переименованную через FUSE между [page] и удалением
+     * (_id тот же, _data новый — вне узла), MediaProvider не тронет. Возвращает число удалённых.
+     * Файлы удаляются вместе со строками, если реализация не «только строки» (ResolverRows keepFiles).
+     */
+    fun delete(ids: LongArray, where: String, args: Array<String>): Int
 }
 
 /**
@@ -21,8 +26,12 @@ interface MediaRows {
  * Native.delete, который всегда вызывается после (кроме «Стоп» во время этого шага).
  *
  * Безопасность: строка удаляется, только если её _data — ровно путь узла или строго внутри
- * него ([inside], точное сравнение строк). Выборка LIKE лишь сужает запрос: в SQLite LIKE
- * регистронезависим для ASCII, поэтому каждая строка ещё раз проверяется в Kotlin.
+ * него ([inside], точное сравнение строк с учётом регистра). Выборка SQL лишь сужает запрос:
+ * столбец _data — COLLATE NOCASE, и LIKE, и «=» в MediaProvider без учёта регистра ASCII,
+ * поэтому каждая строка ещё раз проверяется в Kotlin; само удаление повторяет выборку
+ * (`_id IN (…) AND (where)`) — против переименования между запросом и удалением.
+ * Узел с символическими ссылками в поддереве массовым шагом не удаляется ([subtreeHas]):
+ * MediaProvider канонизирует путь перед unlink и удалил бы цель ссылки вне узла.
  * Чистый Kotlin без Android API (JVM-тесты).
  */
 object MediaBulk {
@@ -77,6 +86,24 @@ object MediaBulk {
     fun target(pathBytes: ByteArray, viaRoot: Boolean, fast: Boolean): String? =
         if (viaRoot || fast) null else cleanable(pathBytes)
 
+    /**
+     * Есть ли в поддереве узла [root] (включая сам узел с флагами [rootFlags]) узел с [flag].
+     * [kids] — живые дети узла: их id и флаги (parallel-массивы); вызывается только для каталогов.
+     */
+    fun subtreeHas(root: Int, rootFlags: Int, flag: Int, kids: (Int) -> Pair<IntArray, IntArray>): Boolean {
+        if (rootFlags and flag != 0) return true
+        if (rootFlags and F_DIR == 0) return false
+        val stack = ArrayDeque<Int>().apply { addLast(root) }
+        while (stack.isNotEmpty()) {
+            val (ids, flags) = kids(stack.removeLast())
+            for (i in ids.indices) {
+                if (flags[i] and flag != 0) return true
+                if (flags[i] and F_DIR != 0) stack.addLast(ids[i])
+            }
+        }
+        return false
+    }
+
     /** Итог [run]: [deleted] строк удалено, [stopped] — прерван «Стопом», [error] — сбой (шаг прерван). */
     class Outcome(val deleted: Long, val stopped: Boolean, val error: Throwable?)
 
@@ -110,7 +137,7 @@ object MediaBulk {
                     if (dir && r.data == path) self = r.id else ids += r.id
                 }
                 if (ids.isNotEmpty()) {
-                    val n = maxOf(rows.delete(ids.toLongArray()), 0).toLong()
+                    val n = maxOf(rows.delete(ids.toLongArray(), sel.where, sel.args), 0).toLong()
                     deleted += n
                     onDeleted(n)
                 }
@@ -118,7 +145,7 @@ object MediaBulk {
             }
             if (self != null) {
                 if (stopped()) return Outcome(deleted, true, null)
-                val n = maxOf(rows.delete(longArrayOf(self)), 0).toLong()
+                val n = maxOf(rows.delete(longArrayOf(self), sel.where, sel.args), 0).toLong()
                 deleted += n
                 onDeleted(n)
             }

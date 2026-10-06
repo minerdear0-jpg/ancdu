@@ -4,9 +4,16 @@ import android.content.ContentResolver
 import android.os.Bundle
 import android.provider.MediaStore
 
-/** [MediaRows] поверх ContentResolver: таблица files всех внешних томов. */
-class ResolverRows(private val cr: ContentResolver) : MediaRows {
+/**
+ * [MediaRows] поверх ContentResolver: таблица files всех внешних томов.
+ * [keepFiles] — удалять только строки индекса (скрытый параметр MediaProvider deletedata=false:
+ * в android14 он пропускает deleteIfAllowed, файл не трогается). Параметр не публичный —
+ * перед использованием MediaClean проверяет его канарейкой (CleanCanary).
+ */
+class ResolverRows(private val cr: ContentResolver, keepFiles: Boolean = false) : MediaRows {
     private val uri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
+    private val deleteUri = if (!keepFiles) uri
+        else uri.buildUpon().appendQueryParameter("deletedata", "false").build()
 
     override fun page(where: String, args: Array<String>, limit: Int): List<MediaRow> {
         val q = Bundle().apply {
@@ -25,8 +32,11 @@ class ResolverRows(private val cr: ContentResolver) : MediaRows {
         }
     }
 
-    /** _id — числа из [page], не ввод пользователя: литералы в IN безопасны и не упираются в лимит аргументов. */
-    override fun delete(ids: LongArray): Int =
+    /**
+     * _id — числа из [page], не ввод пользователя: литералы в IN безопасны и не тратят аргументы.
+     * [where] повторяется — строка, сменившая _data после [page], не удаляется.
+     */
+    override fun delete(ids: LongArray, where: String, args: Array<String>): Int =
         if (ids.isEmpty()) 0
-        else cr.delete(uri, "${MediaStore.MediaColumns._ID} IN (${ids.joinToString(",")})", null)
+        else cr.delete(deleteUri, "${MediaStore.MediaColumns._ID} IN (${ids.joinToString(",")}) AND ($where)", args)
 }

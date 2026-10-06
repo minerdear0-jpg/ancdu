@@ -10,8 +10,10 @@ import org.junit.Test
 
 /**
  * Подделка MediaProvider: строки в памяти, выборка вычисляется по правилам SQLite
- * (LIKE — регистронезависим для ASCII, «_» — один символ, ESCAPE; «=» — точное сравнение).
- * Понимает ровно те формы WHERE, что строит MediaBulk, иначе падает.
+ * для столбца `_data TEXT COLLATE NOCASE`: LIKE и «=» — без учёта регистра ASCII
+ * (с [caseSensitiveLike] — с учётом, для проверки самого шаблона); «_» — один символ, ESCAPE.
+ * Понимает ровно те формы WHERE, что строит MediaBulk, иначе падает. Удаление повторяет
+ * выборку (`_id IN (…) AND (where)`) по ТЕКУЩЕМУ _data; [beforeDelete] может «переименовать» строку.
  */
 class FakeRows(paths: List<String>, private val caseSensitiveLike: Boolean = false) : MediaRows {
     val rows = LinkedHashMap<Long, String>()
@@ -20,6 +22,7 @@ class FakeRows(paths: List<String>, private val caseSensitiveLike: Boolean = fal
     var failDeleteOnCall = -1
     var failPage: Exception? = null
     var onPage: () -> Unit = {}
+    var beforeDelete: (FakeRows) -> Unit = {}
 
     init { paths.forEachIndexed { i, p -> rows[i + 1L] = p } }
 
@@ -27,24 +30,36 @@ class FakeRows(paths: List<String>, private val caseSensitiveLike: Boolean = fal
         failPage?.let { throw it }
         pages++
         onPage()
+        check(where.endsWith(" AND _id > ?")) { "неожиданный WHERE: $where" }
         val after = args.last().toLong()
-        val pred: (String) -> Boolean = when (where) {
-            "(_data LIKE ? ESCAPE '\\' OR _data = ?) AND _id > ?" -> { d ->
-                sqliteLike(args[0], d, caseSensitiveLike) || d == args[1] }
-            "_data = ? AND _id > ?" -> { d -> d == args[0] }
-            else -> throw AssertionError("неожиданный WHERE: $where")
-        }
+        val pred = predicate(where.removeSuffix(" AND _id > ?"), args.copyOf(args.size - 1).requireNoNulls())
         return rows.entries.filter { it.key > after && pred(it.value) }.sortedBy { it.key }
             .take(limit).map { MediaRow(it.key, it.value) }
     }
 
-    override fun delete(ids: LongArray): Int {
+    private fun predicate(where: String, args: Array<String>): (String) -> Boolean = when (where) {
+        "(_data LIKE ? ESCAPE '\\' OR _data = ?)" -> { d ->
+            sqliteLike(args[0], d, caseSensitiveLike) || sqlEq(d, args[1], caseSensitiveLike) }
+        "_data = ?" -> { d -> sqlEq(d, args[0], caseSensitiveLike) }
+        else -> throw AssertionError("неожиданный WHERE: $where")
+    }
+
+    override fun delete(ids: LongArray, where: String, args: Array<String>): Int {
         deleteCalls += ids
         if (deleteCalls.size == failDeleteOnCall) throw SecurityException("нет доступа")
-        return ids.count { rows.remove(it) != null }
+        beforeDelete(this)
+        val pred = predicate(where, args)
+        return ids.count { id -> rows[id]?.let(pred) == true && rows.remove(id) != null }
     }
 
     companion object {
+        /** «=» по COLLATE NOCASE: ASCII-буквы без учёта регистра (с [cs] — точное сравнение). */
+        fun sqlEq(a: String, b: String, cs: Boolean = false): Boolean =
+            if (cs) a == b else a.length == b.length && a.indices.all { i ->
+                val x = a[i]; val y = b[i]
+                x == y || x.code < 128 && y.code < 128 && x.lowercaseChar() == y.lowercaseChar()
+            }
+
         /** SQLite LIKE с ESCAPE '\': по кодовым точкам; без [cs] ASCII-буквы сравниваются без регистра. */
         fun sqliteLike(pattern: String, s: String, cs: Boolean = false): Boolean {
             val p = pattern.codePoints().toArray()
@@ -135,7 +150,8 @@ class MediaBulkTest {
             val d = "$base/$n"
             val sel = MediaBulk.selection(d, dir)
             for (c in universe) {
-                val sqlHit = if (dir) FakeRows.sqliteLike(sel.args[0], c, cs) || c == sel.args[1] else c == sel.args[0]
+                val sqlHit = if (dir) FakeRows.sqliteLike(sel.args[0], c, cs) || FakeRows.sqlEq(c, sel.args[1], cs)
+                    else FakeRows.sqlEq(c, sel.args[0], cs)
                 val exp = expectedInside(c, d, dir)
                 // Без учёта регистра LIKE не теряет своих (надмножество)…
                 if (exp) assertTrue("LIKE потерял '$c' для '$d'", sqlHit)
@@ -186,6 +202,9 @@ class MediaBulkTest {
 
     @Test fun singleFileUsesExactRowOnly() {
         val fake = FakeRows(listOf("$base/a.jpg", "$base/a.jpg2", "$base/a.jpg/x", "$base/A.jpg"))
+        // COLLATE NOCASE: «=» выбирает и A.jpg — отсекает его только inside().
+        val sel = MediaBulk.pageSelection(MediaBulk.selection("$base/a.jpg", false), Long.MIN_VALUE)
+        assertEquals(listOf("$base/a.jpg", "$base/A.jpg"), fake.page(sel.where, sel.args, 10).map { it.data })
         val out = MediaBulk.run(fake, "$base/a.jpg", false, stopped = ::noStop) {}
         assertEquals(1L, out.deleted)
         assertEquals(listOf("$base/a.jpg2", "$base/a.jpg/x", "$base/A.jpg"), fake.rows.values.toList())
@@ -245,7 +264,7 @@ class MediaBulkTest {
             val inner = FakeRows((0 until 7).map { "$d/f$it" })
             var deletes = 0
             override fun page(where: String, args: Array<String>, limit: Int) = inner.page(where, args, limit)
-            override fun delete(ids: LongArray): Int { deletes++; return 0 }
+            override fun delete(ids: LongArray, where: String, args: Array<String>): Int { deletes++; return 0 }
         }
         val out = MediaBulk.run(fake, d, true, chunk = 3, stopped = ::noStop) {}
         assertNull(out.error)
@@ -257,7 +276,7 @@ class MediaBulkTest {
         val fake = object : MediaRows {
             override fun page(where: String, args: Array<String>, limit: Int) =
                 listOf(MediaRow(Long.MIN_VALUE, "$base/z/a"))
-            override fun delete(ids: LongArray) = 0
+            override fun delete(ids: LongArray, where: String, args: Array<String>) = 0
         }
         val out = MediaBulk.run(fake, "$base/z", true, chunk = 1, stopped = ::noStop) {}
         assertNotNull(out.error)
@@ -300,5 +319,59 @@ class MediaBulkTest {
             assertNull(p, MediaBulk.target(p.toByteArray(), viaRoot = false, fast = false))
         assertNull(MediaBulk.target("$base/".toByteArray() + byteArrayOf(0xff.toByte()), false, false))
         assertEquals("/storage/emulated/10/a", MediaBulk.cleanable("/storage/emulated/10/a".toByteArray()))
+    }
+
+    @Test fun rowRenamedBetweenPageAndDeleteSurvives() {
+        val d = "$base/r"
+        val fake = FakeRows(listOf("$d/a", "$d/b", "$d/c"))
+        // FUSE-переименование между запросом и удалением: _id тот же, _data — вне узла.
+        fake.beforeDelete = { f -> if (f.rows[2L] == "$d/b") f.rows[2L] = "$base/elsewhere/b" }
+        val out = MediaBulk.run(fake, d, true, stopped = ::noStop) {}
+        assertNull(out.error)
+        assertEquals(2L, out.deleted)
+        assertArrayEquals(longArrayOf(1L, 2L, 3L), fake.deleteCalls.single()) // id был в пачке…
+        assertEquals(mapOf(2L to "$base/elsewhere/b"), fake.rows.toMap())  // …но строка (и файл) целы
+    }
+
+    @Test fun renamedIntoSiblingPrefixSurvivesForFileToo() {
+        val f = "$base/x.jpg"
+        val fake = FakeRows(listOf(f))
+        fake.beforeDelete = { it.rows[1L] = "$base/x.jpg2" }
+        val out = MediaBulk.run(fake, f, false, stopped = ::noStop) {}
+        assertEquals(0L, out.deleted)
+        assertEquals(listOf("$base/x.jpg2"), fake.rows.values.toList())
+    }
+
+    @Test fun deleteRepeatsTheSelection() {
+        val fake = FakeRows(listOf("$base/s/a"))
+        var seen: Pair<String, List<String>>? = null
+        val rows = object : MediaRows {
+            override fun page(where: String, args: Array<String>, limit: Int) = fake.page(where, args, limit)
+            override fun delete(ids: LongArray, where: String, args: Array<String>): Int {
+                seen = where to args.toList(); return fake.delete(ids, where, args)
+            }
+        }
+        MediaBulk.run(rows, "$base/s", true, stopped = ::noStop) {}
+        assertEquals("(_data LIKE ? ESCAPE '\\' OR _data = ?)" to listOf("$base/s/%", "$base/s"), seen)
+    }
+
+    /** Дерево-подделка: id → (дети, флаги детей). */
+    private fun tree(vararg edges: Triple<Int, Int, Int>): (Int) -> Pair<IntArray, IntArray> = { nd ->
+        val e = edges.filter { it.first == nd }
+        e.map { it.second }.toIntArray() to e.map { it.third }.toIntArray()
+    }
+
+    @Test fun symlinkAnywhereInSubtreeIsFound() {
+        val t = tree(Triple(1, 2, F_DIR), Triple(1, 3, 0), Triple(2, 4, F_DIR), Triple(4, 5, F_SYMLINK),
+            Triple(9, 10, F_SYMLINK))
+        assertTrue(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, t))
+        assertTrue(MediaBulk.subtreeHas(4, F_DIR, F_SYMLINK, t))
+        assertFalse(MediaBulk.subtreeHas(2 + 1, 0, F_SYMLINK, t)) // файл
+        val clean = tree(Triple(1, 2, F_DIR), Triple(2, 3, 0), Triple(1, 4, F_HLDUP))
+        assertFalse(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, clean))
+        // сам узел — ссылка
+        assertTrue(MediaBulk.subtreeHas(7, F_SYMLINK, F_SYMLINK, tree()))
+        // у файла детей не спрашивают
+        assertFalse(MediaBulk.subtreeHas(8, 0, F_SYMLINK) { throw AssertionError("kids() у файла") })
     }
 }
