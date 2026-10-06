@@ -27,3 +27,8 @@ ancdu_test(test_session)
 ancdu_test(test_memfd)
 target_compile_definitions(test_memfd PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
 add_dependencies(test_memfd ancdu_scan)
+
+ancdu_test(test_shq)
+ancdu_test(test_root)
+target_compile_definitions(test_root PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
+add_dependencies(test_root ancdu_scan)

@@ -14,6 +14,8 @@ add_library(ancdu_core STATIC
   index.c
   rmtree.c
   session.c
+  session_root.c
+  shq.c
 )
 target_include_directories(ancdu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ancdu_core PUBLIC _GNU_SOURCE)

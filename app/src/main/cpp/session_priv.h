@@ -26,6 +26,7 @@ struct session {
   pid_t pid;
   int in_fd, out_fd, err_fd, mem_fd;
   _Atomic int used_memfd;
+  _Atomic int memfd_unavail; /* хелпер прислал ANCDU_MEMFD_UNAVAILABLE */
   pthread_t err_th;
   int have_err_th;
   _Atomic uint64_t p_files, p_bytes, p_errors;

@@ -3,6 +3,8 @@
 
 /* Сессия держит одно дерево: скан в процессе, root-скан, индекс или кэш. */
 typedef struct session session;
+/* У сессии один владелец: sess_wait и sess_free вызываются из одного потока
+ * и не должны гоняться друг с другом (параллельных ожидающих нет). */
 
 session *sess_scan_start(const char *root, int one_fs, int threads, int *err);
 /* prefix — {"su","-c",NULL} на устройстве, {"sh","-c",NULL} в тестах. */

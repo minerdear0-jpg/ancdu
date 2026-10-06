@@ -10,13 +10,18 @@
 
 #include "arena.h"
 #include "csr.h"
+#include "helper_proto.h"
+#include "rmtree.h"
 #include "scan.h"
 
-enum { MODE_SUMMARY, MODE_DUMP, MODE_MEMFD };
+enum { MODE_SUMMARY, MODE_DUMP, MODE_MEMFD, MODE_RM };
 
 static int usage(void) {
-  fputs("usage: libancdu_scan.so (--summary|--dump) --root DIR [--cross-fs] [--threads N]\n"
-        "       libancdu_scan.so --memfd PATH [--root DIR] [--cross-fs] [--threads N]\n",
+  fputs("usage: libancdu_scan.so (--summary|--dump) --root DIR [--cross-fs] [--threads N]"
+        " [--watch-stdin]\n"
+        "       libancdu_scan.so --memfd PATH [--root DIR] [--cross-fs] [--threads N]"
+        " [--watch-stdin]\n"
+        "       libancdu_scan.so --rm PATH\n",
         stderr);
   return 2;
 }
@@ -76,9 +81,20 @@ static void print_summary(const arena *a, int st) {
   }
 }
 
+/* Приложение закрывает наш stdin, чтобы отменить скан (работает и через su). */
+static void *watch_stdin(void *p) {
+  arena *a = p;
+  char buf[64];
+  while (read(STDIN_FILENO, buf, sizeof buf) > 0) {
+  }
+  atomic_store(&a->h->cancel, ANCDU_CANCEL_USER);
+  return NULL;
+}
+
 int main(int argc, char **argv) {
   const char *root = NULL, *memfd = NULL;
   int mode = -1, one_fs = 1, threads = 0;
+  int watch = 0;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--summary")) mode = MODE_SUMMARY;
     else if (!strcmp(argv[i], "--dump")) mode = MODE_DUMP;
@@ -86,19 +102,38 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--root") && i + 1 < argc) root = argv[++i];
     else if (!strcmp(argv[i], "--cross-fs")) one_fs = 0;
     else if (!strcmp(argv[i], "--threads") && i + 1 < argc) threads = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--rm") && i + 1 < argc) { mode = MODE_RM; root = argv[++i]; }
+    else if (!strcmp(argv[i], "--watch-stdin")) watch = 1;
     else return usage();
   }
   if (mode < 0 || (mode != MODE_MEMFD && !root)) return usage();
+  if (mode == MODE_RM) {
+    int r = rm_tree(root);
+    struct stat st;
+    if (r == 0 || (lstat(root, &st) != 0 && errno == ENOENT)) return 0;
+    fprintf(stderr, "rm: %s\n", strerror(-r));
+    return 5;
+  }
 
   arena a;
   if (mode == MODE_MEMFD) {
     int fd = open(memfd, O_RDWR | O_CLOEXEC);
-    if (fd < 0) { perror(memfd); return 1; }
+    if (fd < 0) {
+      fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": open %s: %s\n", memfd, strerror(errno));
+      return 1;
+    }
     struct stat st;
-    if (fstat(fd, &st) != 0) { perror("fstat"); return 1; }
+    if (fstat(fd, &st) != 0) {
+      fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": fstat: %s\n", strerror(errno));
+      return 1;
+    }
     void *base = mmap(NULL, (size_t)st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    int map_errno = errno;
     close(fd);
-    if (base == MAP_FAILED) { perror("mmap"); return 1; }
+    if (base == MAP_FAILED) {
+      fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": mmap: %s\n", strerror(map_errno));
+      return 1;
+    }
     if (arena_attach(&a, base, (size_t)st.st_size) != 0 || atomic_load(&a.h->count) != 0) {
       fputs("memfd: bad or non-empty arena\n", stderr);
       return 2;
@@ -119,6 +154,8 @@ int main(int argc, char **argv) {
   pthread_t pth;
   int have_progress = mode == MODE_DUMP && pthread_create(&pth, NULL, progress, &pj) == 0;
 
+  pthread_t wth;
+  if (watch && pthread_create(&wth, NULL, watch_stdin, &a) == 0) pthread_detach(wth);
   int st = scan_run(&a, &o);
   if (st == ST_DONE || st == ST_FULL) post_process(&a, o.threads);
   atomic_store(&a.h->finished_ns, ancdu_now_ns());
