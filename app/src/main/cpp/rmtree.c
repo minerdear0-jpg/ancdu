@@ -46,21 +46,29 @@ static int rm_at(int dfd, const char *name, dev_t dev, int depth) {
   return err;
 }
 
-int rm_tree(const char *path) {
+int rm_tree_target(const char *path, char *buf, size_t cap) {
   /* "link/" разыменовывается даже с AT_SYMLINK_NOFOLLOW/O_NOFOLLOW —
    * срезаем завершающие слеши, чтобы удалялась сама ссылка. */
-  char buf[PATH_MAX];
   size_t n = strlen(path);
   while (n > 1 && path[n - 1] == '/') n--;
-  if (n >= sizeof buf) return -ENAMETOOLONG;
+  if (n >= cap) return -ENAMETOOLONG;
   memcpy(buf, path, n);
   buf[n] = 0;
-  /* Последний компонент «.» или «..» обходит проверку точки монтирования ниже:
-   * у «/mnt/point/.» родитель — сама «/mnt/point», устройство то же. Отказ до любых
-   * lstat/open/unlink. */
+  /* Последний компонент «.» или «..» обходит проверку точки монтирования в rm_tree:
+   * у «/mnt/point/.» родитель — сама «/mnt/point», устройство то же. Пустой («/» или
+   * одни слеши, «») — корень ФС: родителя нет, удалять нечего и нельзя. */
   const char *slash = strrchr(buf, '/');
   const char *last = slash ? slash + 1 : buf;
-  if (strcmp(last, ".") == 0 || strcmp(last, "..") == 0) return -EINVAL;
+  if (!*last || strcmp(last, ".") == 0 || strcmp(last, "..") == 0) return -EINVAL;
+  return 0;
+}
+
+int rm_tree(const char *path) {
+  /* Отказ до любых lstat/open/unlink. */
+  char buf[PATH_MAX];
+  int v = rm_tree_target(path, buf, sizeof buf);
+  if (v) return v;
+  const char *slash = strrchr(buf, '/');
   struct stat st, pst;
   if (lstat(buf, &st) != 0) return -errno;
   /* Вершина — точка монтирования (или bind-файл): её устройство отличается от родителя. */

@@ -95,7 +95,28 @@ static void cross_fs(const char *t) {
   }
 }
 
+/* Только проверка пути, без ФС: rm_tree здесь не вызывается. «/» и одни слеши — пустой
+ * последний компонент, отказ -EINVAL (rm_tree делает эту проверку до любых lstat/unlink). */
+static void target_cases(void) {
+  char b[64];
+  const char *bad[] = {"/", "//", "///", "", ".", "..", "./", "a/.", "/x/..//"};
+  for (size_t i = 0; i < sizeof bad / sizeof *bad; i++) {
+    int r = rm_tree_target(bad[i], b, sizeof b);
+    if (r != -EINVAL) {
+      fprintf(stderr, "path not refused (%d): '%s'\n", r, bad[i]);
+      t_fail++;
+    }
+  }
+  CHECK(rm_tree_target("/x", b, sizeof b) == 0 && strcmp(b, "/x") == 0);
+  CHECK(rm_tree_target("/x//", b, sizeof b) == 0 && strcmp(b, "/x") == 0);
+  CHECK(rm_tree_target("/a/.b", b, sizeof b) == 0 && strcmp(b, "/a/.b") == 0);
+  CHECK(rm_tree_target("/a/...", b, sizeof b) == 0);
+  CHECK(rm_tree_target("rel", b, sizeof b) == 0 && strcmp(b, "rel") == 0);
+  CHECK(rm_tree_target("/0123456789", b, 8) == -ENAMETOOLONG);
+}
+
 int main(void) {
+  target_cases();
   const char *T = mk_tmp();
   char t[4096];
   snprintf(t, sizeof t, "%s", T);
