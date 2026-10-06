@@ -532,44 +532,57 @@ class BrowserTest {
     }
 
     /**
-     * «Стоп» посреди удаления: никакого диалога; дерево обновляется само до настоящего остатка,
-     * путь сохраняется.
+     * «Стоп» посреди удаления — без гонки: шаг перед ядром (шов bulk) сам удаляет K файлов,
+     * сообщает add(K) и ждёт, пока тест нажмёт «Стоп»; ядро уже не вызывается, итог -EINTR при
+     * done > 0. Никакого диалога; дерево обновляется само до настоящего остатка, путь сохраняется.
      */
     @Test fun stopMidDeleteRefreshesAndKeepsPath() {
         val ctx = ins.targetContext
         val dir = tmpDir("stop")
         val sub = File(dir, "a/sub").apply { mkdirs() }
-        for (d in 0 until 20) {
-            val dd = File(sub, "d$d").apply { mkdirs() }
-            for (k in 0 until 1000) File(dd, "f$k").writeBytes(ByteArray(1))
-        }
+        val files = (0 until 10).map { File(sub, "f$it.bin").apply { writeBytes(ByteArray(8192)) } }
+        val k = 4
         scan(dir)
         Perms.filesOverride = true
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
+        val deletedK = CountDownLatch(1)
+        val go = CountDownLatch(1)
         try {
             ins.runOnMainSync { act.list.source!!.click(0) }       // a/
             val i = index(act, "sub/")
             var r = Int.MIN_VALUE
-            val deleter = Thread { r = act.deleteBlocking(i) }.apply { start() }
-            // Сначала удаление началось (busy), затем ядро что-то удалило — тогда «Стоп».
-            assertTrue("удаление не началось", waitFor(30_000) { act.busy })
-            assertTrue(waitFor(30_000) { !act.busy || Holder.deleteProgress() > 0 })
-            ins.runOnMainSync { act.stopDelete() }
-            deleter.join(60_000)
+            val deleter = Thread {
+                r = act.deleteBlocking(i) { _, add ->
+                    // На io, абсолютные пути внутри своего mkdtemp-каталога.
+                    for (f in files.take(k)) check(f.absolutePath.startsWith(dir.absolutePath + "/") && f.delete())
+                    add(k.toLong())
+                    deletedK.countDown()
+                    go.await(30, TimeUnit.SECONDS)
+                }
+            }.apply { start() }
+            assertTrue("шаг не дошёл до K", deletedK.await(30, TimeUnit.SECONDS))
+            ins.runOnMainSync {
+                assertTrue(act.busy)
+                assertEquals(k.toLong(), Holder.deleteProgress())
+                act.stopDelete()
+            }
+            go.countDown()
+            deleter.join(30_000)
             assertFalse(deleter.isAlive)
-            assertTrue("удаление закончилось раньше «Стоп» — увеличьте фикстуру", r != 0)
             assertEquals(-DeleteProgress.EINTR, r)
             assertTrue(waitFor(30_000) { act.footerText.startsWith("освобождено ") })
             ins.runOnMainSync {
                 assertNull(act.lastAlert)
+                assertTrue(act.footerText.toString(), act.footerText.endsWith(" · остаток в списке"))
                 assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
             }
-            val left = if (sub.exists()) sub.walk().count().toLong() else -1L
-            assertEquals(left, items(act, "sub/"))                // остаток в дереве = остаток на диске
+            assertEquals(10 - k, sub.listFiles()!!.size)
+            assertEquals(1L + 10 - k, items(act, "sub/"))          // остаток в дереве = остаток на диске
             assertTrue(waitFor { !BgScan.active })
         } finally {
+            go.countDown()
             Perms.filesOverride = null
             ins.runOnMainSync { act.finish() }
             forgetCache(dir)

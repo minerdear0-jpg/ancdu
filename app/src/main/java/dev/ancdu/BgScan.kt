@@ -21,25 +21,22 @@ object BgScan {
     /** Скан дольше этого при отсутствии кэша — карточка показывает приблизительный индекс. */
     const val INDEX_AFTER_MS = 2000L
 
-    /** Цель скана: корень и режим su. */
-    private data class Target(val root: String, val su: Boolean)
-    private val STORAGE = Target(ROOT, false)
+    private val STORAGE = ScanTarget.STORAGE
 
     private val ui = Handler(Looper.getMainLooper())
     private var h = 0L
     /** Цель идущего (или последнего) скана. */
     private var cur = STORAGE
-    /** Цель пересканирования [rescan]. */
-    private var next = STORAGE
     private var app: Context? = null
     /** Удаление шло, пока скан шёл, — итог мог увидеть полуудалённое: выбросить и пересканировать. */
     private var dirty = false
     /**
-     * Пересканировать [next]: после идущего удаления или следом за идущим сканом другой цели.
-     * Слот ОДИН: каждая постановка в очередь заменяет прежнюю цель (последняя побеждает) — новее
-     * всегда то, что нужно сейчас; вытесненная цель повторится при следующем поводе.
+     * Очередь сканов: после идущего удаления или следом за идущим сканом другой цели. FIFO без
+     * повторов — постановка не вытесняет ждущие цели (обновление после удаления не теряется
+     * из-за второго удаления или скана главного экрана). su ставится только с согласия
+     * ([Swap.autoRoot] или прямой долгий тап через [refresh]).
      */
-    private var rescan = false
+    private val queue = ScanQueue()
     private var indexing = false
 
     /** Последний progress идущего (или последнего) скана — копия для экранов. */
@@ -53,9 +50,9 @@ object BgScan {
     /** Идёт скан именно общего хранилища без root (карточка главного экрана). */
     val storageRunning: Boolean get() = running && cur == STORAGE
     /** Скан общего хранилища идёт или ждёт в очереди — только он важен карточке и экрану attach. */
-    val storageActive: Boolean get() = storageRunning || (rescan && next == STORAGE)
+    val storageActive: Boolean get() = queue.active(STORAGE, if (running) cur else null)
     /** Идёт скан или ждёт пересканирование после удаления. */
-    val active: Boolean get() = h != 0L || rescan
+    val active: Boolean get() = h != 0L || !queue.isEmpty
 
     /** MainActivity между onResume и onPause. */
     var mainResumed = false
@@ -97,14 +94,14 @@ object BgScan {
     fun start(ctx: Context): Boolean {
         if (running && cur != STORAGE && !Holder.deleting && Perms.files()) {
             app = ctx.applicationContext
-            next = STORAGE; rescan = true
+            queue += STORAGE
             changed()
             return true
         }
         return start(ctx, STORAGE)
     }
 
-    private fun start(ctx: Context, t: Target): Boolean {
+    private fun start(ctx: Context, t: ScanTarget): Boolean {
         if (running || Holder.deleting || (!t.su && !Perms.files())) return false
         app = ctx.applicationContext
         val err = IntArray(1)
@@ -116,7 +113,7 @@ object BgScan {
             changed()
             return false
         }
-        h = nh; cur = t; dirty = false; rescan = false; failure = null; path = ""; p.fill(0)
+        h = nh; cur = t; queue.remove(t); dirty = false; failure = null; path = ""; p.fill(0)
         ui.post(poll)
         changed()
         return true
@@ -152,7 +149,7 @@ object BgScan {
         val d = Scans.finish(ctx, handle, t.root, t.su, p)
         publish(handle, t, if (t.su) Kind.ROOT else Kind.SCAN, (if (t.su) "root · скан" else "скан") + d.suffix, d.time)
         // Ждёт обновление другой цели (браузер) — следом; во время удаления — после него.
-        if (rescan && !Holder.deleting) restart()
+        if (!queue.isEmpty && !Holder.deleting) restart()
         changed()
     }
 
@@ -164,7 +161,7 @@ object BgScan {
         Holder.io.execute { Native.free(handle) }
         if (dirty) { discard(); return }
         if (cur == STORAGE && noTree()) startIndex()
-        if (rescan && !Holder.deleting) restart()
+        if (!queue.isEmpty && !Holder.deleting) restart()
         changed()
     }
 
@@ -173,14 +170,18 @@ object BgScan {
      * ([deleteStarted] ставит его, кроме su без выдачи), после удаления, если оно ещё идёт.
      */
     private fun discard() {
-        if (rescan && !Holder.deleting) restart()
+        if (!queue.isEmpty && !Holder.deleting) restart()
         changed()
     }
 
+    /** Следующая цель из очереди; не запустилась — следующая за ней. */
     private fun restart() {
-        rescan = false
         val ctx = app
-        if (ctx == null || !start(ctx, next)) changed()
+        while (true) {
+            val t = queue.pop() ?: break
+            if (ctx != null && start(ctx, t)) return
+        }
+        changed()
     }
 
     /**
@@ -189,7 +190,7 @@ object BgScan {
      * рывка дерева). Сессию другого корня или другого режима su фоновый скан сам не вытесняет:
      * тоже offer — подставит браузер (тот же корень и режим) или тап по карточке.
      */
-    private fun publish(handle: Long, t: Target, kind: Kind, label: String, time: Long) {
+    private fun publish(handle: Long, t: ScanTarget, kind: Kind, label: String, time: Long) {
         val visible = mainResumed || (attached > 0 && t == STORAGE)
         if (Swap.direct(visible, Holder.browsers, Holder.deleting, ownsHolder(t))) {
             Holder.set(handle, kind, t.root, label, t.su, time)
@@ -200,7 +201,7 @@ object BgScan {
     }
 
     /** В Holder пусто или дерево того же корня в том же режиме su — его можно заменить свежим. */
-    private fun ownsHolder(t: Target): Boolean = Holder.h == 0L || (Holder.root == t.root && Holder.viaRoot == t.su)
+    private fun ownsHolder(t: ScanTarget): Boolean = Holder.h == 0L || (Holder.root == t.root && Holder.viaRoot == t.su)
 
     /** В Holder ждёт дерево общего хранилища без root. */
     fun pendingStorage(): Boolean = Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, ROOT, false)
@@ -252,12 +253,12 @@ object BgScan {
     fun deleteStarted() {
         if (running) {
             dirty = true
-            if (Swap.autoRoot(cur.su, false, Root.state)) { next = cur; rescan = true }
+            if (Swap.autoRoot(cur.su, false, Root.state)) queue += cur
         }
         if (Holder.pending != 0L) {
-            val t = Target(Holder.pendingRoot, Holder.pendingViaRoot)
+            val t = ScanTarget(Holder.pendingRoot, Holder.pendingViaRoot)
             Holder.dropPending()
-            if (Swap.autoRoot(t.su, false, Root.state)) { next = t; rescan = true }
+            if (Swap.autoRoot(t.su, false, Root.state)) queue += t
         }
     }
 
@@ -268,10 +269,10 @@ object BgScan {
      * root-удаления (выдача только что использована) или если root выдан.
      */
     fun deleteFinished(r: Int) {
-        val t = Target(Holder.root, Holder.viaRoot)
+        val t = ScanTarget(Holder.root, Holder.viaRoot)
         if (Holder.h != 0L && DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress(), Holder.delDir) &&
-            Swap.autoRoot(t.su, Holder.delRoot, Root.state)) { next = t; rescan = true }
-        if (rescan && !running) restart()
+            Swap.autoRoot(t.su, Holder.delRoot, Root.state)) queue += t
+        if (!queue.isEmpty && !running) restart()
     }
 
     /**
@@ -281,10 +282,10 @@ object BgScan {
      * скан той же цели — его итог и есть обновление; другой — этот следом. false — не запущен.
      */
     fun refresh(ctx: Context, root: String, su: Boolean): Boolean {
-        val t = Target(root, su)
+        val t = ScanTarget(root, su)
         app = ctx.applicationContext
         if (running) {
-            if (cur != t) { next = t; rescan = true }
+            if (cur != t) queue += t
             return true
         }
         return start(ctx, t)
@@ -292,11 +293,11 @@ object BgScan {
 
     /**
      * Браузер отменил запрос листа (навигация, «назад», экран закрыт): ещё не начатое su-обновление
-     * [root] снимается с очереди — запрос Magisk бывает только прямым итогом долгого тапа.
+     * [t] снимается с очереди — запрос Magisk бывает только прямым итогом долгого тапа.
      */
-    fun unqueue(root: String, su: Boolean) {
-        if (su && rescan && next == Target(root, su)) {
-            rescan = false
+    fun unqueue(t: ScanTarget) {
+        if (t.su && t in queue) {
+            queue.remove(t)
             changed()
         }
     }

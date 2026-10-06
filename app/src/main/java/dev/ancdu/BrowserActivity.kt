@@ -360,7 +360,7 @@ class BrowserActivity : Activity() {
 
     /** Отменить ждущий лист; его su-обновление, ещё не начатое, снимается с очереди BgScan. */
     private fun cancelAsk() {
-        if (auto.cancelSheet()) BgScan.unqueue(Holder.root, Holder.viaRoot)
+        auto.cancelSheet()?.target?.let { BgScan.unqueue(it) }
     }
 
     /** Узел по байтам имён от корня в дереве [h] (файл или каталог). */
@@ -556,7 +556,7 @@ class BrowserActivity : Activity() {
             t = hit.node
         }
         if (blockReason(h, t, Native.str(Native.path(h, t))) == DeletePolicy.REFRESH_FAILED) {
-            auto.beforeDelete(pathNames(h, t), nameOf(t))
+            auto.beforeDelete(pathNames(h, t), nameOf(t), ScanTarget(Holder.root, Holder.viaRoot))
             if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { footer.text = DeleteProgress.REFRESHING; return }
             auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
@@ -682,7 +682,8 @@ class BrowserActivity : Activity() {
      * Главный поток. Удаляет узел [target] сессии [handle] — ровно ту пару, что показал диалог.
      * Завершение получает живой экземпляр через Holder (onDeleted), затем [done].
      */
-    private fun startDelete(handle: Long, target: Int, fast: Boolean = false, done: (Int) -> Unit = {}): Boolean {
+    private fun startDelete(handle: Long, target: Int, fast: Boolean = false, done: (Int) -> Unit = {},
+                            testBulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): Boolean {
         if (busy || isDestroyed) return false
         if (handle != Holder.h || handle != h) {
             alert("Удаление отменено", "Дерево сменилось, пока был открыт диалог. Ничего не удалено.") {
@@ -715,7 +716,7 @@ class BrowserActivity : Activity() {
         val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
         val rootFlags = inf[3].toInt()
         Holder.delete(handle, target, helper, done, name, items, disk, names = pathNames(handle, target), dir = dir, media = fast,
-            bulk = bulkPath?.let { p -> { stopped, add ->
+            bulk = testBulk ?: bulkPath?.let { p -> { stopped, add ->
                 // На io, под правилами delete: чтение дерева [handle] (экран его сейчас не читает).
                 // MediaProvider канонизирует путь перед unlink — ссылка в поддереве увела бы
                 // удаление за пределы узла.
@@ -744,12 +745,13 @@ class BrowserActivity : Activity() {
     }
 
     /** Для тестов: синхронное удаление строки i. Вызывать с тестового потока, не с главного. */
-    fun deleteBlocking(i: Int): Int {
+    /** [bulk] — для тестов: шаг вместо массового (на io до ядра), как у Holder.delete. */
+    fun deleteBlocking(i: Int, bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): Int {
         check(Looper.myLooper() != Looper.getMainLooper()) { "deleteBlocking на главном потоке" }
         var r = Int.MIN_VALUE
         val latch = CountDownLatch(1)
         runOnUiThread {
-            if (!startDelete(h, kids[i]) { r = it; latch.countDown() }) latch.countDown()
+            if (!startDelete(h, kids[i], done = { r = it; latch.countDown() }, testBulk = bulk)) latch.countDown()
         }
         check(latch.await(60, TimeUnit.SECONDS)) { "удаление не завершилось за 60 с" }
         return r

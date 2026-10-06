@@ -10,25 +10,28 @@ package dev.ancdu
 class AutoPromote {
     /**
      * [names] — путь узла: байты имён от корня (без корня), [name] — его имя для подвала;
-     * [delDisk] — размер удалённого узла на момент подтверждения; null — ждёт лист удаления.
+     * [delDisk] — размер удалённого узла на момент подтверждения; null — ждёт лист удаления;
+     * [target] — дерево, обновление которого ждёт запрос листа (его снять с очереди при отмене).
      */
-    class Request(val names: List<ByteArray>, val name: String, val delDisk: Long?)
+    class Request(val names: List<ByteArray>, val name: String, val delDisk: Long?, val target: ScanTarget? = null)
 
     var request: Request? = null
         private set
 
     fun afterDelete(names: List<ByteArray>, name: String, delDisk: Long) { request = Request(names, name, delDisk) }
-    fun beforeDelete(names: List<ByteArray>, name: String) { request = Request(names, name, null) }
+    fun beforeDelete(names: List<ByteArray>, name: String, target: ScanTarget) {
+        request = Request(names, name, null, target)
+    }
 
     /**
      * Навигация, «назад» или новый долгий тап: ждущий лист больше не нужен; итог удаления остаётся.
-     * true — отменён запрос листа (его обновление, если оно ещё в очереди, тоже не нужно).
+     * Возвращает отменённый запрос листа (его обновление, если оно ещё в очереди, тоже не нужно) или null.
      */
-    fun cancelSheet(): Boolean {
-        val r = request ?: return false
-        if (r.delDisk != null) return false
+    fun cancelSheet(): Request? {
+        val r = request ?: return null
+        if (r.delDisk != null) return null
         request = null
-        return true
+        return r
     }
 
     /** Подставить сейчас: флаг взведён, новое дерево ждёт, удаление не идёт, лист не открыт. */

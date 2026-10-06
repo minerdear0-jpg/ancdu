@@ -11,6 +11,8 @@ import org.junit.Test
 class AutoPromoteTest {
     private val path = listOf("DCIM".toByteArray(), "Camera".toByteArray())
     private val mib = 1L shl 20
+    /** Цель обновления запроса: своё дерево, не текущее Holder. */
+    private val t = ScanTarget("/data", true)
 
     private fun footer(o: AutoPromote.Outcome) = (o as AutoPromote.Outcome.Footer).text
 
@@ -51,7 +53,7 @@ class AutoPromoteTest {
     /** Долгий тап по каталогу кэша → обновление → лист того же каталога; пропал — подвал. */
     @Test fun askDeleteOnCacheRefreshesThenSheet() {
         val a = AutoPromote()
-        a.beforeDelete(path, "Camera")
+        a.beforeDelete(path, "Camera", t)
         assertTrue(a.ready(newer = true, busy = false, sheetOpen = false))
         val r = a.take()!!
         assertSame(AutoPromote.Outcome.Sheet, AutoPromote.outcome(r, exact = true, disk = 0))
@@ -61,14 +63,15 @@ class AutoPromoteTest {
     /** Навигация отменяет ждущий лист, но не итог удаления. */
     @Test fun navigationCancelsOnlyThePendingSheet() {
         val a = AutoPromote()
-        a.beforeDelete(path, "Camera")
-        assertTrue("отменён ждущий лист", a.cancelSheet())
+        a.beforeDelete(path, "Camera", t)
+        // отменён ждущий лист — вместе с целью его обновления (её и снять с очереди)
+        assertEquals(t, a.cancelSheet()!!.target)
         assertNull(a.request)
-        assertFalse("нечего отменять", a.cancelSheet())
+        assertNull("нечего отменять", a.cancelSheet())
         assertFalse(a.ready(newer = true, busy = false, sheetOpen = false))
 
         a.afterDelete(path, "Camera", mib)
-        assertFalse(a.cancelSheet())
+        assertNull(a.cancelSheet())
         assertTrue(a.ready(newer = true, busy = false, sheetOpen = false))
     }
 
@@ -76,7 +79,7 @@ class AutoPromoteTest {
     @Test fun oneFlagLastRequestWins() {
         val a = AutoPromote()
         a.afterDelete(path, "Camera", mib)
-        a.beforeDelete(listOf("Download".toByteArray()), "Download")
+        a.beforeDelete(listOf("Download".toByteArray()), "Download", t)
         assertNull(a.request!!.delDisk)
         assertEquals("Download", a.request!!.name)
     }
@@ -84,7 +87,7 @@ class AutoPromoteTest {
     /** Скан не удался: дерева нет, скан не идёт и не ждёт. */
     @Test fun refreshFailure() {
         val a = AutoPromote()
-        a.beforeDelete(path, "Camera")
+        a.beforeDelete(path, "Camera", t)
         assertFalse(a.failed(newer = true, refreshing = false))
         assertFalse(a.failed(newer = false, refreshing = true))
         assertTrue(a.failed(newer = false, refreshing = false))
