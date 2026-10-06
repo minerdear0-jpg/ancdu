@@ -17,7 +17,8 @@ const val F_DELETED = 32
 const val SRC_SCAN = 0
 const val SRC_INDEX = 1
 
-/** Мост к нативному ядру. Дескриптор 0 — ошибка (код в err[0]). Имена и пути — байты. */
+/** Мост к нативному ядру. Дескриптор 0 — ошибка (код в err[0]). Имена и пути — байты.
+ *  Потоки: чтения дерева — с главного потока, delete/saveCache/free — на Holder.io, никогда параллельно на одном h. */
 object Native {
     init { System.loadLibrary("ancdu") }
 

@@ -1,6 +1,13 @@
 package dev.ancdu
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
 
 /** Палитра макета. */
 object C {
@@ -25,3 +32,75 @@ object C {
 }
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+
+fun rounded(color: Int, radius: Float): GradientDrawable =
+    GradientDrawable().apply { setColor(color); cornerRadius = radius }
+
+fun Context.label(s: CharSequence, sp: Float = 15f, color: Int = C.TEXT, mono: Boolean = false,
+                  bold: Boolean = false): TextView = TextView(this).apply {
+    text = s
+    textSize = sp
+    setTextColor(color)
+    typeface = Typeface.create(if (mono) Typeface.MONOSPACE else Typeface.SANS_SERIF,
+        if (bold) Typeface.BOLD else Typeface.NORMAL)
+}
+
+private fun Context.spacer(w: Int, h: Int) = GradientDrawable().apply { setSize(w, h) }
+
+fun Context.vbox(gapDp: Int = 0): LinearLayout = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    if (gapDp > 0) { dividerDrawable = spacer(0, dp(gapDp)); showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE }
+}
+
+fun Context.hbox(gapDp: Int = 0): LinearLayout = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+    if (gapDp > 0) { dividerDrawable = spacer(dp(gapDp), 0); showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE }
+}
+
+private const val ON_ACCENT = 0xFF15120C.toInt()
+
+fun Context.chip(text: String, selected: Boolean, onClick: () -> Unit): TextView =
+    label(text, 13f, if (selected) ON_ACCENT else C.TEXT, mono = true, bold = selected).apply {
+        gravity = Gravity.CENTER
+        minHeight = dp(44); minWidth = dp(44)
+        setPadding(dp(12), 0, dp(12), 0)
+        background = rounded(if (selected) C.ACCENT else C.CHIP, dp(10).toFloat())
+        isClickable = true; isFocusable = true
+        setOnClickListener { onClick() }
+    }
+
+fun Context.action(title: String, sub: String?, primary: Boolean, onClick: () -> Unit): LinearLayout =
+    vbox().apply {
+        minimumHeight = dp(64)
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(18), dp(10), dp(18), dp(10))
+        background = rounded(if (primary) C.ACCENT else C.SURFACE, dp(14).toFloat())
+        addView(label(title, 16f, if (primary) ON_ACCENT else C.TEXT, bold = true))
+        if (sub != null) addView(label(sub, 12f, if (primary) 0xFF3A2E14.toInt() else C.MUTED, mono = true))
+        isClickable = true; isFocusable = true
+        contentDescription = if (sub != null) "$title, $sub" else title
+        setOnClickListener { onClick() }
+    }
+
+fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply {
+    gravity = Gravity.CENTER
+    minWidth = dp(44); minHeight = dp(44)
+    contentDescription = "Назад"
+    isClickable = true; isFocusable = true
+    setOnClickListener { onClick() }
+}
+
+fun Activity.darkBars() {
+    window.statusBarColor = C.BG
+    window.navigationBarColor = C.BG
+}
+
+fun Activity.alert(title: String, msg: String, ok: String = "OK", cancel: String? = null,
+                   onOk: () -> Unit = {}) {
+    AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        .setTitle(title).setMessage(msg)
+        .setPositiveButton(ok) { _, _ -> onOk() }
+        .apply { if (cancel != null) setNegativeButton(cancel, null) }
+        .show()
+}
