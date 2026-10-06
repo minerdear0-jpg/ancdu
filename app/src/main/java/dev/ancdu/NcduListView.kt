@@ -4,8 +4,9 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.Typeface
 import android.os.Bundle
+import android.text.TextPaint
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -52,7 +53,7 @@ class NcduListView(ctx: Context) : View(ctx) {
     /** TalkBack: подпись действия «долгое нажатие» на строках; null — без подписи. */
     var longClickLabel: CharSequence? = null
 
-    /** Высота строки: 56/64 dp, но растёт под крупный шрифт (sp), чтобы текст не обрезался. */
+    /** Высота строки: 48/64 dp, но растёт под крупный шрифт (sp), чтобы текст не обрезался. */
     val rowHeight: Int get() = if (withSub) rowSub else rowPlain
 
     var scroll = 0
@@ -73,27 +74,39 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val row = Row()
     private val scroller = OverScroller(ctx)
     private val pad = ctx.dp(16)
-    private val barW = ctx.dp(40)
+    private val one = ctx.dp(1)
+    private val barW = ctx.dp(64)
+    private val barH = ctx.dp(8)
     private val gap = ctx.dp(10)
     private fun sp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, context.resources.displayMetrics)
-    private val mono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Typeface.MONOSPACE; textSize = sp(14f); color = C.TEXT
+    private val mono = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Fonts.get(ctx, mono = true, bold = false); textSize = sp(14f); color = C.TEXT
     }
-    private val small = Paint(mono).apply { textSize = sp(12f); color = C.MUTED }
+    private val sizePaint = TextPaint(mono).apply { typeface = Fonts.get(ctx, mono = true, bold = true) }
+    private val small = TextPaint(mono).apply { textSize = sp(12f); color = C.MUTED }
+    private val pctPaint = TextPaint(small).apply { color = C.TEXT }
     // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
-    private val sizeW = maxOf(ctx.dp(76), Paint(mono).apply { isFakeBoldText = true }.measureText("1023.9 MiB").toInt())
-    private val pctW = maxOf(ctx.dp(40), small.measureText("100% ").toInt())
+    private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
+    private val pctW = maxOf(ctx.dp(34), pctPaint.measureText("100%").toInt())
     private val mainH = mono.fontMetricsInt.let { it.descent - it.ascent }
     private val subH = small.fontMetricsInt.let { it.descent - it.ascent }
     private val subGap = ctx.dp(2)
-    private val rowPlain = ListMath.rowHeight(ctx.dp(56), mainH, ctx.dp(8))
+    private val rowPlain = ListMath.rowHeight(ctx.dp(48), mainH, ctx.dp(8))
     private val rowSub = ListMath.rowHeight(ctx.dp(64), mainH + subGap + subH, ctx.dp(8))
     private val fill = Paint()
     private val tmp = Rect()
+    /** Нажатая строка (PANEL2 и амберная скобка слева); -1 — нет. */
+    private var pressed = -1
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val unpress = Runnable { pressed = -1 }
 
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean { scroller.forceFinished(true); return true }
+        override fun onShowPress(e: MotionEvent) {
+            pressed = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
+        }
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            pressed = -1
             scroll += dy.toInt(); return true
         }
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
@@ -103,6 +116,8 @@ class NcduListView(ctx: Context) : View(ctx) {
         }
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
+            // Короткий тап: нажатие видно ещё 100 мс после отпускания (см. onTouchEvent).
+            if (i >= 0) pressed = i
             if (i >= 0) { playSoundEffect(android.view.SoundEffectConstants.CLICK); source?.click(i) }
             return i >= 0
         }
@@ -124,7 +139,13 @@ class NcduListView(ctx: Context) : View(ctx) {
         if (a11yOn()) sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
     }
 
-    override fun onTouchEvent(e: MotionEvent): Boolean = gestures.onTouchEvent(e) || super.onTouchEvent(e)
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val r = gestures.onTouchEvent(e) || super.onTouchEvent(e)
+        if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+            removeCallbacks(unpress); postDelayed(unpress, 100)
+        }
+        return r
+    }
 
     override fun computeScroll() {
         if (scroller.computeScrollOffset()) { scroll = scroller.currY; postInvalidateOnAnimation() }
@@ -138,12 +159,22 @@ class NcduListView(ctx: Context) : View(ctx) {
         for (i in first..last) {
             row.reset()
             src.bind(i, row)
-            drawRow(c, i * rh - scroll, rh)
+            drawRow(c, i * rh - scroll, rh, i == pressed)
         }
     }
 
-    private fun drawRow(c: Canvas, top: Int, rh: Int) {
+    private fun drawRow(c: Canvas, top: Int, rh: Int, down: Boolean) {
         val w = width
+        if (down) {
+            fill.color = C.PANEL2
+            c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
+            // Маленькая амберная скобка «[» у левого края.
+            val bx = context.dp(4).toFloat(); val arm = context.dp(4).toFloat(); val inset = context.dp(8).toFloat()
+            fill.color = C.AMBER
+            c.drawRect(bx, top + inset, bx + one, top + rh - inset, fill)
+            c.drawRect(bx, top + inset, bx + arm, top + inset + one, fill)
+            c.drawRect(bx, top + rh - inset - one, bx + arm, top + rh - inset, fill)
+        }
         fill.color = C.LINE
         c.drawRect(0f, (top + rh - 1).toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
         // Блок текста (имя и, если есть, подпись) центрируется по вертикали строки.
@@ -154,40 +185,41 @@ class NcduListView(ctx: Context) : View(ctx) {
         val mid = blockTop + mainH / 2
         var x = pad
         // размер (по правому краю колонки)
-        mono.isFakeBoldText = true
-        mono.color = C.TEXT
-        val sw = mono.measureText(row.size)
-        c.drawText(row.size, x + sizeW - sw, base, mono)
-        mono.isFakeBoldText = false
+        val sw = sizePaint.measureText(row.size)
+        c.drawText(row.size, x + sizeW - sw, base, sizePaint)
         x += sizeW + gap
-        // полоса
-        val bh = context.dp(10)
-        val bt = (mid - bh / 2).toFloat()
-        fill.color = C.LINE
-        c.drawRect(x.toFloat(), bt, (x + barW).toFloat(), bt + bh, fill)
+        // полоса 64×8dp в контуре 1dp; заполнение > 0 — не меньше 1px
+        val bt = (mid - barH / 2).toFloat()
+        val inL = (x + one).toFloat(); val inW = (barW - 2 * one).toFloat()
         val segs = row.segs
         if (segs != null) {
-            var sx = x.toFloat()
-            val total = barW * row.bar
+            var sx = inL
+            val total = inW * row.bar
             for (k in segs.indices) {
                 val ww = total * segs[k]
                 fill.color = row.segColors?.getOrNull(k) ?: C.AMBER
-                c.drawRect(sx, bt, sx + ww, bt + bh, fill)
+                c.drawRect(sx, bt + one, sx + ww, bt + barH - one, fill)
                 sx += ww
             }
         } else {
             fill.color = row.barColor
-            c.drawRect(x.toFloat(), bt, x + barW * row.bar, bt + bh, fill)
+            val fw = if (row.bar > 0f) maxOf(inW * row.bar, 1f) else 0f
+            c.drawRect(inL, bt + one, inL + fw, bt + barH - one, fill)
         }
+        fill.color = C.FRAME
+        c.drawRect(x.toFloat(), bt, (x + barW).toFloat(), bt + one, fill)
+        c.drawRect(x.toFloat(), bt + barH - one, (x + barW).toFloat(), bt + barH, fill)
+        c.drawRect(x.toFloat(), bt, (x + one).toFloat(), bt + barH, fill)
+        c.drawRect((x + barW - one).toFloat(), bt, (x + barW).toFloat(), bt + barH, fill)
         x += barW + gap
-        // процент
-        c.drawText(row.pct, x.toFloat(), base, small)
-        x += pctW
-        // имя: метка не режется, имя — посередине (начало и конец видны)
+        // процент (по правому краю колонки)
+        c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
+        x += pctW + gap
+        // имя: метка не режется, имя — до конца строки с многоточием в конце
         mono.color = row.nameColor
         val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
         val avail = (w - pad - x).toFloat() - mono.measureText(mark)
-        c.drawText(mark + Ellipsis.middle(row.name, avail, mono::measureText), x.toFloat(), base, mono)
+        c.drawText(mark + TextUtils.ellipsize(row.name, mono, maxOf(avail, 0f), TextUtils.TruncateAt.END), x.toFloat(), base, mono)
         if (sub != null) {
             val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
             c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)

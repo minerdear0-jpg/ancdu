@@ -98,7 +98,7 @@ class BrowserActivity : LangActivity() {
     lateinit var gallery: TextView
         private set
     private val onClean: () -> Unit = { renderGallery() }
-    lateinit var chips: LinearLayout
+    lateinit var chips: Flow
         private set
     /** Шапка целиком: её высота не зависит от папки, сортировки, режима размера и чипа «новее». */
     lateinit var header: LinearLayout
@@ -114,8 +114,10 @@ class BrowserActivity : LangActivity() {
     private val onBg: () -> Unit = { refreshPending() }
     /** «Обновить сам, сохранив путь»: ждёт обновлённое дерево после удаления или перед листом. */
     private val auto = AutoPromote()
-    /** Обычная подсказка подвала текущего уровня (load). */
+    /** Обычная подсказка подвала текущего уровня (load); без жестов после первых сессий. */
     private var hint = ""
+    /** Показывать ли подсказку жестов (первые HINT_SESSIONS открытий браузера). */
+    private var showHint = true
 
     /**
      * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
@@ -158,7 +160,7 @@ class BrowserActivity : LangActivity() {
                     // запустилось — сразу итог по прежнему дереву (refreshFailed).
                     else -> {
                         auto.afterDelete(Holder.delNames, Holder.delName, Holder.delDisk)
-                        if (BgScan.active) footer.text = DeleteProgress.refreshing(txt)
+                        if (BgScan.active) setFooter(DeleteProgress.refreshing(txt))
                         else refreshFailed(auto.take()!!)
                     }
                 }
@@ -167,11 +169,17 @@ class BrowserActivity : LangActivity() {
         }
     }
 
+    /** Текст подвала; пустой — подвал скрыт. */
+    private fun setFooter(text: CharSequence) {
+        footer.text = text
+        footer.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+    }
+
     /** Подвал: [text] на 4 с, затем обычная подсказка. */
     private fun note(text: String) {
-        footer.text = text
+        setFooter(text)
         ui.removeCallbacks(restoreFooter)
-        restoreFooter = Runnable { if (footer.text.toString() == text) footer.text = idleFooter() }
+        restoreFooter = Runnable { if (footer.text.toString() == text) setFooter(idleFooter()) }
         ui.postDelayed(restoreFooter, 4000)
     }
 
@@ -204,7 +212,7 @@ class BrowserActivity : LangActivity() {
             row.bar = ListMath.bar(v, maxV)
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
             row.barColor = if (dir) C.AMBER else C.BLUE
-            row.nameColor = if (dir) C.TEXT else 0xFFB8C7D9.toInt()
+            row.nameColor = if (dir) C.TEXT else C.BLUE_HI
             when {
                 flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.AMBER }
                 flags and F_OTHERFS != 0 -> row.mark = "↪"
@@ -236,15 +244,14 @@ class BrowserActivity : LangActivity() {
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
-        val top = vbox(12).also { header = it }.apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
-        title = label("", 20f, C.TEXT, bold = true).apply {
+        val top = vbox(8).also { header = it }.apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
+        title = label("", 22f, C.TEXT, bold = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
         }
         crumbs = hbox()
+        // Путь предков (mono 12sp). На корне путь — в заголовке: строка крошек схлопывается (GONE).
         crumbScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            // На корне крошек нет (путь — в заголовке): строка не схлопывается, шапка не прыгает.
-            minimumHeight = dp(44)
             addView(crumbs)
         }
         top.addView(hbox(4).apply {
@@ -262,17 +269,18 @@ class BrowserActivity : LangActivity() {
         badge = label("", 12f, C.AMBER, mono = true).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END
         }
-        newer = label(txt.s(R.string.newer_chip), 12f, C.INK, mono = true, bold = true).apply {
+        newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44)
-            setPadding(dp(10), 0, dp(10), 0)
+            setPadding(dp(12), 0, dp(12), 0)
             background = box(C.AMBER)
             isClickable = true; isFocusable = true
             contentDescription = txt.s(R.string.newer_desc)
             setOnClickListener { promotePending() }
             visibility = View.GONE
         }
-        chips = hbox(6)
+        // «СОРТИРОВКА [РАЗМЕР|ИМЯ]» и справа [НА ДИСКЕ|ВИДИМЫЙ]; не влезают в строку — переносятся.
+        chips = Flow(this, dp(12), dp(8), endLast = true)
         top.addView(vbox().apply {
             setPadding(dp(8), 0, 0, 0)
             addView(summary, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -290,7 +298,10 @@ class BrowserActivity : LangActivity() {
             setPadding(dp(24), 0, dp(24), 0)
             visibility = View.GONE
         }
-        footer = label("", 12f, C.MUTED, mono = true).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) }
+        footer = label("", 12f, C.MUTED, mono = true).apply {
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            visibility = View.GONE
+        }
         gallery = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), 0, dp(16), dp(10))
             visibility = View.GONE
@@ -298,6 +309,7 @@ class BrowserActivity : LangActivity() {
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(top)
+            hairline()
             addView(FrameLayout(this@BrowserActivity).apply {
                 addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
                 addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -305,6 +317,11 @@ class BrowserActivity : LangActivity() {
             addView(footer)
             addView(gallery)
         })
+        // Подсказка подвала — только первые HINT_SESSIONS открытий браузера (не пересозданий).
+        val ui = getSharedPreferences(LangPrefs.PREFS, MODE_PRIVATE)
+        val sessions = ui.getInt(K_SESSIONS, 0) + if (savedInstanceState == null) 1 else 0
+        if (savedInstanceState == null) ui.edit().putInt(K_SESSIONS, sessions).apply()
+        showHint = sessions <= HINT_SESSIONS
         Holder.addDeleteListener(onDeleted)
         MediaClean.addListener(onClean)
         renderGallery()
@@ -385,7 +402,7 @@ class BrowserActivity : LangActivity() {
      */
     private fun refreshFailed(r: AutoPromote.Request) {
         Log.i("ancdu", "tree refresh failed: ${BgScan.failure}")
-        footer.text = hint
+        setFooter(hint)
         val hit = resolveNode(r.names)
         if (r.delDisk != null) {
             val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
@@ -420,6 +437,8 @@ class BrowserActivity : LangActivity() {
         const val S_SORT = "sort"
         const val S_APPARENT = "apparent"
         const val S_SCROLL = "scroll"
+        const val K_SESSIONS = "browser_sessions"
+        const val HINT_SESSIONS = 3
     }
 
     /**
@@ -486,19 +505,30 @@ class BrowserActivity : LangActivity() {
         gallery.text = txt.s(R.string.gallery_cleaning, Fmt.count(MediaClean.cleaned, txt.locale))
     }
 
-    /** Не setSingleLine: он делает setLines(1) и затирает minHeight (общее поле mMinimum) — чип стал бы плоским. */
-    private fun TextView.oneLine() { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+    /** Сегменты сортировки и режима размера (пересоздаются в renderChips). */
+    private var sortSeg: LinearLayout? = null
+    private var sizeSeg: LinearLayout? = null
+
+    /** Для тестов: тексты сегментов сортировки, затем режима размера (как в ресурсах). */
+    fun segmentTexts(): List<String> = listOfNotNull(sortSeg, sizeSeg).flatMap { g ->
+        (0 until g.childCount).map { (g.getChildAt(it) as TextView).text.toString() }
+    }
+
+    /** Для тестов: все сегменты (касания 44dp). */
+    fun segments(): List<View> = listOfNotNull(sortSeg, sizeSeg).flatMap { g -> (0 until g.childCount).map { g.getChildAt(it) } }
 
     private fun renderChips() {
         chips.removeAllViews()
-        // Равные веса: ширина чипов не зависит от текста. Зазор — SHOW_DIVIDER_MIDDLE у hbox(6).
-        val lp = { LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f) }
-        chips.addView(chip(txt.s(R.string.sort_size), sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { oneLine() }, lp())
-        chips.addView(chip(txt.s(R.string.sort_name), sort == SORT_NAME) { setSort(SORT_NAME) }.apply { oneLine() }, lp())
-        chips.addView(chip(txt.s(if (apparent) R.string.size_apparent else R.string.size_disk), false) { setApparent(!apparent) }.apply {
-            oneLine()
-            contentDescription = txt.s(if (apparent) R.string.size_desc_apparent else R.string.size_desc_disk)
-        }, lp())
+        val sorts = segmented(listOf(txt.s(R.string.sort_size), txt.s(R.string.sort_name)),
+            if (sort == SORT_NAME) 1 else 0, amber = true) { setSort(if (it == 1) SORT_NAME else SORT_SIZE) }
+        val sizes = segmented(listOf(txt.s(R.string.size_disk), txt.s(R.string.size_apparent)),
+            if (apparent) 1 else 0, amber = false) { setApparent(it == 1) }
+        sortSeg = sorts; sizeSeg = sizes
+        chips.addView(hbox(10).apply {
+            addView(caps(txt.s(R.string.sort_label)))
+            addView(sorts)
+        })
+        chips.addView(sizes)
     }
 
     fun setSort(k: Int) { if (busy) return; sort = k; load(node, 0) }
@@ -526,10 +556,9 @@ class BrowserActivity : LangActivity() {
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
         badge.text = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
-        badge.setTextColor(if (full) C.AMBER else C.AMBER)
-        hint = txt.s(R.string.browser_hint) +
-            if (p[3] > 0) "   ⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else ""
-        footer.text = idleFooter()
+        hint = listOfNotNull(if (showHint) txt.s(R.string.browser_hint) else null,
+            if (p[3] > 0) "⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else null).joinToString("   ")
+        setFooter(idleFooter())
         renderChips()
         refreshPending()
         list.refresh()
@@ -565,6 +594,7 @@ class BrowserActivity : LangActivity() {
                 setOnClickListener { jumpTo(nd) }
             })
         }
+        crumbScroll.visibility = if (node == 0) View.GONE else View.VISIBLE
         crumbScroll.post { crumbScroll.fullScroll(View.FOCUS_RIGHT) }
     }
 
@@ -611,7 +641,7 @@ class BrowserActivity : LangActivity() {
         }
         if (blockReason(h, t, Native.str(Native.path(h, t))) == Block.REFRESH_FAILED) {
             auto.beforeDelete(pathNames(h, t), nameOf(t), ScanTarget(Holder.root, Holder.viaRoot))
-            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { footer.text = DeleteProgress.refreshing(txt); return }
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { setFooter(DeleteProgress.refreshing(txt)); return }
             auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
         }
@@ -674,7 +704,7 @@ class BrowserActivity : LangActivity() {
 
     private fun showWait() {
         list.source = null
-        footer.text = txt.s(R.string.deleting)
+        setFooter(txt.s(R.string.deleting))
         dismissWait()
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false

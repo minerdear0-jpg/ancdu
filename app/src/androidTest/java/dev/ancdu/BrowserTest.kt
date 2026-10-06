@@ -283,7 +283,11 @@ class BrowserTest {
     private fun tmpDir(prefix: String): File =
         java.nio.file.Files.createTempDirectory(ins.targetContext.cacheDir.toPath(), prefix).toFile()
 
-    /** Высота шапки не зависит от папки, сортировки, режима размера («на диске»/«видимый») и чипа «новее». */
+    /**
+     * Высота шапки не зависит от сортировки, режима размера («на диске»/«видимый»), плашки и чипа
+     * «новее». На корне строки крошек нет (путь — в заголовке): шапка ниже, без пустого зазора;
+     * во вложенных папках высота одна и та же.
+     */
     @Test fun headerHeightIsStable() {
         val ctx = ins.targetContext
         val dir = tmpDir("hdr")
@@ -299,10 +303,10 @@ class BrowserTest {
             val h0 = height()
             ins.runOnMainSync {
                 val min = (44 * ctx.resources.displayMetrics.density).toInt()
-                val kids = (0 until act.chips.childCount).map { act.chips.getChildAt(it) }
-                assertEquals(3, kids.size)
-                kids.forEach { assertTrue("чип ниже 44dp: ${it.height}", it.height >= min) }
-                assertEquals(1, kids.map { it.width }.distinct().size)
+                val segs = act.segments()
+                assertEquals(4, segs.size)
+                segs.forEach { assertTrue("сегмент ниже 44dp: ${it.height}", it.height >= min) }
+                assertEquals(listOf(true, false, true, false), segs.map { it.isSelected })
             }
             assertTrue("шапка не измерена", h0 > 0)
             ins.runOnMainSync { act.setApparent(true) }
@@ -313,18 +317,22 @@ class BrowserTest {
             assertEquals("на диске", h0, height())
             ins.runOnMainSync { act.list.source!!.click(0) }   // sub/ (по имени: sub < z.bin)
             assertNotEquals(0, act.node)
-            assertEquals("вложенная папка", h0, height())
+            val h1 = height()
+            assertTrue("на корне строка крошек не схлопнута: $h0 >= $h1", h0 < h1)
+            ins.runOnMainSync { act.list.source!!.click(0) }   // sub/deep/
+            assertEquals("вторая вложенная папка", h1, height())
+            ins.runOnMainSync { act.onBackPressed() }
             ins.runOnMainSync { act.setApparent(true) }
-            assertEquals("вложенная папка, видимый", h0, height())
+            assertEquals("вложенная папка, видимый", h1, height())
 
             val h2 = scanned(dir)
             ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, false); act.refreshPending() }
             ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
-            assertEquals("с чипом «новее»", h0, height())
+            assertEquals("с чипом «новее»", h1, height())
             // Самая длинная плашка рядом с чипом переносится (до 2 строк), не обрезается; две строки
             // 12sp ниже 44dp строки чипа — высота шапки та же.
             ins.runOnMainSync { act.badge.text = Badge.text(act.tx, Kind.ROOT, 0L, 12_300L, true) }
-            assertEquals("длинная плашка с чипом", h0, height())
+            assertEquals("длинная плашка с чипом", h1, height())
             ins.runOnMainSync {
                 val l = act.badge.layout
                 assertEquals(act.badge.text.toString(), 0, l.getEllipsisCount(l.lineCount - 1))

@@ -52,15 +52,16 @@ class AppsActivity : LangActivity() {
         }
         askBox = vbox(16).apply {
             setPadding(dp(16), dp(8), dp(16), dp(24))
-            addView(label(tx.s(R.string.usage_explain), 15f))
+            addView(label(tx.s(R.string.usage_explain), 14f))
             addView(action(tx.s(R.string.open_settings), tx.s(R.string.usage_settings_sub), true) {
                 Perms.askUsage(this@AppsActivity)
             })
         }
-        errorText = label("", 15f, C.AMBER).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
+        errorText = label("", 14f, C.AMBER).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(header())
+            hairline()
             addView(listBox, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(askBox)
             addView(errorText)
@@ -109,13 +110,13 @@ class AppsActivity : LangActivity() {
     private fun header(): LinearLayout = hbox(8).apply {
         setPadding(dp(8), dp(12), dp(16), dp(8))
         addView(backButton { finish() })
-        addView(label(tx.s(R.string.apps_title), 20f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(label(tx.s(R.string.apps_title), 22f, bold = true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         title = label("…", 13f, C.MUTED, mono = true)
         addView(title)
     }
 
     private fun legend(): LinearLayout = hbox(16).apply {
-        setPadding(dp(16), 0, dp(16), dp(10))
+        setPadding(dp(16), dp(10), dp(16), dp(10))
         for ((c, t) in listOf(C.BLUE to "APK", C.AMBER to tx.s(R.string.legend_data), C.MUTED to tx.s(R.string.legend_cache))) {
             val s = android.text.SpannableString("■ $t")
             s.setSpan(android.text.style.ForegroundColorSpan(c), 0, 1, 0)

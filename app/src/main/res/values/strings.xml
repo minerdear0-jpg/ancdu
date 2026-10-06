@@ -120,12 +120,11 @@
     <string name="newer_desc">A newer tree is ready — refresh</string>
     <string name="long_click_label">Delete or details</string>
     <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
+    <string name="sort_label">Sort</string>
     <string name="sort_size">size</string>
     <string name="sort_name">name</string>
     <string name="size_apparent">apparent</string>
     <string name="size_disk">on disk</string>
-    <string name="size_desc_apparent">Size: apparent; tap for on disk</string>
-    <string name="size_desc_disk">Size: on disk; tap for apparent</string>
     <string name="folder_empty">empty</string>
     <string name="folder_no_access">⚠ no access</string>
     <string name="browser_hint">tap — open · long press — details, delete</string>

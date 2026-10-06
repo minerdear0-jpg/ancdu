@@ -111,12 +111,11 @@
     <string name="newer_desc">Есть более новое дерево — обновить</string>
     <string name="long_click_label">Удалить или подробнее</string>
     <string name="gallery_cleaning">галерея: очистка %1$s…</string>
+    <string name="sort_label">Сортировка</string>
     <string name="sort_size">размер</string>
     <string name="sort_name">имя</string>
     <string name="size_apparent">видимый</string>
     <string name="size_disk">на диске</string>
-    <string name="size_desc_apparent">Размер: видимый; нажмите — на диске</string>
-    <string name="size_desc_disk">Размер: на диске; нажмите — видимый</string>
     <string name="folder_empty">пусто</string>
     <string name="folder_no_access">⚠ нет доступа</string>
     <string name="browser_hint">тап — открыть · долгий — подробнее, удалить</string>

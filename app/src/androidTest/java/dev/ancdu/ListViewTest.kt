@@ -2,7 +2,6 @@ package dev.ancdu
 
 import android.content.res.Configuration
 import android.graphics.Paint
-import android.graphics.Typeface
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.MotionEvent
@@ -85,7 +84,7 @@ class ListViewTest {
         assertTrue(hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
     }
 
-    /** Крупный шрифт: строка не меньше 56 dp и вмещает текст (sp) с отступами 8 dp. */
+    /** Крупный шрифт: строка не меньше 48 dp и вмещает текст (sp) с отступами 8 dp. */
     @Test fun rowsFitLargeFonts() {
         val base = ins.targetContext
         for (scale in listOf(1.0f, 1.3f, 2.0f)) {
@@ -94,10 +93,10 @@ class ListViewTest {
             lateinit var v: NcduListView
             ins.runOnMainSync { v = NcduListView(ctx) }
             val textH = Paint().apply {
-                typeface = Typeface.MONOSPACE
+                typeface = Fonts.get(ctx, mono = true, bold = false)
                 textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, ctx.resources.displayMetrics)
             }.fontMetricsInt.let { it.descent - it.ascent }
-            assertTrue("scale=$scale", v.rowHeight >= ctx.dp(56))
+            assertTrue("scale=$scale", v.rowHeight >= ctx.dp(48))
             assertTrue("scale=$scale: ${v.rowHeight} < $textH + 16dp", v.rowHeight >= textH + 2 * ctx.dp(8))
         }
     }

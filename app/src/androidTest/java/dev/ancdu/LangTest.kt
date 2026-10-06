@@ -104,8 +104,7 @@ class LangTest {
         return a
     }
 
-    private fun chips(b: BrowserActivity): List<String> =
-        (0 until b.chips.childCount).map { (b.chips.getChildAt(it) as android.widget.TextView).text.toString() }
+    private fun chips(b: BrowserActivity): List<String> = b.segmentTexts()
 
     private fun check(lang: String, main: List<String>, chips: List<String>, unit: String) {
         setLang(lang)
@@ -136,10 +135,10 @@ class LangTest {
     }
 
     @Test fun englishScreens() =
-        check("en", listOf("Shared storage", "EN ▾", "scan", "folder"), listOf("size", "name", "on disk"), "KiB")
+        check("en", listOf("Shared storage", "EN ▾", "scan", "folder"), listOf("size", "name", "on disk", "apparent"), "KiB")
 
     @Test fun russianScreens() =
-        check("ru", listOf("Общее хранилище", "RU ▾", "скан", "каталог"), listOf("размер", "имя", "на диске"), "КиБ")
+        check("ru", listOf("Общее хранилище", "RU ▾", "скан", "каталог"), listOf("размер", "имя", "на диске", "видимый"), "КиБ")
 
     /** RU: одна/несколько/много для 1, 2, 5, 21, 761 (ICU устройства, не JVM-правила). */
     @Test fun russianPlurals() {
@@ -212,7 +211,7 @@ class LangTest {
                 assertEquals(h, Holder.h)
                 assertEquals(node, n.node)
                 assertEquals("sub", n.title.text.toString())
-                assertEquals(listOf("размер", "имя", "на диске"), chips(n))
+                assertEquals(listOf("размер", "имя", "на диске", "видимый"), chips(n))
                 val row = Row().also { n.list.source!!.bind(0, it) }
                 assertEquals("a.bin", row.name)       // по имени: a.bin < deep/
                 n.finish()

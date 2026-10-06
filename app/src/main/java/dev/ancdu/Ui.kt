@@ -148,16 +148,16 @@ fun Context.chip(text: String, selected: Boolean, onClick: () -> Unit): TextView
 fun Context.segmented(options: List<String>, selected: Int, amber: Boolean, onPick: (Int) -> Unit): LinearLayout =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        background = box(Color.TRANSPARENT, C.FRAME)
+        // Контур — поверх сегментов (foreground): заливка выбранного его не закрывает.
+        foreground = box(Color.TRANSPARENT, C.FRAME)
         val one = dp(1)
-        setPadding(one, one, one, one)
         dividerDrawable = GradientDrawable().apply { setColor(C.FRAME); setSize(one, 0) }
         showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
         for ((i, o) in options.withIndex()) {
             val on = i == selected
             addView(caps(o, if (on) (if (amber) C.INK else C.TEXT) else C.MUTED).apply {
                 gravity = Gravity.CENTER
-                minHeight = dp(42); minWidth = dp(44)   // + контур 2 × 1dp = 44dp
+                minHeight = dp(44); minWidth = dp(44)
                 maxLines = 1
                 setPadding(dp(14), 0, dp(14), 0)
                 background = if (on) box(if (amber) C.AMBER else C.PANEL2) else pressable(Color.TRANSPARENT)
