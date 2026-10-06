@@ -70,3 +70,8 @@ static char *mk_tmp(void) {
   if (!mkdtemp(p)) { perror("mkdtemp"); exit(2); }
   return p;
 }
+
+#include "rmtree.h"
+static void rm_dir_tree_for_tests(const char *p) {
+  if (rm_tree(p) != 0) fprintf(stderr, "cleanup failed: %s\n", p);
+}
