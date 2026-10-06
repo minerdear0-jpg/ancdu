@@ -43,8 +43,8 @@ object BgScan {
     val p = LongArray(6)
     /** Текущий путь идущего скана (из того же progress). */
     var path = ""; private set
-    /** Текст ошибки последнего скана; null — последний закончился удачно или идёт. */
-    var failure: String? = null; private set
+    /** Ошибка последнего скана (текст — [NativeErr.text]); null — последний закончился удачно или идёт. */
+    var failure: ScanFail? = null; private set
 
     val running: Boolean get() = h != 0L
     /** Идёт скан именно общего хранилища без root (карточка главного экрана). */
@@ -109,7 +109,7 @@ object BgScan {
         val nh = if (t.su) Native.rootStart(Root.helper(ctx), t.root, true, Root.memfdAllowed(ctx), err)
                  else Native.scanStart(t.root, true, 0, err)
         if (nh == 0L) {
-            failure = "Скан не запущен: код ошибки ${err[0]}"
+            failure = ScanFail(err[0]).also { NativeErr.log("bgscan start", it) }
             changed()
             return false
         }
@@ -147,7 +147,7 @@ object BgScan {
         val t = cur
         if (t.su) { Root.rememberMemfd(ctx, p[5] == 1L); Root.granted(ctx) }
         val d = Scans.finish(ctx, handle, t.root, t.su, p)
-        publish(handle, t, if (t.su) Kind.ROOT else Kind.SCAN, (if (t.su) "root · скан" else "скан") + d.suffix, d.time)
+        publish(handle, t, if (t.su) Kind.ROOT else Kind.SCAN, d.time, d.ms)
         // Ждёт обновление другой цели (браузер) — следом; во время удаления — после него.
         if (!queue.isEmpty && !Holder.deleting) restart()
         changed()
@@ -157,7 +157,7 @@ object BgScan {
         h = 0L
         log("failed")
         // Скан закончился — владелец читает текст ошибки, затем дескриптор уходит на io.
-        failure = Native.str(Native.error(handle)).ifEmpty { "неизвестная ошибка" }
+        failure = ScanFail(0, Native.str(Native.error(handle))).also { NativeErr.log("bgscan", it) }
         Holder.io.execute { Native.free(handle) }
         if (dirty) { discard(); return }
         if (cur == STORAGE && noTree()) startIndex()
@@ -191,13 +191,13 @@ object BgScan {
      * рывка дерева). Сессию другого корня или другого режима su фоновый скан сам не вытесняет:
      * тоже offer — подставит браузер (тот же корень и режим) или тап по карточке.
      */
-    private fun publish(handle: Long, t: ScanTarget, kind: Kind, label: String, time: Long) {
+    private fun publish(handle: Long, t: ScanTarget, kind: Kind, time: Long, ms: Long) {
         val visible = mainResumed || (attached > 0 && t == STORAGE)
         if (Swap.direct(visible, Holder.browsers, Holder.deleting, ownsHolder(t))) {
-            Holder.set(handle, kind, t.root, label, t.su, time)
+            Holder.set(handle, kind, t.root, t.su, time, ms)
             if (Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, t.root, t.su)) Holder.dropPending()
         } else {
-            Holder.offer(handle, kind, t.root, label, t.su, time)
+            Holder.offer(handle, kind, t.root, t.su, time, ms)
         }
     }
 
@@ -240,7 +240,7 @@ object BgScan {
                 }
                 if (!noTree()) { Holder.io.execute { Native.free(ih) }; return@post }
                 // У индекса нет времени скана: карточка не скажет «только что».
-                publish(ih, STORAGE, Kind.INDEX, "индекс · приблизительно", 0L)
+                publish(ih, STORAGE, Kind.INDEX, 0L, -1L)
                 changed()
             }
         }, "ancdu-index").apply { isDaemon = true }.start()

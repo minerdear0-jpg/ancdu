@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="unit_b">Б</string>
+    <string name="unit_kib">КиБ</string>
+    <string name="unit_mib">МиБ</string>
+    <string name="unit_gib">ГиБ</string>
+    <string name="unit_tib">ТиБ</string>
+    <string name="unit_pib">ПиБ</string>
+    <string name="unit_s">с</string>
+    <string name="rate_per_s">%1$s/с</string>
+
+    <string name="fmt_day">dd.MM</string>
+    <string name="fmt_day_time">dd.MM HH:mm</string>
+
+    <plurals name="items">
+        <item quantity="one">%1$s эл.</item>
+        <item quantity="few">%1$s эл.</item>
+        <item quantity="many">%1$s эл.</item>
+        <item quantity="other">%1$s эл.</item>
+    </plurals>
+    <plurals name="items_long">
+        <item quantity="one">%1$s элемент</item>
+        <item quantity="few">%1$s элемента</item>
+        <item quantity="many">%1$s элементов</item>
+        <item quantity="other">%1$s элемента</item>
+    </plurals>
+    <plurals name="files">
+        <item quantity="one">%1$s файл</item>
+        <item quantity="few">%1$s файла</item>
+        <item quantity="many">%1$s файлов</item>
+        <item quantity="other">%1$s файла</item>
+    </plurals>
+    <plurals name="errors">
+        <item quantity="one">%1$s ошибка</item>
+        <item quantity="few">%1$s ошибки</item>
+        <item quantity="many">%1$s ошибок</item>
+        <item quantity="other">%1$s ошибки</item>
+    </plurals>
+
+    <string name="back">Назад</string>
+    <string name="cancel">Отмена</string>
+    <string name="close">Закрыть</string>
+    <string name="open_settings">Открыть настройки</string>
+    <string name="unknown_error">неизвестная ошибка</string>
+
+    <string name="apps_title">Приложения</string>
+    <string name="apps_all">все →</string>
+    <string name="apps_no_access">Приложения: нет доступа</string>
+    <string name="apps_no_access_sub">нужен доступ к истории использования · подробнее →</string>
+    <string name="last_scan">Последний скан: %1$s</string>
+    <string name="cache_corrupt_title">Кэш повреждён</string>
+    <string name="cache_corrupt_msg">Файл кэша удалён, запустите скан заново.</string>
+
+    <string name="internal_title">Внутренняя память · /data</string>
+    <string name="shared_title">Общее хранилище</string>
+    <string name="files_access_explain">Чтобы посчитать размеры каталогов во внутренней памяти, разрешите ancdu «Доступ ко всем файлам». ancdu ничего не отправляет и удаляет только по вашему подтверждению.</string>
+    <string name="free_used">свободно %1$s · занято %2$s</string>
+    <string name="open_tree_need_access">Открыть дерево: разрешите доступ ко всем файлам</string>
+    <string name="card_desc">Открыть дерево общего хранилища</string>
+    <string name="card_desc_need_access">%1$s: разрешите доступ ко всем файлам</string>
+    <string name="refresh_desc">Обновить дерево общего хранилища</string>
+    <string name="scan_not_started">Скан не запущен</string>
+    <string name="no_storage_access">Нет доступа к общему хранилищу.</string>
+    <string name="bar_used">Занято %1$s</string>
+
+    <string name="seg_video">Видео</string>
+    <string name="seg_photo">Фото</string>
+    <string name="seg_audio">Аудио</string>
+    <string name="seg_apps">Приложения</string>
+    <string name="seg_other">Прочие файлы</string>
+    <string name="seg_system">Система</string>
+    <string name="seg_free">Свободно</string>
+
+    <string name="fresh_cache">кэш %1$s</string>
+    <string name="fresh_scan">скан %1$s</string>
+    <string name="fresh_updating">обновляю… %1$s</string>
+    <string name="fresh_first">%1$s · первый скан</string>
+    <string name="fresh_refresh">обновить ›</string>
+    <string name="fresh_approx">приблизительно · %1$s</string>
+    <string name="just_now">только что</string>
+    <string name="min_ago">%1$s мин назад</string>
+    <string name="h_ago">%1$s ч назад</string>
+    <string name="delta">%1$s с прошлого скана</string>
+
+    <string name="su_desc_ask">su: запросить root</string>
+    <string name="su_desc_asking">su: идёт запрос root</string>
+    <string name="su_desc_granted">root выдан; нажмите, чтобы проверить снова</string>
+    <string name="su_desc_denied">root отклонён; нажмите, чтобы запросить снова</string>
+    <string name="root_head">Root · напрямую, без FUSE, видно /data/data</string>
+    <string name="root_scan_desc">Сканировать как root: %1$s</string>
+    <string name="root_denied_hint">root отклонён — нажмите su вверху, чтобы запросить снова</string>
+
+    <string name="badge_scan">скан</string>
+    <string name="badge_root">root · скан</string>
+    <string name="badge_index">индекс · приблизительно</string>
+    <string name="badge_cache">кэш от %1$s</string>
+    <string name="badge_partial">неполный</string>
+
+    <string name="desc_dir">каталог</string>
+    <string name="desc_incomplete">неполные данные</string>
+    <string name="newer_chip">новее · обновить</string>
+    <string name="newer_desc">Есть более новое дерево — обновить</string>
+    <string name="long_click_label">Удалить или подробнее</string>
+    <string name="gallery_cleaning">галерея: очистка %1$s…</string>
+    <string name="sort_size">размер</string>
+    <string name="sort_name">имя</string>
+    <string name="size_apparent">видимый</string>
+    <string name="size_disk">на диске</string>
+    <string name="size_desc_apparent">Размер: видимый; нажмите — на диске</string>
+    <string name="size_desc_disk">Размер: на диске; нажмите — видимый</string>
+    <string name="folder_empty">пусто</string>
+    <string name="folder_no_access">⚠ нет доступа</string>
+    <string name="browser_hint">тап — открыть · долгий — подробнее, удалить</string>
+    <string name="crumb_go">перейти к %1$s</string>
+    <string name="deleting">Удаление…</string>
+    <string name="delete_progress_desc">Прогресс удаления</string>
+    <string name="stop">Стоп</string>
+    <string name="stopping">Останавливаю…</string>
+    <string name="delete_failed">Не удалось удалить</string>
+    <string name="delete_symlink">Путь проходит через символическую ссылку — ничего не удалено.</string>
+    <string name="delete_no_root">Не удалось получить root — ничего не удалено.</string>
+    <string name="delete_cancelled_title">Удаление отменено</string>
+    <string name="tree_changed">Дерево сменилось, пока был открыт диалог. Ничего не удалено.</string>
+
+    <string name="progress_title">Удаление «%1$s»</string>
+    <string name="progress_announce">Удалено %1$s</string>
+    <string name="progress_cancelled">Удаление отменено — ничего не удалено.</string>
+    <string name="freed">освобождено %1$s</string>
+    <string name="freed_left">%1$s · остаток в списке</string>
+    <string name="refreshing">обновляю дерево…</string>
+    <string name="gone">“%1$s” уже нет на диске</string>
+
+    <string name="block_system">системный путь — удаление отключено</string>
+    <string name="block_other_fs">другая файловая система — удаление отключено</string>
+    <string name="block_all_app_data">удаляет данные всех приложений — удаление отключено</string>
+    <string name="block_user_storage">всё хранилище пользователя — удаление отключено</string>
+    <string name="block_system_dir">системный каталог — удаление отключено</string>
+    <string name="block_android_dir">служебная папка Android — удаление отключено</string>
+    <string name="block_refresh_failed">дерево не обновилось — каталог не удалить</string>
+    <string name="block_no_fast">путь нельзя сопоставить с /data/media</string>
+
+    <string name="sheet_title">Удалить «%1$s»?</string>
+    <string name="sheet_title_blocked">«%1$s»</string>
+    <string name="as_root">КАК ROOT</string>
+    <string name="as_root_desc">удаление с правами root</string>
+    <string name="path_desc">путь: %1$s</string>
+    <string name="owner">%1$s · данные приложения</string>
+    <string name="owner_desc">владелец: %1$s, данные приложения</string>
+    <string name="apparent_size">видимый %1$s</string>
+    <string name="disk_size_desc">размер на диске %1$s</string>
+    <string name="more_children">…ещё %1$s</string>
+    <string name="hardlink">жёсткая ссылка — место может не освободиться</string>
+    <string name="index_approx">размер по индексу, приблизительно</string>
+    <string name="cache_sizes">размеры по скану от %1$s</string>
+    <string name="fast_box">быстро через root (в обход FUSE)</string>
+    <string name="fast_note">место освобождается сразу; галерея обновится в фоне</string>
+    <string name="no_trash">Без корзины. Отменить нельзя.</string>
+    <string name="delete_btn">Удалить</string>
+    <string name="delete_btn_size">Удалить %1$s</string>
+    <string name="delete_btn_desc">%1$s, «%2$s»</string>
+    <string name="delete_in">Удалить через %1$s…</string>
+    <string name="delete_in_desc">Удалить, станет доступно через %1$s</string>
+    <string name="delete_ready">Кнопка «Удалить» доступна</string>
+
+    <string name="scanning">Сканирование · %1$s</string>
+    <string name="no_root">без root</string>
+    <string name="tile_files">Файлов</string>
+    <string name="tile_size">Объём</string>
+    <string name="tile_speed">Скорость</string>
+    <string name="tile_time">Время</string>
+    <string name="scan_now">Сейчас</string>
+    <string name="scan_largest">Крупнейшие пока</string>
+    <string name="scan_other">…прочее</string>
+    <string name="scan_continues">скан продолжится в фоне</string>
+    <string name="scan_cancelled">Скан отменён</string>
+    <string name="scan_failed">Скан не удался</string>
+    <string name="scan_root_hint">Root отклонён? Попробуйте скан без root.</string>
+
+    <string name="err_code">Код ошибки %1$s</string>
+    <string name="err_cannot_open">Не удалось открыть %1$s</string>
+    <string name="err_helper_start">Root-помощник не запустился</string>
+    <string name="err_helper_exit">Root-помощник завершился с кодом %1$s</string>
+
+    <string name="apps_footer">Данные StorageStatsManager · работает без root · тап — настройки приложения</string>
+    <string name="usage_explain">Чтобы показать, сколько места занимает каждое приложение, нужен «Доступ к истории использования». ancdu читает только размеры, без истории.</string>
+    <string name="usage_settings_sub">Доступ к истории использования → ancdu</string>
+    <string name="apps_load_failed">Не удалось загрузить размеры приложений: %1$s</string>
+    <string name="legend_data">данные</string>
+    <string name="legend_cache">кэш</string>
+    <string name="app_desc">%1$s, %2$s: APK %3$s, данные %4$s, кэш %5$s</string>
+</resources>

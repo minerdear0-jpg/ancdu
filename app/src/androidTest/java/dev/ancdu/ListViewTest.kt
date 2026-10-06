@@ -107,13 +107,13 @@ class ListViewTest {
         ins.runOnMainSync {
             v = NcduListView(ins.targetContext)
             v.source = Src()
-            v.longClickLabel = "Удалить или подробнее"
+            v.longClickLabel = ins.targetContext.getString(R.string.long_click_label)
             v.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY))
             v.layout(0, 0, 1080, 1000)
         }
         val info = v.accessibilityNodeProvider.createAccessibilityNodeInfo(0)!!
         val a = info.actionList.first { it.id == AccessibilityNodeInfo.ACTION_LONG_CLICK }
-        assertEquals("Удалить или подробнее", a.label)
+        assertEquals(ins.targetContext.getString(R.string.long_click_label), a.label)
     }
 }

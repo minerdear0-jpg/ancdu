@@ -40,6 +40,9 @@ class StorageCard(private val a: MainActivity) {
     /** Решение автоскана при последнем onResume (POWER — «обновить ›» вручную). */
     var gate = Gate.FRESH
 
+    /** Тексты в языке экрана. */
+    private val t: Txt = a.tx
+
     /** Сама карточка: один кликабельный элемент. */
     val view: LinearLayout = build()
 
@@ -48,9 +51,9 @@ class StorageCard(private val a: MainActivity) {
         val r = a.dp(16).toFloat()
         background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), rounded(C.SURFACE, r), rounded(C.TEXT, r))
         isClickable = true; isFocusable = true
-        contentDescription = DESC
+        contentDescription = t.s(R.string.card_desc)
         setOnClickListener { onTap() }
-        addView(a.label("Внутренняя память · /data", 15f, C.MUTED))
+        addView(a.label(t.s(R.string.internal_title), 15f, C.MUTED))
         usedTxt = a.label("—", 30f, mono = true, bold = true)
         addView(usedTxt)
         bar = SegBar(a)
@@ -73,7 +76,7 @@ class StorageCard(private val a: MainActivity) {
         addView(a.vbox().apply {
             addView(a.hbox(8).apply {
                 minimumHeight = a.dp(48)
-                storeTitle = a.label("Общее хранилище", 15f, C.TEXT, bold = true)
+                storeTitle = a.label(t.s(R.string.shared_title), 15f, C.TEXT, bold = true)
                 addView(storeTitle, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 storeTotal = a.label("", 13f, C.TEXT, mono = true)
                 addView(storeTotal)
@@ -92,10 +95,8 @@ class StorageCard(private val a: MainActivity) {
         permBox = a.vbox(10).apply {
             visibility = View.GONE
             setPadding(0, a.dp(4), 0, a.dp(8))
-            addView(a.label("Чтобы посчитать размеры каталогов во внутренней памяти, разрешите ancdu " +
-                "«Доступ ко всем файлам». ancdu ничего не отправляет и удаляет только по вашему подтверждению.",
-                13f, C.MUTED))
-            addView(a.action("Открыть настройки", null, true) { Perms.askFiles(a) })
+            addView(a.label(t.s(R.string.files_access_explain), 13f, C.MUTED))
+            addView(a.action(t.s(R.string.open_settings), null, true) { Perms.askFiles(a) })
         }
         addView(permBox)
     }
@@ -104,8 +105,8 @@ class StorageCard(private val a: MainActivity) {
         val s = LongArray(3)
         if (Native.statfs("/data", s) != 0) return
         val used = s[0] - s[1]
-        usedTxt.text = "${Fmt.size(used)} / ${Fmt.size(s[0])}"
-        freeTxt.text = "свободно ${Fmt.size(s[2])} · занято ${Fmt.pct(used, s[0])}"
+        usedTxt.text = "${Fmt.size(used, t)} / ${Fmt.size(s[0], t)}"
+        freeTxt.text = t.s(R.string.free_used, Fmt.size(s[2], t), Fmt.pct(used, s[0]))
         bar.used = ListMath.bar(used, s[0])
     }
 
@@ -114,7 +115,7 @@ class StorageCard(private val a: MainActivity) {
         bar.segs = segs
         legend.removeAllViews()
         for (seg in segs.filter { it.bytes > 0 }.sortedByDescending { it.bytes }.take(5)) {
-            val sp = SpannableString("■ ${seg.label}  ${Fmt.size(seg.bytes)}")
+            val sp = SpannableString("■ ${t.s(seg.label)}  ${Fmt.size(seg.bytes, t)}")
             sp.setSpan(ForegroundColorSpan(seg.color), 0, 1, 0)
             legend.addView(a.label(sp, 13f, C.TEXT, mono = true))
         }
@@ -130,19 +131,19 @@ class StorageCard(private val a: MainActivity) {
      */
     fun render() {
         if (!Perms.files()) {
-            storeTitle.text = "Открыть дерево: разрешите доступ ко всем файлам"
+            storeTitle.text = t.s(R.string.open_tree_need_access)
             storeTitle.setTextColor(C.WARN)
             storeTotal.text = ""
             storeArrow.setTextColor(C.WARN)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
             scanLine.visibility = View.INVISIBLE
-            view.contentDescription = "$DESC: разрешите доступ ко всем файлам"
+            view.contentDescription = t.s(R.string.card_desc_need_access, t.s(R.string.card_desc))
             return
         }
         permBox.visibility = View.GONE
-        view.contentDescription = DESC
-        storeTitle.text = "Общее хранилище"
+        view.contentDescription = t.s(R.string.card_desc)
+        storeTitle.text = t.s(R.string.shared_title)
         storeTitle.setTextColor(C.TEXT)
         storeArrow.setTextColor(C.MUTED)
         val last = Scans.lastStorage
@@ -167,26 +168,26 @@ class StorageCard(private val a: MainActivity) {
         }
         storeTotal.text = when {
             items == null -> ""
-            disk == null -> "${Fmt.count(items)} эл."
-            else -> "${Fmt.size(disk)} · ${Fmt.count(items)} эл."
+            disk == null -> t.items(items)
+            else -> "${Fmt.size(disk, t)} · ${t.items(items)}"
         }
         // Только скан общего хранилища (идёт или в очереди за обновлением другого корня).
         val running = BgScan.storageActive
         scanLine.visibility = if (running) View.VISIBLE else View.INVISIBLE
-        val line = Freshness.line(running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
+        val line = Freshness.line(t, running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
             System.currentTimeMillis())
         freshTxt.visibility = View.VISIBLE
         freshTxt.text = line
         // «обновить ›» — своя цель касания: скан вручную.
-        val tappable = !running && line.endsWith(Freshness.REFRESH)
+        val tappable = !running && line.endsWith(Freshness.refresh(t))
         freshTxt.isClickable = tappable; freshTxt.isFocusable = tappable
         freshTxt.minHeight = if (tappable) a.dp(48) else 0
         freshTxt.setTextColor(if (tappable) C.ACCENT else C.MUTED)
-        freshTxt.contentDescription = if (tappable) "Обновить дерево общего хранилища" else null
+        freshTxt.contentDescription = if (tappable) t.s(R.string.refresh_desc) else null
         // Дельта — только к показанному дереву этого самого скана.
         val prev = last?.prevDisk
         if (shown && last != null && prev != null && Holder.kind == Kind.SCAN && Holder.time == last.time) {
-            deltaTxt.text = Freshness.delta(last.disk - prev)
+            deltaTxt.text = Freshness.delta(t, last.disk - prev)
             deltaTxt.visibility = View.VISIBLE
         } else {
             deltaTxt.visibility = View.GONE
@@ -197,7 +198,7 @@ class StorageCard(private val a: MainActivity) {
     private fun refreshNow() {
         if (BgScan.storageActive) return
         if (BgScan.start(a)) gate = Gate.RUNNING
-        else BgScan.failure?.let { a.showAlert("Скан не запущен", it) }
+        else BgScan.failure?.let { a.showAlert(t.s(R.string.scan_not_started), NativeErr.text(t, it)) }
         render()
     }
 
@@ -227,12 +228,9 @@ class StorageCard(private val a: MainActivity) {
         if (BgScan.storageActive) { attach(); return }
         if (shown) { a.startActivity(Intent(a, BrowserActivity::class.java)); return }
         if (BgScan.start(a)) { gate = Gate.RUNNING; render(); attach() }
-        else a.showAlert("Скан не запущен", BgScan.failure ?: "Нет доступа к общему хранилищу.")
+        else a.showAlert(t.s(R.string.scan_not_started),
+            BgScan.failure?.let { NativeErr.text(t, it) } ?: t.s(R.string.no_storage_access))
     }
 
     private fun attach() = a.startActivity(Intent(a, ScanActivity::class.java).putExtra(EXTRA_ATTACH, true))
-
-    companion object {
-        const val DESC = "Открыть дерево общего хранилища"
-    }
 }

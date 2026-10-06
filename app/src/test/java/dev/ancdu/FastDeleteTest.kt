@@ -27,14 +27,14 @@ class FastDeleteTest {
     @Test fun policyChecksMappedPath() {
         assertNull(DeletePolicy.fastBlockReason("/storage/emulated/0/DCIM"))
         assertNull(DeletePolicy.fastBlockReason("/storage/emulated/0/Android/data/pkg"))
-        assertEquals(DeletePolicy.ANDROID_DIR, DeletePolicy.fastBlockReason("/storage/emulated/0/Android"))
-        assertEquals(DeletePolicy.NO_FAST, DeletePolicy.fastBlockReason("/storage/emulated/0"))
-        assertEquals(DeletePolicy.NO_FAST, DeletePolicy.fastBlockReason("/data/media/0/DCIM"))
-        assertEquals(DeletePolicy.NO_FAST, DeletePolicy.fastBlockReason("/storage/emulated/0/x/../.."))
+        assertEquals(Block.ANDROID_DIR, DeletePolicy.fastBlockReason("/storage/emulated/0/Android"))
+        assertEquals(Block.NO_FAST, DeletePolicy.fastBlockReason("/storage/emulated/0"))
+        assertEquals(Block.NO_FAST, DeletePolicy.fastBlockReason("/data/media/0/DCIM"))
+        assertEquals(Block.NO_FAST, DeletePolicy.fastBlockReason("/storage/emulated/0/x/../.."))
         // сопоставленный путь проходит общий список /data
         assertNull(DeletePolicy.dataBlockReason("/data/media/0/DCIM"))
-        assertEquals(DeletePolicy.USER_STORAGE, DeletePolicy.exactBlockReason("/data/media/0"))
-        assertEquals(DeletePolicy.ANDROID_DIR, DeletePolicy.exactBlockReason("/data/media/0/Android"))
+        assertEquals(Block.USER_STORAGE, DeletePolicy.exactBlockReason("/data/media/0"))
+        assertEquals(Block.ANDROID_DIR, DeletePolicy.exactBlockReason("/data/media/0/Android"))
     }
 
     @Test fun defaultsOnFromThousandItemsOnlyWhenRootGranted() {

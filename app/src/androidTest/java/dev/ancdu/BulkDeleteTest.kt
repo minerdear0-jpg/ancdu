@@ -113,7 +113,7 @@ class BulkDeleteTest {
             assertTrue("нет строки ${wildSentinel.path}", waitFor(15_000) { rows(wildSentinel.path, false).isNotEmpty() })
 
             val h = scanned(wrap)
-            ins.runOnMainSync { Holder.set(h, Kind.SCAN, wrap.path, "скан", false) }
+            ins.runOnMainSync { Holder.set(h, Kind.SCAN, wrap.path, false) }
             val a = ins.startActivitySync(
                 Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
             act = a

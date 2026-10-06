@@ -129,13 +129,13 @@ class MainTest {
             val a = launch().also { act = it }
             assertNull(findDesc(a, "Сканировать хранилище"))
             assertNull(findDesc(a, "Быстрый обзор"))
-            assertNotNull(findDesc(a, StorageCard.DESC))
-            assertEquals(listOf("Последний скан: /some/dir"), a.lastScans())
-            assertEquals(listOf("Последний скан: /data"), a.rootScans())
+            assertNotNull(findDesc(a, a.getString(R.string.card_desc)))
+            assertEquals(listOf(a.getString(R.string.last_scan, "/some/dir")), a.lastScans())
+            assertEquals(listOf(a.getString(R.string.last_scan, "/data")), a.rootScans())
             ins.runOnMainSync {
-                assertEquals("Общее хранилище", a.storage.storeTitle.text.toString())
-                assertEquals("120.6 KiB · 5 000 эл.", a.storage.storeTotal.text.toString())
-                assertTrue(a.storage.freshTxt.text.toString(), a.storage.freshTxt.text.startsWith("кэш "))
+                assertEquals(a.getString(R.string.shared_title), a.storage.storeTitle.text.toString())
+                assertEquals("${Fmt.size(123456, a.tx)} · ${a.tx.items(5000)}", a.storage.storeTotal.text.toString())
+                assertTrue(a.storage.freshTxt.text.toString(), a.storage.freshTxt.text.startsWith(a.prefixOf(R.string.fresh_cache)))
                 assertNotNull(a.window.decorView.findViewWithTag<SegBar>("segbar"))
                 assertTrue(a.storage.view.isClickable)
             }
@@ -158,15 +158,15 @@ class MainTest {
             val p = LongArray(6)
             assertTrue(waitFor(10_000) { Native.progress(h, p); p[0] != ST_RUNNING.toLong() })
             val old = 1_759_700_000_000L
-            ins.runOnMainSync { Holder.set(h, Kind.CACHE, Scans.STORAGE, "кэш от 05.10 21:33", false, old) }
+            ins.runOnMainSync { Holder.set(h, Kind.CACHE, Scans.STORAGE, false, old) }
             prefs.edit().putString(storageCache.name,
                 CacheMeta(Scans.STORAGE, false, 999, 1, System.currentTimeMillis(), 999_999_999, 999).format()).commit()
             val a = launch().also { act = it }
             ins.runOnMainSync {
                 val line = a.storage.freshTxt.text.toString()
-                assertTrue(line, line.startsWith("кэш "))
-                assertFalse(line, line.endsWith("только что"))
-                assertTrue(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.endsWith(" · 2 эл."))
+                assertTrue(line, line.startsWith(a.prefixOf(R.string.fresh_cache)))
+                assertFalse(line, line.endsWith(a.getString(R.string.just_now)))
+                assertTrue(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.endsWith(" · " + a.tx.items(2)))
             }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
@@ -197,7 +197,7 @@ class MainTest {
                 onMain { !BgScan.active && (Scans.lastStorage?.time ?: 0) >= t0 }
             })
             assertTrue("карточка не обновилась", waitFor(5_000) {
-                onMain { a.storage.freshTxt.text.endsWith("только что") && a.storage.storeTotal.text.contains("эл.") }
+                onMain { a.storage.freshTxt.text.endsWith(a.getString(R.string.just_now)) && a.storage.storeTotal.text.contains(" · ") }
             })
             ins.runOnMainSync {
                 assertEquals(Scans.STORAGE, Holder.root)
@@ -220,14 +220,14 @@ class MainTest {
             Perms.filesOverride = false
             val a = launch().also { act = it }
             ins.runOnMainSync {
-                assertEquals("Открыть дерево: разрешите доступ ко всем файлам", a.storage.storeTitle.text.toString())
+                assertEquals(a.getString(R.string.open_tree_need_access), a.storage.storeTitle.text.toString())
                 assertEquals(C.WARN, a.storage.storeTitle.currentTextColor)
                 assertEquals(View.GONE, a.storage.permBox.visibility)
                 a.storage.view.performClick()
                 assertEquals(View.VISIBLE, a.storage.permBox.visibility)
             }
-            assertNotNull(findDesc(a, "Открыть настройки"))
-            assertNotNull(findText(a, "«Доступ ко всем файлам»"))
+            assertNotNull(findDesc(a, a.getString(R.string.open_settings)))
+            assertNotNull(findText(a, a.getString(R.string.files_access_explain)))
             ins.runOnMainSync { a.storage.view.performClick(); assertEquals(View.GONE, a.storage.permBox.visibility) }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
@@ -255,7 +255,7 @@ class MainTest {
             ins.runOnMainSync {
                 assertEquals("su", pill!!.text.toString())
                 assertTrue(pill.minHeight >= a.dp(44))
-                assertEquals("su: запросить root", pill.contentDescription)
+                assertEquals(a.getString(R.string.su_desc_ask), pill.contentDescription)
                 pill.performClick()
                 assertEquals(RootState.ASKING, Root.state)
                 assertTrue(pill.text.startsWith("su"))
@@ -269,7 +269,7 @@ class MainTest {
             ins.runOnMainSync { pill!!.performClick() }
             assertTrue(waitFor(5_000) { onMain { pill!!.text.toString() == "root ✗" } })
             ins.runOnMainSync { assertEquals(C.WARN, pill!!.currentTextColor) }
-            assertNotNull(findText(a, "root отклонён — нажмите su вверху"))
+            assertNotNull(findText(a, a.getString(R.string.root_denied_hint)))
             assertTrue(prefs("root").getString("root_last", "")!!.startsWith("denied|"))
         } finally {
             Root.suCheck = prevCheck
@@ -303,7 +303,7 @@ class MainTest {
             val a = launch().also { act = it }
             var card: View? = null
             assertTrue("нет карточки «нет доступа»",
-                waitFor(10_000) { findDesc(a, "Приложения: нет доступа").also { card = it } != null })
+                waitFor(10_000) { findDesc(a, a.getString(R.string.apps_no_access)).also { card = it } != null })
             ins.runOnMainSync { card!!.performClick() }
             val apps = ins.waitForMonitorWithTimeout(mon, 5_000)
             assertNotNull("AppsActivity не открыт", apps)
@@ -324,13 +324,13 @@ class MainTest {
             prefs.edit().putString(name, "/corrupt/test|false|1|1|1759700000000").commit()
             val a = launch().also { act = it }
             val before = Holder.h
-            val row = findDesc(a, "Последний скан: /corrupt/test")
+            val row = findDesc(a, a.getString(R.string.last_scan, "/corrupt/test"))
             assertNotNull(row)
             ins.runOnMainSync { row!!.performClick() }
             assertTrue("запись кэша не удалена", waitFor(5_000) { !prefs.contains(name) })
             assertTrue("файл кэша не удалён", waitFor(5_000) { !f.exists() })
             ins.waitForIdleSync()
-            assertTrue("строка не убрана", waitFor(5_000) { onMain { "Последний скан: /corrupt/test" !in a.lastScans() } })
+            assertTrue("строка не убрана", waitFor(5_000) { onMain { a.getString(R.string.last_scan, "/corrupt/test") !in a.lastScans() } })
             assertEquals(before, Holder.h)
             assertFalse(f.exists())
         } finally {

@@ -1,5 +1,7 @@
 package dev.ancdu
 
+import dev.ancdu.XmlTxt.Companion.EN
+import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -7,10 +9,12 @@ import org.junit.Test
 
 class DeleteProgressTest {
     @Test fun counterLine() {
-        assertEquals("12 340 / 69 370 эл. · 0:12", DeleteProgress.line(12_340, 69_370, 12_400))
-        assertEquals("0 / 1 эл. · 0:00", DeleteProgress.line(0, 1, 0))
-        assertEquals("5 / 5 эл. · 1:05", DeleteProgress.line(9, 5, 65_000)) // done ≤ max
-        assertEquals("0 / 5 эл. · 0:00", DeleteProgress.line(-3, 5, -10))
+        assertEquals("12${Fmt.NBSP}340 / 69${Fmt.NBSP}370 эл. · 0:12", DeleteProgress.line(RU, 12_340, 69_370, 12_400))
+        assertEquals("0 / 1 эл. · 0:00", DeleteProgress.line(RU, 0, 1, 0))
+        assertEquals("5 / 5 эл. · 1:05", DeleteProgress.line(RU, 9, 5, 65_000)) // done ≤ max
+        assertEquals("0 / 5 эл. · 0:00", DeleteProgress.line(RU, -3, 5, -10))
+        assertEquals("12,340 / 69,370 items · 0:12", DeleteProgress.line(EN, 12_340, 69_370, 12_400))
+        assertEquals("0 / 1 item · 0:00", DeleteProgress.line(EN, 0, 1, 0))
     }
 
     @Test fun elapsed() {
@@ -27,7 +31,8 @@ class DeleteProgressTest {
         assertEquals(999, DeleteProgress.permille(68_999, 69_000))
         assertEquals(9, DeleteProgress.decile(68_999, 69_000))
         assertEquals(10, DeleteProgress.decile(69_000, 69_000))
-        assertEquals("Удалено 30%", DeleteProgress.announce(31, 100))
+        assertEquals("Удалено 30%", DeleteProgress.announce(RU, 31, 100))
+        assertEquals("Deleted 30%", DeleteProgress.announce(EN, 31, 100))
         // большие счётчики без переполнения
         assertEquals(500, DeleteProgress.permille(3_000_000_000L, 6_000_000_000L))
     }
@@ -37,16 +42,20 @@ class DeleteProgressTest {
         assertEquals(false, DeleteProgress.isCancelled(-DeleteProgress.EINTR, 1))
         assertEquals(false, DeleteProgress.isCancelled(0, 0))
         assertEquals(false, DeleteProgress.isCancelled(-5, 0))
-        assertEquals("освобождено 1.5 MiB", DeleteProgress.freed(3L shl 19))
+        assertEquals("освобождено 1,5${Fmt.NBSP}МиБ", DeleteProgress.freed(RU, 3L shl 19))
+        assertEquals("freed 1.5${Fmt.NBSP}MiB", DeleteProgress.freed(EN, 3L shl 19))
+        assertEquals("Удаление отменено — ничего не удалено.", DeleteProgress.cancelled(RU))
     }
 
     @Test fun totalAndTexts() {
         assertEquals(1L, DeleteProgress.total(0))
         assertEquals(69_370L, DeleteProgress.total(69_370))
-        assertEquals("Удаление «DCIM»", DeleteProgress.title("DCIM"))
-        assertEquals("обновляю дерево…", DeleteProgress.REFRESHING)
-        assertEquals("освобождено 1.5 MiB · остаток в списке", DeleteProgress.freed(3L shl 19) + DeleteProgress.LEFT)
-        assertEquals("“DCIM” уже нет на диске", DeleteProgress.gone("DCIM"))
+        assertEquals("Удаление «DCIM»", DeleteProgress.title(RU, "DCIM"))
+        assertEquals("Deleting “DCIM”", DeleteProgress.title(EN, "DCIM"))
+        assertEquals("обновляю дерево…", DeleteProgress.refreshing(RU))
+        assertEquals("refreshing tree…", DeleteProgress.refreshing(EN))
+        assertEquals("освобождено 1,5${Fmt.NBSP}МиБ · остаток в списке", DeleteProgress.freedLeft(RU, 3L shl 19))
+        assertEquals("“DCIM” уже нет на диске", DeleteProgress.gone(RU, "DCIM"))
     }
 
     /** Итог удаления → обновить дерево; «ничего не удалено» — нечего обновлять. */

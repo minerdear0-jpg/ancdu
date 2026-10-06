@@ -53,18 +53,18 @@ class AutoPromote {
 
     companion object {
         /** После подстановки: [exact] — узел запроса найден в новом дереве, [disk] — его размер там. */
-        fun outcome(r: Request, exact: Boolean, disk: Long): Outcome {
-            val del = r.delDisk ?: return if (exact) Outcome.Sheet else Outcome.Footer(DeleteProgress.gone(r.name))
+        fun outcome(t: Txt, r: Request, exact: Boolean, disk: Long): Outcome {
+            val del = r.delDisk ?: return if (exact) Outcome.Sheet else Outcome.Footer(DeleteProgress.gone(t, r.name))
             return Outcome.Footer(
-                if (exact) DeleteProgress.freed(maxOf(0L, del - disk)) + DeleteProgress.LEFT
-                else DeleteProgress.freed(del))
+                if (exact) DeleteProgress.freedLeft(t, maxOf(0L, del - disk))
+                else DeleteProgress.freed(t, del))
         }
 
         /**
          * Удаление [r], обновить дерево не вышло: подвал — нижняя граница освобождённого по прежнему
          * дереву ([exact] — узел в нём найден, [disk] — его размер сейчас), без «остатка».
          */
-        fun unrefreshed(r: Request, exact: Boolean, disk: Long): String =
-            DeleteProgress.freed(if (exact) maxOf(0L, (r.delDisk ?: 0L) - disk) else 0L)
+        fun unrefreshed(t: Txt, r: Request, exact: Boolean, disk: Long): String =
+            DeleteProgress.freed(t, if (exact) maxOf(0L, (r.delDisk ?: 0L) - disk) else 0L)
     }
 }

@@ -1,5 +1,7 @@
 package dev.ancdu
 
+import dev.ancdu.XmlTxt.Companion.EN
+import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -34,11 +36,12 @@ class AutoPromoteTest {
         val r = a.take()!!
         assertNull("флаг снят", a.request)
         // узел остался (удалён не весь): освобождено разницу, остаток в списке
-        assertEquals("освобождено 6.0 MiB · остаток в списке", footer(AutoPromote.outcome(r, exact = true, disk = 4 * mib)))
+        assertEquals("освобождено 6,0${Fmt.NBSP}МиБ · остаток в списке", footer(AutoPromote.outcome(RU, r, exact = true, disk = 4 * mib)))
+        assertEquals("freed 6.0${Fmt.NBSP}MiB · the rest is still listed", footer(AutoPromote.outcome(EN, r, exact = true, disk = 4 * mib)))
         // узла больше нет: освобождено всё
-        assertEquals("освобождено 10.0 MiB", footer(AutoPromote.outcome(r, exact = false, disk = 0)))
+        assertEquals("освобождено 10,0${Fmt.NBSP}МиБ", footer(AutoPromote.outcome(RU, r, exact = false, disk = 0)))
         // узел вырос с момента подтверждения — не «минус»
-        assertEquals("освобождено 0 B · остаток в списке", footer(AutoPromote.outcome(r, exact = true, disk = 11 * mib)))
+        assertEquals("освобождено 0${Fmt.NBSP}Б · остаток в списке", footer(AutoPromote.outcome(RU, r, exact = true, disk = 11 * mib)))
     }
 
     /** Никогда не подставлять, пока идёт удаление или открыт лист. */
@@ -56,8 +59,9 @@ class AutoPromoteTest {
         a.beforeDelete(path, "Camera", t)
         assertTrue(a.ready(newer = true, busy = false, sheetOpen = false))
         val r = a.take()!!
-        assertSame(AutoPromote.Outcome.Sheet, AutoPromote.outcome(r, exact = true, disk = 0))
-        assertEquals("“Camera” уже нет на диске", footer(AutoPromote.outcome(r, exact = false, disk = 0)))
+        assertSame(AutoPromote.Outcome.Sheet, AutoPromote.outcome(RU, r, exact = true, disk = 0))
+        assertEquals("“Camera” уже нет на диске", footer(AutoPromote.outcome(RU, r, exact = false, disk = 0)))
+        assertEquals("“Camera” is no longer on disk", footer(AutoPromote.outcome(EN, r, exact = false, disk = 0)))
     }
 
     /** Навигация отменяет ждущий лист, но не итог удаления. */
@@ -96,8 +100,8 @@ class AutoPromoteTest {
     /** Обновить не вышло после удаления: подвал — нижняя граница по прежнему дереву, без «остатка». */
     @Test fun failedRefreshAfterDeleteShowsLowerBound() {
         val r = AutoPromote.Request(path, "Camera", 10 * mib)
-        assertEquals("освобождено 6.0 MiB", AutoPromote.unrefreshed(r, exact = true, disk = 4 * mib))
-        assertEquals("освобождено 0 B", AutoPromote.unrefreshed(r, exact = true, disk = 11 * mib))
-        assertEquals("освобождено 0 B", AutoPromote.unrefreshed(r, exact = false, disk = 0))
+        assertEquals("освобождено 6,0${Fmt.NBSP}МиБ", AutoPromote.unrefreshed(RU, r, exact = true, disk = 4 * mib))
+        assertEquals("освобождено 0${Fmt.NBSP}Б", AutoPromote.unrefreshed(RU, r, exact = true, disk = 11 * mib))
+        assertEquals("freed 0${Fmt.NBSP}B", AutoPromote.unrefreshed(EN, r, exact = false, disk = 0))
     }
 }

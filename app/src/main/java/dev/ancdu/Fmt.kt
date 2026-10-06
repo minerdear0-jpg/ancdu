@@ -2,16 +2,23 @@ package dev.ancdu
 
 import java.util.Locale
 
+/**
+ * Все числа интерфейса — здесь, в языке [Txt.locale]: десятичный разделитель и группы разрядов
+ * по локали (группы-пробелы — всегда NBSP), между числом и единицей — NBSP, единицы — из ресурсов
+ * (KiB/КиБ, s/с). Проценты — целые, без пробела («48%»).
+ */
 object Fmt {
-    private val units = arrayOf("KiB", "MiB", "GiB", "TiB", "PiB")
+    const val NBSP = ' '
+    private val UNITS = intArrayOf(R.string.unit_kib, R.string.unit_mib, R.string.unit_gib,
+        R.string.unit_tib, R.string.unit_pib)
 
-    fun size(b: Long): String {
+    fun size(b: Long, t: Txt): String {
         if (b < 0) return "—"
-        if (b < 1024) return "$b B"
+        if (b < 1024) return count(b, t.locale) + NBSP + t.s(R.string.unit_b)
         var v = b / 1024.0
         var u = 0
-        while (v >= 1024 && u < units.size - 1) { v /= 1024; u++ }
-        return String.format(Locale.ROOT, "%.1f %s", v, units[u])
+        while (v >= 1024 && u < UNITS.size - 1) { v /= 1024; u++ }
+        return one(v, t.locale) + NBSP + t.s(UNITS[u])
     }
 
     fun pct(part: Long, whole: Long): String {
@@ -21,13 +28,20 @@ object Fmt {
         return if (p < 1) "<1%" else "${p.toInt()}%"
     }
 
-    fun count(n: Long): String {
-        val s = n.toString()
-        val sb = StringBuilder()
-        for (i in s.indices) {
-            if (i > 0 && (s.length - i) % 3 == 0) sb.append(' ')
-            sb.append(s[i])
-        }
-        return sb.toString()
+    /** Целое с группами разрядов локали: en «1,284,113», ru «1 284 113» (NBSP). */
+    fun count(n: Long, loc: Locale): String = nbsp(String.format(loc, "%,d", n))
+
+    /** Длительность в секундах с одной цифрой после запятой: «0.3 s» / «0,3 с». */
+    fun secs(ms: Long, t: Txt): String = one(maxOf(ms, 0L) / 1000.0, t.locale) + NBSP + t.s(R.string.unit_s)
+
+    /** Таймер скана «мм:сс.с»: «01:05.3» / «01:05,3». */
+    fun timer(ms: Long, loc: Locale): String {
+        val m = maxOf(ms, 0L)
+        return nbsp(String.format(loc, "%02d:%04.1f", m / 60000, (m % 60000) / 1000.0))
     }
+
+    private fun one(v: Double, loc: Locale): String = nbsp(String.format(loc, "%.1f", v))
+
+    /** Пробел, NBSP и узкий NBSP (U+202F, новые CLDR) в группах разрядов — один NBSP. */
+    private fun nbsp(s: String): String = s.replace(' ', NBSP).replace(' ', NBSP)
 }

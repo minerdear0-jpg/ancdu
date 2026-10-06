@@ -28,11 +28,7 @@ object Scans {
 
     class Done(val disk: Long, val items: Long, val time: Long, val ms: Long,
                /** Объём корня по прежнему кэшу этого корня (null — не было или старая запись). */
-               val prevDisk: Long?) {
-        /** Хвост плашки браузера: « · 69 312 эл. · 0,2 с». */
-        val suffix: String get() = " · ${Fmt.count(items)} эл. · " +
-            String.format(java.util.Locale.forLanguageTag("ru"), "%.1f с", ms / 1000.0)
-    }
+               val prevDisk: Long?)
 
     /** Итог последнего скана общего хранилища без root в этом процессе (любым путём). Главный
      *  поток; тесты сбрасывают в null. */
@@ -60,5 +56,23 @@ object Scans {
                 app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(file.name, meta).apply()
         }
         return done
+    }
+}
+
+/** Плашка вида дерева в браузере: «скан · 0,2 с», «кэш от 05.10 21:33», «… · неполный». */
+object Badge {
+    /** [time] — время дерева (для кэша), [ms] — длительность скана (-1 — нет), [partial] — ST_FULL. */
+    fun text(t: Txt, kind: Kind, time: Long, ms: Long, partial: Boolean,
+             tz: java.util.TimeZone = java.util.TimeZone.getDefault()): String {
+        val parts = ArrayList<String>(3)
+        parts += when (kind) {
+            Kind.SCAN -> t.s(R.string.badge_scan)
+            Kind.ROOT -> t.s(R.string.badge_root)
+            Kind.INDEX -> t.s(R.string.badge_index)
+            Kind.CACHE -> t.s(R.string.badge_cache, Freshness.date(t, R.string.fmt_day_time, time, tz))
+        }
+        if (ms >= 0) parts += Fmt.secs(ms, t)
+        if (partial) parts += t.s(R.string.badge_partial)
+        return parts.joinToString(" · ")
     }
 }

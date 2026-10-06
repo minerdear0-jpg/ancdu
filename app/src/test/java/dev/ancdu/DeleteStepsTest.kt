@@ -1,5 +1,7 @@
 package dev.ancdu
 
+import dev.ancdu.XmlTxt.Companion.EN
+import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,7 +58,7 @@ class DeleteStepsTest {
         assertEquals(Long.MAX_VALUE, DeleteSteps.done(Long.MAX_VALUE, 5))
         // Строк больше, чем items (устаревшие строки): диалог держит ≤ total.
         assertEquals(1000, DeleteProgress.permille(DeleteSteps.done(6000, 10), 5001))
-        assertEquals("5 001 / 5 001 эл. · 0:06", DeleteProgress.line(DeleteSteps.done(6000, 10), 5001, 6200))
+        assertEquals("5${Fmt.NBSP}001 / 5${Fmt.NBSP}001 эл. · 0:06", DeleteProgress.line(RU, DeleteSteps.done(6000, 10), 5001, 6200))
     }
 
     @Test fun stopAfterBulkRowsMarksNodePartial() {

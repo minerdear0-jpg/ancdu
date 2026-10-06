@@ -16,10 +16,11 @@ object Holder {
     @Volatile var h = 0L; private set
     @Volatile var kind = Kind.SCAN; private set
     @Volatile var root = ""; private set
-    @Volatile var label = ""; private set
     @Volatile var viaRoot = false; private set
     /** Время дерева (мс): скана или кэша, из которого оно открыто; 0 — неизвестно. */
     @Volatile var time = 0L; private set
+    /** Длительность скана, давшего дерево (мс), для плашки браузера; -1 — нет (идёт, кэш, индекс). */
+    @Volatile var ms = -1L; private set
 
     /** Единственный поток для блокирующих и мутирующих операций над сессиями:
      *  delete, saveCache, free. FIFO гарантирует, что free не гоняется с ними. */
@@ -32,24 +33,24 @@ object Holder {
     private val sessionListeners = ArrayList<() -> Unit>()
 
     private fun checkMain(what: String) =
-        check(Looper.myLooper() == Looper.getMainLooper()) { "$what не с главного потока" }
+        check(Looper.myLooper() == Looper.getMainLooper()) { "$what off the main thread" }
 
     /**
      * Только главный поток. Поля меняются сразу; затем, если дескриптор сменился, слушатели сессии
      * вызываются СИНХРОННО — живые экраны отцепляются от старого дескриптора — и только после этого
      * прежняя сессия освобождается на [io] (free может ждать Magisk).
      */
-    fun set(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean, time: Long = 0L) {
+    fun set(handle: Long, kind: Kind, root: String, viaRoot: Boolean, time: Long = 0L, ms: Long = -1L) {
         checkMain("Holder.set")
         val old = h
-        h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot; this.time = time
+        h = handle; this.kind = kind; this.root = root; this.viaRoot = viaRoot; this.time = time; this.ms = ms
         if (old == handle) return
         for (l in sessionListeners.toList()) l()
         if (old != 0L) io.execute { Native.free(old) }
     }
 
     /** Только главный поток. Сессии больше нет; прежняя освобождается на [io]. */
-    fun clear() = set(0L, Kind.SCAN, "", "", false)
+    fun clear() = set(0L, Kind.SCAN, "", false)
 
     /*
      * Более новое дерево, ещё не показанное (фоновый скан закончился, пока его нельзя было
@@ -59,19 +60,19 @@ object Holder {
     @Volatile var pending = 0L; private set
     var pendingKind = Kind.SCAN; private set
     var pendingRoot = ""; private set
-    var pendingLabel = ""; private set
     var pendingViaRoot = false; private set
     var pendingTime = 0L; private set
+    var pendingMs = -1L; private set
 
     /**
      * Только главный поток. Кладёт [handle] в слот ожидания. Слушателей НЕ вызывает: живые экраны
      * продолжают показывать своё дерево. Прежний непоказанный pending освобождается на [io].
      */
-    fun offer(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean, time: Long = 0L) {
+    fun offer(handle: Long, kind: Kind, root: String, viaRoot: Boolean, time: Long = 0L, ms: Long = -1L) {
         checkMain("Holder.offer")
         val old = pending
-        pending = handle; pendingKind = kind; pendingRoot = root; pendingLabel = label; pendingViaRoot = viaRoot
-        pendingTime = time
+        pending = handle; pendingKind = kind; pendingRoot = root; pendingViaRoot = viaRoot
+        pendingTime = time; pendingMs = ms
         if (old != 0L && old != handle) io.execute { Native.free(old) }
     }
 
@@ -85,7 +86,7 @@ object Holder {
         val p = pending
         if (p == 0L) return false
         pending = 0L
-        set(p, pendingKind, pendingRoot, pendingLabel, pendingViaRoot, pendingTime)
+        set(p, pendingKind, pendingRoot, pendingViaRoot, pendingTime, pendingMs)
         return true
     }
 
@@ -205,7 +206,7 @@ object Holder {
                bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null,
                afterIo: ((Int) -> Unit)? = null) {
         checkMain("Holder.delete")
-        check(!deleting) { "удаление уже идёт" }
+        check(!deleting) { "a delete is already running" }
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null

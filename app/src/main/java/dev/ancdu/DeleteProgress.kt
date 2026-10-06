@@ -30,27 +30,31 @@ object DeleteProgress {
             else String.format(Locale.ROOT, "%d:%02d", m, ss)
     }
 
-    fun title(name: String): String = "Удаление «$name»"
+    fun title(t: Txt, name: String): String = t.s(R.string.progress_title, name)
 
-    fun line(done: Long, total: Long, ms: Long): String =
-        "${Fmt.count(clamp(done, total))} / ${Fmt.count(total)} эл. · ${elapsed(ms)}"
+    /** «12 340 / 69 370 эл. · 0:12»: форма plurals — по [total]. */
+    fun line(t: Txt, done: Long, total: Long, ms: Long): String =
+        t.q(R.plurals.items, total, "${Fmt.count(clamp(done, total), t.locale)} / ${Fmt.count(total, t.locale)}") +
+            " · " + elapsed(ms)
 
-    fun announce(done: Long, total: Long): String = "Удалено ${decile(done, total) * 10}%"
+    fun announce(t: Txt, done: Long, total: Long): String =
+        t.s(R.string.progress_announce, "${decile(done, total) * 10}%")
 
     /** Остановлено до первого удаления (ждало в очереди): ничего не тронуто. */
     fun isCancelled(r: Int, done: Long): Boolean = r == -EINTR && done <= 0
 
-    const val CANCELLED = "Удаление отменено — ничего не удалено."
+    fun cancelled(t: Txt): String = t.s(R.string.progress_cancelled)
 
-    fun freed(disk: Long): String = "освобождено ${Fmt.size(disk)}"
+    fun freed(t: Txt, disk: Long): String = t.s(R.string.freed, Fmt.size(disk, t))
+
+    /** «освобождено …» и хвост: узел после обновления ещё на диске (удалён не весь). */
+    fun freedLeft(t: Txt, disk: Long): String = t.s(R.string.freed_left, freed(t, disk))
 
     /** Подвал, пока экран сам обновляет дерево. */
-    const val REFRESHING = "обновляю дерево…"
-    /** Хвост «освобождено …»: узел после обновления ещё на диске (удалён не весь). */
-    const val LEFT = " · остаток в списке"
+    fun refreshing(t: Txt): String = t.s(R.string.refreshing)
 
     /** Узла запроса нет в обновлённом дереве. */
-    fun gone(name: String): String = "“$name” уже нет на диске"
+    fun gone(t: Txt, name: String): String = t.s(R.string.gone, name)
 
     /**
      * Итог удаления [r] требует обновить дерево сканом: ядро записало в дерево не всё (частично,

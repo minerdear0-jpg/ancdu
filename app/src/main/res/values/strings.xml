@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English (default). Russian: values-ru/strings.xml. Numbers and sizes come from Fmt as %s args. -->
+<resources>
+    <!-- Units (Fmt): binary sizes and seconds. -->
+    <string name="unit_b">B</string>
+    <string name="unit_kib">KiB</string>
+    <string name="unit_mib">MiB</string>
+    <string name="unit_gib">GiB</string>
+    <string name="unit_tib">TiB</string>
+    <string name="unit_pib">PiB</string>
+    <string name="unit_s">s</string>
+    <string name="rate_per_s">%1$s/s</string>
+
+    <!-- Date patterns (SimpleDateFormat). -->
+    <string name="fmt_time" translatable="false">HH:mm</string>
+    <string name="fmt_day">MMM d</string>
+    <string name="fmt_day_time">MMM d, HH:mm</string>
+
+    <plurals name="items">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
+    <plurals name="items_long">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
+    <plurals name="files">
+        <item quantity="one">%1$s file</item>
+        <item quantity="other">%1$s files</item>
+    </plurals>
+    <plurals name="errors">
+        <item quantity="one">%1$s error</item>
+        <item quantity="other">%1$s errors</item>
+    </plurals>
+
+    <!-- Common. -->
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="open_settings">Open settings</string>
+    <string name="unknown_error">unknown error</string>
+
+    <!-- Main screen. -->
+    <string name="apps_title">Apps</string>
+    <string name="apps_all">all →</string>
+    <string name="apps_no_access">Apps: no access</string>
+    <string name="apps_no_access_sub">needs usage access · details →</string>
+    <string name="last_scan">Last scan: %1$s</string>
+    <string name="cache_corrupt_title">Cache damaged</string>
+    <string name="cache_corrupt_msg">The cache file was deleted. Run the scan again.</string>
+
+    <!-- Storage card. -->
+    <string name="internal_title">Internal storage · /data</string>
+    <string name="shared_title">Shared storage</string>
+    <string name="files_access_explain">To measure folders in internal storage, give ancdu “All files access”. ancdu sends nothing anywhere and deletes only after you confirm.</string>
+    <string name="free_used">free %1$s · used %2$s</string>
+    <string name="open_tree_need_access">Open tree: allow all files access</string>
+    <string name="card_desc">Open shared storage tree</string>
+    <string name="card_desc_need_access">%1$s: allow all files access</string>
+    <string name="refresh_desc">Refresh shared storage tree</string>
+    <string name="scan_not_started">Scan not started</string>
+    <string name="no_storage_access">No access to shared storage.</string>
+    <string name="bar_used">Used %1$s</string>
+
+    <!-- Tier-0 segments. -->
+    <string name="seg_video">Video</string>
+    <string name="seg_photo">Photos</string>
+    <string name="seg_audio">Audio</string>
+    <string name="seg_apps">Apps</string>
+    <string name="seg_other">Other files</string>
+    <string name="seg_system">System</string>
+    <string name="seg_free">Free</string>
+
+    <!-- Freshness line (ScanGate). -->
+    <string name="fresh_cache">cache %1$s</string>
+    <string name="fresh_scan">scan %1$s</string>
+    <string name="fresh_updating">updating… %1$s</string>
+    <string name="fresh_first">%1$s · first scan</string>
+    <string name="fresh_refresh">refresh ›</string>
+    <string name="fresh_approx">approximate · %1$s</string>
+    <string name="just_now">just now</string>
+    <string name="min_ago">%1$s min ago</string>
+    <string name="h_ago">%1$s h ago</string>
+    <string name="delta">%1$s since last scan</string>
+
+    <!-- Root panel. -->
+    <string name="su_desc_ask">su: request root</string>
+    <string name="su_desc_asking">su: requesting root</string>
+    <string name="su_desc_granted">root granted; tap to check again</string>
+    <string name="su_desc_denied">root denied; tap to ask again</string>
+    <string name="root_head">Root · direct, no FUSE, sees /data/data</string>
+    <string name="root_scan_desc">Scan as root: %1$s</string>
+    <string name="root_denied_hint">root denied — tap su above to ask again</string>
+
+    <!-- Tree badge (browser). -->
+    <string name="badge_scan">scan</string>
+    <string name="badge_root">root · scan</string>
+    <string name="badge_index">index · approximate</string>
+    <string name="badge_cache">cache from %1$s</string>
+    <string name="badge_partial">incomplete</string>
+
+    <!-- Browser. -->
+    <string name="desc_dir">folder</string>
+    <string name="desc_incomplete">incomplete data</string>
+    <string name="newer_chip">newer · refresh</string>
+    <string name="newer_desc">A newer tree is ready — refresh</string>
+    <string name="long_click_label">Delete or details</string>
+    <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
+    <string name="sort_size">size</string>
+    <string name="sort_name">name</string>
+    <string name="size_apparent">apparent</string>
+    <string name="size_disk">on disk</string>
+    <string name="size_desc_apparent">Size: apparent; tap for on disk</string>
+    <string name="size_desc_disk">Size: on disk; tap for apparent</string>
+    <string name="folder_empty">empty</string>
+    <string name="folder_no_access">⚠ no access</string>
+    <string name="browser_hint">tap — open · long press — details, delete</string>
+    <string name="crumb_go">go to %1$s</string>
+    <string name="deleting">Deleting…</string>
+    <string name="delete_progress_desc">Delete progress</string>
+    <string name="stop">Stop</string>
+    <string name="stopping">Stopping…</string>
+    <string name="delete_failed">Couldn\'t delete</string>
+    <string name="delete_symlink">The path goes through a symbolic link — nothing was deleted.</string>
+    <string name="delete_no_root">Couldn\'t get root — nothing was deleted.</string>
+    <string name="delete_cancelled_title">Delete cancelled</string>
+    <string name="tree_changed">The tree changed while the dialog was open. Nothing was deleted.</string>
+
+    <!-- Delete progress (DeleteProgress). -->
+    <string name="progress_title">Deleting “%1$s”</string>
+    <string name="progress_announce">Deleted %1$s</string>
+    <string name="progress_cancelled">Delete cancelled — nothing was deleted.</string>
+    <string name="freed">freed %1$s</string>
+    <string name="freed_left">%1$s · the rest is still listed</string>
+    <string name="refreshing">refreshing tree…</string>
+    <string name="gone">“%1$s” is no longer on disk</string>
+
+    <!-- Delete policy. -->
+    <string name="block_system">system path — delete disabled</string>
+    <string name="block_other_fs">another file system — delete disabled</string>
+    <string name="block_all_app_data">holds the data of all apps — delete disabled</string>
+    <string name="block_user_storage">the whole user storage — delete disabled</string>
+    <string name="block_system_dir">system folder — delete disabled</string>
+    <string name="block_android_dir">Android service folder — delete disabled</string>
+    <string name="block_refresh_failed">tree did not refresh — can\'t delete the folder</string>
+    <string name="block_no_fast">path does not map to /data/media</string>
+
+    <!-- Delete sheet. -->
+    <string name="sheet_title">Delete “%1$s”?</string>
+    <string name="sheet_title_blocked">“%1$s”</string>
+    <string name="as_root">AS ROOT</string>
+    <string name="as_root_desc">deleting with root rights</string>
+    <string name="path_desc">path: %1$s</string>
+    <string name="owner">%1$s · app data</string>
+    <string name="owner_desc">owner: %1$s, app data</string>
+    <string name="apparent_size">apparent %1$s</string>
+    <string name="disk_size_desc">size on disk %1$s</string>
+    <string name="more_children">…%1$s more</string>
+    <string name="hardlink">hard link — space may not be freed</string>
+    <string name="index_approx">size from the index, approximate</string>
+    <string name="cache_sizes">sizes from the scan of %1$s</string>
+    <string name="fast_box">fast via root (bypasses FUSE)</string>
+    <string name="fast_note">space is freed at once; the gallery updates in the background</string>
+    <string name="no_trash">No trash. This can\'t be undone.</string>
+    <string name="delete_btn">Delete</string>
+    <string name="delete_btn_size">Delete %1$s</string>
+    <string name="delete_btn_desc">%1$s, “%2$s”</string>
+    <string name="delete_in">Delete in %1$s…</string>
+    <string name="delete_in_desc">Delete, available in %1$s</string>
+    <string name="delete_ready">“Delete” is available</string>
+
+    <!-- Scan screen. -->
+    <string name="scanning">Scanning · %1$s</string>
+    <string name="no_root">no root</string>
+    <string name="tile_files">Files</string>
+    <string name="tile_size">Size</string>
+    <string name="tile_speed">Speed</string>
+    <string name="tile_time">Time</string>
+    <string name="scan_now">Now</string>
+    <string name="scan_largest">Largest so far</string>
+    <string name="scan_other">…other</string>
+    <string name="scan_continues">the scan continues in the background</string>
+    <string name="scan_cancelled">Scan cancelled</string>
+    <string name="scan_failed">Scan failed</string>
+    <string name="scan_root_hint">Root denied? Try a scan without root.</string>
+
+    <!-- Native error texts, mapped by kind (NativeErr); the raw text goes to the log only. -->
+    <string name="err_code">Error code %1$s</string>
+    <string name="err_cannot_open">Can\'t open %1$s</string>
+    <string name="err_helper_start">The root helper did not start</string>
+    <string name="err_helper_exit">The root helper exited with code %1$s</string>
+
+    <!-- Apps screen. -->
+    <string name="apps_footer">StorageStatsManager data · works without root · tap — app settings</string>
+    <string name="usage_explain">To show how much space each app takes, ancdu needs “Usage access”. ancdu reads only sizes, no history.</string>
+    <string name="usage_settings_sub">Usage access → ancdu</string>
+    <string name="apps_load_failed">Couldn\'t load app sizes: %1$s</string>
+    <string name="legend_data">data</string>
+    <string name="legend_cache">cache</string>
+    <string name="app_desc">%1$s, %2$s: APK %3$s, data %4$s, cache %5$s</string>
+</resources>

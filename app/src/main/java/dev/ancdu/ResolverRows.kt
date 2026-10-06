@@ -22,7 +22,7 @@ class ResolverRows(private val cr: ContentResolver, keepFiles: Boolean = false) 
         }
         @Suppress("DEPRECATION") // _data: единственный столбец с абсолютным путём
         val proj = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA)
-        val c = cr.query(uri, proj, q, null) ?: throw IllegalStateException("MediaStore недоступен")
+        val c = cr.query(uri, proj, q, null) ?: throw IllegalStateException("MediaStore unavailable")
         return c.use { cur ->
             val out = ArrayList<MediaRow>(cur.count.coerceAtLeast(0))
             while (cur.moveToNext()) out += MediaRow(cur.getLong(0), if (cur.isNull(1)) null else cur.getString(1))

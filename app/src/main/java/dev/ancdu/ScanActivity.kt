@@ -55,9 +55,9 @@ class ScanActivity : Activity() {
         override val count get() = liveN
         override fun bind(index: Int, row: Row) {
             val nd = liveNodes[index]
-            row.name = if (nd < 0) "…прочее"
+            row.name = if (nd < 0) tx.s(R.string.scan_other)
                        else if (Holder.h != handle) "" else Native.str(Native.liveName(handle, nd))
-            row.size = Fmt.size(liveDisk[index])
+            row.size = Fmt.size(liveDisk[index], tx)
             row.bar = ListMath.bar(liveDisk[index], liveDisk[0])
             row.pct = Fmt.pct(liveDisk[index], p[2])
             row.desc = "${row.name}, ${row.size}"
@@ -106,11 +106,12 @@ class ScanActivity : Activity() {
                 else Native.scanStart(root, true, 0, err)
         if (h == 0L) {
             finished = true
-            failure = alert("Скан не запущен", "Код ошибки ${err[0]}", onDismiss = ::leave)
+            val f = ScanFail(err[0]).also { NativeErr.log("scan start", it) }
+            failure = alert(tx.s(R.string.scan_not_started), NativeErr.text(tx, f), onDismiss = ::leave)
             return false
         }
         handle = h
-        Holder.set(h, if (su) Kind.ROOT else Kind.SCAN, root, if (su) "root · скан" else "скан", su)
+        Holder.set(h, if (su) Kind.ROOT else Kind.SCAN, root, su)
         return true
     }
 
@@ -122,8 +123,9 @@ class ScanActivity : Activity() {
     private fun buildUi() {
         built = true
         val pad = dp(16)
+        val t = tx
         val head = vbox(4).apply {
-            addView(label("Сканирование · " + (if (su) "root" else "без root"), 13f, C.MUTED))
+            addView(label(t.s(R.string.scanning, if (su) "root" else t.s(R.string.no_root)), 13f, C.MUTED))
             addView(label(root, 22f, mono = true, bold = true))
         }
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -131,7 +133,7 @@ class ScanActivity : Activity() {
             indeterminateTintList = android.content.res.ColorStateList.valueOf(C.ACCENT)
         }
         val grid = GridLayout(this).apply { columnCount = 2 }
-        val names = arrayOf("Файлов", "Объём", "Скорость", "Время")
+        val names = arrayOf(t.s(R.string.tile_files), t.s(R.string.tile_size), t.s(R.string.tile_speed), t.s(R.string.tile_time))
         tiles = Array(4) { label("—", 24f, mono = true, bold = true) }
         for (i in 0 until 4) {
             val cell = vbox(6).apply {
@@ -147,8 +149,8 @@ class ScanActivity : Activity() {
         }
         cur = label("", 13f, mono = true).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.START }
         live = NcduListView(this).apply { source = liveSrc }
-        val cancel = if (attach) action("Закрыть", "скан продолжится в фоне", false) { finished = true; finish() }
-                     else action("Отмена", null, false) { abort(true) }
+        val cancel = if (attach) action(t.s(R.string.close), t.s(R.string.scan_continues), false) { finished = true; finish() }
+                     else action(t.s(R.string.cancel), null, false) { abort(true) }
         setContentView(vbox(16).apply {
             setBackgroundColor(C.BG)
             setPadding(pad, dp(28), pad, dp(24))
@@ -158,9 +160,9 @@ class ScanActivity : Activity() {
             addView(vbox(6).apply {
                 setPadding(pad, pad, pad, pad)
                 background = rounded(C.SURFACE, dp(14).toFloat())
-                addView(label("Сейчас", 13f, C.MUTED)); addView(cur)
+                addView(label(t.s(R.string.scan_now), 13f, C.MUTED)); addView(cur)
             })
-            if (!attach) addView(label("Крупнейшие пока", 13f, C.MUTED))
+            if (!attach) addView(label(t.s(R.string.scan_largest), 13f, C.MUTED))
             addView(live, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(cancel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
@@ -176,13 +178,13 @@ class ScanActivity : Activity() {
         when (p[0].toInt()) {
             ST_RUNNING -> {}
             ST_DONE, ST_FULL -> done(h)
-            ST_CANCELLED -> { log(); drop(); toast("Скан отменён"); finish() }
+            ST_CANCELLED -> { log(); drop(); toast(tx.s(R.string.scan_cancelled)); finish() }
             else -> {
                 log()
-                val msg = Native.str(Native.error(h)).ifEmpty { "неизвестная ошибка" }
+                val f = ScanFail(0, Native.str(Native.error(h))).also { NativeErr.log("scan", it) }
                 drop()
-                failure = alert("Скан не удался",
-                    msg + if (su) "\n\nRoot отклонён? Попробуйте скан без root." else "",
+                failure = alert(tx.s(R.string.scan_failed),
+                    NativeErr.text(tx, f) + if (su) "\n\n" + tx.s(R.string.scan_root_hint) else "",
                     onDismiss = ::leave)
             }
         }
@@ -190,10 +192,11 @@ class ScanActivity : Activity() {
 
     private fun renderTiles(p: LongArray, path: String) {
         val secs = maxOf(p[4], 1) / 1000.0
-        tiles[0].text = Fmt.count(p[1])
-        tiles[1].text = Fmt.size(p[2])
-        tiles[2].text = Fmt.count((p[1] / secs).toLong()) + "/с"
-        tiles[3].text = String.format(java.util.Locale.ROOT, "%02d:%04.1f", p[4] / 60000, (p[4] % 60000) / 1000.0)
+        val t = tx
+        tiles[0].text = Fmt.count(p[1], t.locale)
+        tiles[1].text = Fmt.size(p[2], t)
+        tiles[2].text = t.s(R.string.rate_per_s, Fmt.count((p[1] / secs).toLong(), t.locale))
+        tiles[3].text = Fmt.timer(p[4], t.locale)
         cur.text = path
     }
 
@@ -217,7 +220,8 @@ class ScanActivity : Activity() {
             startActivity(Intent(this, BrowserActivity::class.java))
             finish()
         } else {
-            failure = alert("Скан не удался", BgScan.failure ?: "неизвестная ошибка", onDismiss = ::leave)
+            failure = alert(tx.s(R.string.scan_failed),
+                BgScan.failure?.let { NativeErr.text(tx, it) } ?: tx.s(R.string.unknown_error), onDismiss = ::leave)
         }
     }
 
@@ -255,7 +259,7 @@ class ScanActivity : Activity() {
         p[0] = ST_CANCELLED.toLong()
         log()
         drop()
-        if (notify) toast("Скан отменён")
+        if (notify) toast(tx.s(R.string.scan_cancelled))
         finish()
     }
 
@@ -273,8 +277,8 @@ class ScanActivity : Activity() {
         if (su) { Root.rememberMemfd(this, p[5] == 1L); Root.granted(this) }
         // Кэш и запись «caches» — на io (FIFO с delete и free этого же дескриптора), см. Scans.finish.
         val d = Scans.finish(this, h, root, su, p)
-        // Итог скана — в плашку браузера: «скан · 69 312 эл. · 0,2 с». Тот же дескриптор: только поля.
-        Holder.set(h, Holder.kind, root, Holder.label + d.suffix, su, d.time)
+        // Итог скана — в плашку браузера: «скан · 0,2 с». Тот же дескриптор: только поля.
+        Holder.set(h, Holder.kind, root, su, d.time, d.ms)
         startActivity(Intent(this, BrowserActivity::class.java))
         finish()
     }

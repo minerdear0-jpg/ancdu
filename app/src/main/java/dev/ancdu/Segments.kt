@@ -1,6 +1,7 @@
 package dev.ancdu
 
-data class Seg(val label: String, val bytes: Long, val color: Int)
+/** [label] — ресурс подписи. */
+data class Seg(val label: Int, val bytes: Long, val color: Int)
 
 object Segments {
     /**
@@ -15,13 +16,13 @@ object Segments {
         val known = video + image + audio + apps + other
         val system = (used - known).coerceAtLeast(0)
         return listOf(
-            Seg("Видео", video, C.ACCENT),
-            Seg("Фото", image, C.FILE),
-            Seg("Аудио", audio, C.AUDIO),
-            Seg("Приложения", apps, C.APPS),
-            Seg("Прочие файлы", other, C.OTHER),
-            Seg("Система", system, C.SYS),
-            Seg("Свободно", free.coerceAtLeast(0), C.CHIP),
+            Seg(R.string.seg_video, video, C.ACCENT),
+            Seg(R.string.seg_photo, image, C.FILE),
+            Seg(R.string.seg_audio, audio, C.AUDIO),
+            Seg(R.string.seg_apps, apps, C.APPS),
+            Seg(R.string.seg_other, other, C.OTHER),
+            Seg(R.string.seg_system, system, C.SYS),
+            Seg(R.string.seg_free, free.coerceAtLeast(0), C.CHIP),
         )
     }
 }

@@ -37,7 +37,7 @@ class BrowserTest {
 
     private fun scan(dir: File) {
         val h = scanned(dir)
-        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, "скан", false) }   // Holder.set — только главный поток
+        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, false) }   // Holder.set — только главный поток
     }
 
     /** Готовое дерево [dir], ещё не в Holder. */
@@ -97,7 +97,7 @@ class BrowserTest {
         assertEquals(0, r)
         assertTrue(waitFor { !act2.busy && act2.list.source != null })
         ins.runOnMainSync {
-            assertTrue(act2.footerText.toString(), act2.footerText.startsWith("освобождено "))
+            assertTrue(act2.footerText.toString(), act2.footerText.startsWith(act2.prefixOf(R.string.freed)))
             assertEquals(1, act2.loads)
             val src = act2.list.source!!
             assertEquals(1, src.count)
@@ -135,12 +135,12 @@ class BrowserTest {
         ins.runOnMainSync {
             assertEquals("sub", Holder.delName)
             assertEquals(4L, Holder.delTotal) // sub + 3 файла
-            assertTrue(act.waitText!!.text.startsWith("0 / 4 эл."))
-            assertEquals("Стоп", act.waitStop!!.text.toString())
+            assertTrue(act.waitText!!.text.startsWith(act.tx.q(R.plurals.items, 4, "0 / 4")))
+            assertEquals(act.getString(R.string.stop), act.waitStop!!.text.toString())
             assertEquals(1000, act.waitBar!!.max)
             assertNotNull(act.waitBar!!.contentDescription)
             act.stopDelete()
-            assertEquals("Останавливаю…", act.waitStop!!.text.toString())
+            assertEquals(act.getString(R.string.stopping), act.waitStop!!.text.toString())
             assertFalse(act.waitStop!!.isEnabled)
         }
 
@@ -153,7 +153,7 @@ class BrowserTest {
             assertNull(act.waitBar)
             // ещё не начиналось — «отменено» в подвале, без диалога; обновлять нечего
             assertNull(act.lastAlert)
-            assertEquals(DeleteProgress.CANCELLED, act.footerText.toString())
+            assertEquals(DeleteProgress.cancelled(act.tx), act.footerText.toString())
         }
         for (i in 0 until 3) assertTrue(File(sub, "f$i.bin").exists())
 
@@ -189,7 +189,7 @@ class BrowserTest {
         val gate = CountDownLatch(1)
         Holder.io.execute { gate.await(30, TimeUnit.SECONDS) }
         ins.runOnMainSync {
-            Holder.set(hb, Kind.SCAN, b.path, "скан", false)
+            Holder.set(hb, Kind.SCAN, b.path, false)
             assertNull(act1.list.source)   // отцеплен синхронно, внутри set
         }
         gate.countDown()
@@ -257,7 +257,7 @@ class BrowserTest {
         File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
         File(dir, "f.txt").writeBytes(ByteArray(10))
         val h = scanned(dir)
-        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false) }
+        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, false) }
 
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
@@ -318,7 +318,7 @@ class BrowserTest {
             assertEquals("вложенная папка, видимый", h0, height())
 
             val h2 = scanned(dir)
-            ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, "скан · новее", false); act.refreshPending() }
+            ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, false); act.refreshPending() }
             ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
             assertEquals("с чипом «новее»", h0, height())
             ins.runOnMainSync { act.onBackPressed() }
@@ -365,7 +365,7 @@ class BrowserTest {
             var h1 = 0L
             ins.runOnMainSync {
                 h1 = Holder.h
-                Holder.offer(h2, Kind.SCAN, dir.path, "скан · новее", false)
+                Holder.offer(h2, Kind.SCAN, dir.path, false, 0L, 4200L)   // ms — метка нового дерева в плашке
                 act.refreshPending()
             }
             ins.runOnMainSync {
@@ -377,7 +377,7 @@ class BrowserTest {
                 assertEquals(h2, Holder.h)
                 assertEquals(0L, Holder.pending)
                 assertEquals(View.GONE, act.newer.visibility)
-                assertEquals("скан · новее", act.badge.text.toString())
+                assertEquals(Badge.text(act.tx, Kind.SCAN, 0L, 4200L, false), act.badge.text.toString())
             }
             assertEquals(File(dir, "sub/deep").path, path())
             assertEquals(2, count())
@@ -385,7 +385,7 @@ class BrowserTest {
             // путь пропал — ближайший предок
             File(dir, "sub/deep").deleteRecursively()
             val h3 = scanned(dir)
-            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, "скан", false); act.refreshPending() }
+            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, false); act.refreshPending() }
             ins.runOnMainSync { act.newer.performClick() }
             ins.runOnMainSync { assertEquals(h3, Holder.h) }
             assertEquals(File(dir, "sub").path, path())
@@ -408,8 +408,8 @@ class BrowserTest {
         val h = scanned(dir)
         val h2 = scanned(dir)
         ins.runOnMainSync {
-            Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false)
-            Holder.offer(h2, Kind.SCAN, dir.path, "скан", false)
+            Holder.set(h, Kind.CACHE, dir.path, false)
+            Holder.offer(h2, Kind.SCAN, dir.path, false)
         }
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
@@ -441,7 +441,7 @@ class BrowserTest {
             // Файл пропал с диска: новое дерево его не знает — листа нет, подвал говорит об этом.
             File(dir, "g.txt").delete()
             val h3 = scanned(dir)
-            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, "скан", false); act.refreshPending() }
+            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, false); act.refreshPending() }
             ins.runOnMainSync { assertEquals(h2, Holder.h) }   // лист закрыт, но флага нет — ждёт чип
             val gi = index("g.txt")
             var before: DeleteSheet? = null
@@ -450,7 +450,7 @@ class BrowserTest {
             ins.runOnMainSync {
                 assertEquals(h3, Holder.h)
                 assertTrue(act.sheet === before && act.sheet?.dialog?.isShowing != true)
-                assertEquals("“g.txt” уже нет на диске", act.footerText.toString())
+                assertEquals(DeleteProgress.gone(act.tx, "g.txt"), act.footerText.toString())
             }
             assertTrue(File(dir, "f.txt").exists())
         } finally {
@@ -503,7 +503,7 @@ class BrowserTest {
         File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
         File(dir, "f.txt").writeBytes(ByteArray(10))
         val h = scanned(dir)
-        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false) }
+        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, false) }
         File(dir, "sub/new.bin").writeBytes(ByteArray(100_000))   // диск изменился после «кэша»
         Perms.filesOverride = true
         val act = ins.startActivitySync(
@@ -514,7 +514,7 @@ class BrowserTest {
             ins.runOnMainSync {
                 act.list.source!!.longClick(i)
                 assertTrue(act.sheet?.dialog?.isShowing != true)
-                assertEquals("обновляю дерево…", act.footerText.toString())
+                assertEquals(DeleteProgress.refreshing(act.tx), act.footerText.toString())
             }
             assertTrue(waitFor(30_000) { act.sheet?.dialog?.isShowing == true })
             ins.runOnMainSync {
@@ -559,10 +559,10 @@ class BrowserTest {
             ins.runOnMainSync { h0 = Holder.h }
             val r = act.deleteBlocking(index(act, "sub/"))
             assertNotEquals(0, r)
-            assertTrue(waitFor(30_000) { Holder.h != h0 && act.footerText.startsWith("освобождено ") })
+            assertTrue(waitFor(30_000) { Holder.h != h0 && act.footerText.startsWith(act.prefixOf(R.string.freed)) })
             ins.runOnMainSync {
                 assertNull(act.lastAlert)                          // ни «остановлено», ни «частично»
-                assertTrue(act.footerText.toString(), act.footerText.endsWith(" · остаток в списке"))
+                assertTrue(act.footerText.toString(), act.footerText.endsWith(act.suffixOf(R.string.freed_left)))
                 assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
             }
             assertFalse(File(sub, "x.bin").exists())
@@ -619,10 +619,10 @@ class BrowserTest {
             deleter.join(30_000)
             assertFalse(deleter.isAlive)
             assertEquals(-DeleteProgress.EINTR, r)
-            assertTrue(waitFor(30_000) { act.footerText.startsWith("освобождено ") })
+            assertTrue(waitFor(30_000) { act.footerText.startsWith(act.prefixOf(R.string.freed)) })
             ins.runOnMainSync {
                 assertNull(act.lastAlert)
-                assertTrue(act.footerText.toString(), act.footerText.endsWith(" · остаток в списке"))
+                assertTrue(act.footerText.toString(), act.footerText.endsWith(act.suffixOf(R.string.freed_left)))
                 assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
             }
             assertEquals(10 - k, sub.listFiles()!!.size)

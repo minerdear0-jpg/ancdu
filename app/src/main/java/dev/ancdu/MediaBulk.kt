@@ -134,7 +134,7 @@ object MediaBulk {
         var matched = 0L
         try {
             require(chunk > 0) { "chunk $chunk" }
-            require(path.startsWith("/") && path.length > 1 && !path.endsWith("/")) { "путь «$path»" }
+            require(path.startsWith("/") && path.length > 1 && !path.endsWith("/")) { "path \"$path\"" }
             val sel = selection(path, dir)
             var after = Long.MIN_VALUE
             var self: Long? = null
@@ -144,7 +144,7 @@ object MediaBulk {
                 val page = rows.page(q.where, q.args, chunk)
                 if (page.isEmpty()) break
                 val last = page.maxOf { it.id }
-                check(last > after) { "страница не продвинулась: $last ≤ $after" }
+                check(last > after) { "page did not advance: $last <= $after" }
                 after = last
                 val ids = ArrayList<Long>(page.size)
                 for (r in page) {

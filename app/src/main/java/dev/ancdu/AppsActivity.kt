@@ -49,14 +49,12 @@ class AppsActivity : Activity() {
         listBox = vbox().apply {
             addView(legend())
             addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            addView(label("Данные StorageStatsManager · работает без root · тап — настройки приложения",
-                12f, C.MUTED).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) })
+            addView(label(tx.s(R.string.apps_footer), 12f, C.MUTED).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) })
         }
         askBox = vbox(16).apply {
             setPadding(dp(16), dp(8), dp(16), dp(24))
-            addView(label("Чтобы показать, сколько места занимает каждое приложение, нужен " +
-                "«Доступ к истории использования». ancdu читает только размеры, без истории.", 15f))
-            addView(action("Открыть настройки", "Доступ к истории использования → ancdu", true) {
+            addView(label(tx.s(R.string.usage_explain), 15f))
+            addView(action(tx.s(R.string.open_settings), tx.s(R.string.usage_settings_sub), true) {
                 Perms.askUsage(this@AppsActivity)
             })
         }
@@ -75,11 +73,12 @@ class AppsActivity : Activity() {
         val my = ++gen
         if (!Perms.usage(this)) { show(askBox); return }
         show(listBox)
+        val x = tx
         Thread {
             val t = try { Quotas.load(applicationContext) } catch (e: Exception) {
                 runOnUiThread {
                     if (isDestroyed || my != gen) return@runOnUiThread
-                    errorText.text = "Не удалось загрузить размеры приложений: ${e.message ?: e}"
+                    errorText.text = x.s(R.string.apps_load_failed, (e.message ?: e).toString())
                     show(errorText)
                 }
                 return@Thread
@@ -87,13 +86,13 @@ class AppsActivity : Activity() {
             val got = t.apps.orEmpty()
             val max = got.firstOrNull()?.total ?: 0
             val sum = got.sumOf { it.total }
-            val built = got.map { a -> Row().also { AppRows.fill(a, max, sum, it) } }
+            val built = got.map { a -> Row().also { AppRows.fill(x, a, max, sum, it) } }
             runOnUiThread {
                 if (isDestroyed || my != gen) return@runOnUiThread
                 apps = got
                 rows = built
                 loaded++
-                title.text = "${got.size} · ${Fmt.size(sum)}"
+                title.text = "${Fmt.count(got.size.toLong(), x.locale)} · ${Fmt.size(sum, x)}"
                 list.refresh()   // прокрутка сохраняется (refresh только ограничивает её)
             }
         }.start()
@@ -111,14 +110,14 @@ class AppsActivity : Activity() {
     private fun header(): LinearLayout = hbox(8).apply {
         setPadding(dp(8), dp(12), dp(16), dp(8))
         addView(backButton { finish() })
-        addView(label("Приложения", 20f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(label(tx.s(R.string.apps_title), 20f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         title = label("…", 13f, C.MUTED, mono = true)
         addView(title)
     }
 
     private fun legend(): LinearLayout = hbox(16).apply {
         setPadding(dp(16), 0, dp(16), dp(10))
-        for ((c, t) in listOf(C.FILE to "APK", C.ACCENT to "данные", C.CACHE to "кэш")) {
+        for ((c, t) in listOf(C.FILE to "APK", C.ACCENT to tx.s(R.string.legend_data), C.CACHE to tx.s(R.string.legend_cache))) {
             val s = android.text.SpannableString("■ $t")
             s.setSpan(android.text.style.ForegroundColorSpan(c), 0, 1, 0)
             addView(label(s, 12f, C.MUTED))

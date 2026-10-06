@@ -19,8 +19,11 @@ class SegBar(ctx: Context) : View(ctx) {
 
     init { tag = "segbar" }
 
-    private fun describe(): String = segs?.joinToString { "${it.label} ${Fmt.size(it.bytes)}" }
-        ?: "Занято ${(used * 100).toInt()}%"
+    private fun describe(): String {
+        val t = context.tx
+        return segs?.joinToString { "${t.s(it.label)} ${Fmt.size(it.bytes, t)}" }
+            ?: t.s(R.string.bar_used, "${(used * 100).toInt()}%")
+    }
 
     override fun onMeasure(w: Int, h: Int) =
         setMeasuredDimension(MeasureSpec.getSize(w), context.dp(12))

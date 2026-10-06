@@ -24,7 +24,7 @@ class DeletePolicyTest {
         // разрешённого (dataAllowlist): /data/system_ce больше не удаляется
         for (p in listOf("/data/system_ce", "/data/apps")) {
             assertFalse(p, DeletePolicy.isSystemPath(p))
-            assertEquals(p, DeletePolicy.SYSTEM_DIR, reason(p, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
+            assertEquals(p, Block.SYSTEM_DIR, reason(p, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         }
         assertFalse(DeletePolicy.isSystemPath("/devices"))
         assertFalse(DeletePolicy.isSystemPath("/data/data/com.example"))
@@ -39,17 +39,17 @@ class DeletePolicyTest {
         val storage = listOf("/data/media", "/data/media/0", "/data/media/11",
             "/storage/emulated", "/storage/emulated/0", "/storage/emulated/10")
         for (p in appData) for (v in listOf(p, "$p/", "$p//")) {
-            assertEquals(v, DeletePolicy.ALL_APP_DATA, DeletePolicy.exactBlockReason(v))
-            assertEquals(v, DeletePolicy.ALL_APP_DATA,
+            assertEquals(v, Block.ALL_APP_DATA, DeletePolicy.exactBlockReason(v))
+            assertEquals(v, Block.ALL_APP_DATA,
                 reason(v, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         }
         for (p in storage) for (v in listOf(p, "$p/", "$p//")) {
-            assertEquals(v, DeletePolicy.USER_STORAGE, DeletePolicy.exactBlockReason(v))
-            assertEquals(v, DeletePolicy.USER_STORAGE,
+            assertEquals(v, Block.USER_STORAGE, DeletePolicy.exactBlockReason(v))
+            assertEquals(v, Block.USER_STORAGE,
                 reason(v, sessionRoot = "/", flags = F_DIR, kind = Kind.ROOT))
         }
         // раньше индексного запрета
-        assertEquals(DeletePolicy.USER_STORAGE,
+        assertEquals(Block.USER_STORAGE,
             reason("/storage/emulated/0/", sessionRoot = "/storage", flags = F_DIR, kind = Kind.INDEX))
         // потомки и соседи с общим префиксом — удалять можно
         for (p in listOf("/data/data/com.example", "/data/data/com.example/", "/data/data/123",
@@ -64,14 +64,14 @@ class DeletePolicyTest {
         for (p in listOf("/data/media/obb", "/data/user/x", "/data/user/0x", "/data/database",
                 "/data/users", "/data/media0")) {
             assertNull(p, DeletePolicy.exactBlockReason(p))
-            assertEquals(p, DeletePolicy.SYSTEM_DIR, reason(p, sessionRoot = "/", flags = F_DIR, kind = Kind.ROOT))
+            assertEquals(p, Block.SYSTEM_DIR, reason(p, sessionRoot = "/", flags = F_DIR, kind = Kind.ROOT))
         }
         // папка Android хранилища — только она сама; её содержимое удалять можно
         for (p in listOf("/data/media/0/Android", "/data/media/10/Android/", "/storage/emulated/0/Android",
                 "/storage/emulated/0//Android//")) {
-            assertEquals(p, DeletePolicy.ANDROID_DIR, DeletePolicy.exactBlockReason(p))
-            assertEquals(p, DeletePolicy.ANDROID_DIR, reason(p, flags = F_DIR, kind = Kind.ROOT))
-            assertEquals(p, DeletePolicy.ANDROID_DIR, reason(p, flags = F_DIR, kind = Kind.SCAN))
+            assertEquals(p, Block.ANDROID_DIR, DeletePolicy.exactBlockReason(p))
+            assertEquals(p, Block.ANDROID_DIR, reason(p, flags = F_DIR, kind = Kind.ROOT))
+            assertEquals(p, Block.ANDROID_DIR, reason(p, flags = F_DIR, kind = Kind.SCAN))
         }
         for (p in listOf("/data/media/0/Android/data/com.a", "/data/media/0/Android/obb",
                 "/storage/emulated/0/Android/data", "/storage/emulated/0/Android/data/com.a/cache",
@@ -106,27 +106,27 @@ class DeletePolicyTest {
             "/data/data/com.a/../../system_ce", "/data/data/..", "/data/local/tmp/.",
             "/data/media/0/../../vendor")
         for (p in blocked) {
-            assertEquals(p, DeletePolicy.SYSTEM_DIR, DeletePolicy.dataBlockReason(p))
+            assertEquals(p, Block.SYSTEM_DIR, DeletePolicy.dataBlockReason(p))
             for (k in Kind.values()) {
-                assertEquals("$p $k", DeletePolicy.SYSTEM_DIR,
+                assertEquals("$p $k", Block.SYSTEM_DIR,
                     reason(p, sessionRoot = "/data", flags = F_DIR, kind = k))
-                assertEquals("$p $k file", DeletePolicy.SYSTEM_DIR, reason(p, sessionRoot = "/data", kind = k))
+                assertEquals("$p $k file", Block.SYSTEM_DIR, reason(p, sessionRoot = "/data", kind = k))
             }
         }
         // сами корни пакетов разрешены (это и есть «данные приложения»); их родители — нет
         assertNull(reason("/data/data/com.a", sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         for (p in listOf("/data/user/0", "/data/user_de/0", "/data/data")) {
-            assertEquals(p, DeletePolicy.ALL_APP_DATA, reason(p, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
+            assertEquals(p, Block.ALL_APP_DATA, reason(p, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         }
-        assertEquals(DeletePolicy.USER_STORAGE,
+        assertEquals(Block.USER_STORAGE,
             reason("/data/media/0", sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         // путь вне /data список не трогает; /data и /data/ сами — системные
         for (p in listOf("/storage/emulated/0/Download", "/mnt/media_rw/x", "/datax", "/sdcard/x"))
             assertNull(p, DeletePolicy.dataBlockReason(p))
-        assertEquals(DeletePolicy.SYSTEM_DIR, DeletePolicy.dataBlockReason("/data"))
-        assertEquals(DeletePolicy.SYSTEM_DIR, DeletePolicy.dataBlockReason("/data//"))
+        assertEquals(Block.SYSTEM_DIR, DeletePolicy.dataBlockReason("/data"))
+        assertEquals(Block.SYSTEM_DIR, DeletePolicy.dataBlockReason("/data//"))
         // сессия без root (скан общего хранилища таких путей не даёт) — список действует так же
-        assertEquals(DeletePolicy.SYSTEM_DIR,
+        assertEquals(Block.SYSTEM_DIR,
             reason("/data/vendor/x", sessionRoot = "/storage/emulated/0", kind = Kind.SCAN))
         assertNull(reason("/data/data/com.a/f", sessionRoot = "/storage/emulated/0", kind = Kind.SCAN))
     }
@@ -134,19 +134,19 @@ class DeletePolicyTest {
     /** Каталог устаревшего дерева (кэш): экран обновляет дерево сам, причина видна, если не вышло. */
     @Test fun cacheDirs() {
         val s = "/storage/emulated/0"
-        assertEquals(DeletePolicy.REFRESH_FAILED, reason("$s/DCIM", flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.REFRESH_FAILED,
+        assertEquals(Block.REFRESH_FAILED, reason("$s/DCIM", flags = F_DIR, kind = Kind.CACHE))
+        assertEquals(Block.REFRESH_FAILED,
             reason("$s/Download", parentIsRoot = true, flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.REFRESH_FAILED,
+        assertEquals(Block.REFRESH_FAILED,
             reason("/data/data/com.a", sessionRoot = "/data", flags = F_DIR, kind = Kind.CACHE))
         // файлы в кэше удалять можно
         assertNull(reason("$s/DCIM/a.jpg", kind = Kind.CACHE))
         assertNull(reason("/data/data/com.a/f", sessionRoot = "/data", kind = Kind.CACHE))
         // более сильные причины — раньше
-        assertEquals(DeletePolicy.USER_STORAGE, reason(s, sessionRoot = "/storage", flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.SYSTEM_DIR,
+        assertEquals(Block.USER_STORAGE, reason(s, sessionRoot = "/storage", flags = F_DIR, kind = Kind.CACHE))
+        assertEquals(Block.SYSTEM_DIR,
             reason("/data/vendor", sessionRoot = "/data", flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.OTHER_FS, reason("$s/x", flags = F_DIR or F_OTHERFS, kind = Kind.CACHE))
+        assertEquals(Block.OTHER_FS, reason("$s/x", flags = F_DIR or F_OTHERFS, kind = Kind.CACHE))
     }
 
     @Test fun failureKind() {
@@ -164,17 +164,17 @@ class DeletePolicyTest {
     @Test fun reasons() {
         assertNull(reason("/storage/emulated/0/Download/a.bin"))
         assertNull(reason("/storage/emulated/0/Download", flags = F_DIR, parentIsRoot = true))
-        assertEquals(DeletePolicy.OTHER_FS, reason("/storage/emulated/0/x", flags = F_DIR or F_OTHERFS))
-        assertEquals(DeletePolicy.SYSTEM, reason("/storage/emulated/0", scanRoot = true, flags = F_DIR))
-        assertEquals(DeletePolicy.SYSTEM, reason("/data", sessionRoot = "/", parentIsRoot = true, flags = F_DIR))
-        assertEquals(DeletePolicy.SYSTEM, reason("/mnt", sessionRoot = "/", parentIsRoot = true, flags = F_DIR))
-        assertEquals(DeletePolicy.SYSTEM, reason("/data/app/x", sessionRoot = "/data", flags = F_DIR))
+        assertEquals(Block.OTHER_FS, reason("/storage/emulated/0/x", flags = F_DIR or F_OTHERFS))
+        assertEquals(Block.SYSTEM, reason("/storage/emulated/0", scanRoot = true, flags = F_DIR))
+        assertEquals(Block.SYSTEM, reason("/data", sessionRoot = "/", parentIsRoot = true, flags = F_DIR))
+        assertEquals(Block.SYSTEM, reason("/mnt", sessionRoot = "/", parentIsRoot = true, flags = F_DIR))
+        assertEquals(Block.SYSTEM, reason("/data/app/x", sessionRoot = "/data", flags = F_DIR))
         assertNull(reason("/data/data/com.a", sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
         // индекс: каталоги — только после обновления дерева, файлы можно
-        assertEquals(DeletePolicy.REFRESH_FAILED, reason("/storage/emulated/0/DCIM", flags = F_DIR, kind = Kind.INDEX))
+        assertEquals(Block.REFRESH_FAILED, reason("/storage/emulated/0/DCIM", flags = F_DIR, kind = Kind.INDEX))
         assertNull(reason("/storage/emulated/0/DCIM/a.jpg", kind = Kind.INDEX))
         // ↪ сильнее системного пути и индекса
-        assertEquals(DeletePolicy.OTHER_FS, reason("/proc", sessionRoot = "/", parentIsRoot = true,
+        assertEquals(Block.OTHER_FS, reason("/proc", sessionRoot = "/", parentIsRoot = true,
             flags = F_DIR or F_OTHERFS))
     }
 }
@@ -186,9 +186,10 @@ class StaleTreeReasonTest {
     /** Одна причина для кэша и индекса; файлы и свежие деревья не задерживаются. */
     @Test fun oneReasonForCacheAndIndexDirs() {
         val d = "/storage/emulated/0/DCIM"
-        assertEquals("дерево не обновилось — каталог не удалить", DeletePolicy.REFRESH_FAILED)
+        assertEquals("дерево не обновилось — каталог не удалить", XmlTxt.RU.s(Block.REFRESH_FAILED.res))
+        assertEquals("tree did not refresh — can't delete the folder", XmlTxt.EN.s(Block.REFRESH_FAILED.res))
         for (k in listOf(Kind.CACHE, Kind.INDEX)) {
-            assertEquals("$k", DeletePolicy.REFRESH_FAILED, reason(d, F_DIR, k))
+            assertEquals("$k", Block.REFRESH_FAILED, reason(d, F_DIR, k))
             assertNull("$k file", reason("$d/a.jpg", 0, k))
         }
         for (k in listOf(Kind.SCAN, Kind.ROOT)) {
@@ -196,8 +197,8 @@ class StaleTreeReasonTest {
             assertNull("$k file", reason("$d/a.jpg", 0, k))
         }
         // системные запреты сильнее
-        assertEquals(DeletePolicy.ANDROID_DIR, reason("/storage/emulated/0/Android", F_DIR, Kind.CACHE))
-        assertEquals(DeletePolicy.OTHER_FS, reason("$d/x", F_DIR or F_OTHERFS, Kind.INDEX))
+        assertEquals(Block.ANDROID_DIR, reason("/storage/emulated/0/Android", F_DIR, Kind.CACHE))
+        assertEquals(Block.OTHER_FS, reason("$d/x", F_DIR or F_OTHERFS, Kind.INDEX))
     }
 }
 

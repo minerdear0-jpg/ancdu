@@ -57,11 +57,12 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
     fun render() {
         hint?.visibility = if (su && Root.state == RootState.DENIED) View.VISIBLE else View.GONE
         val p = pill ?: return
+        val t = a.tx
         val look = when (Root.state) {
-            RootState.UNKNOWN -> Look("su", C.MUTED, C.SURFACE, "su: запросить root", outline = true)
-            RootState.ASKING -> Look("su…", C.TEXT, C.SURFACE, "su: идёт запрос root", outline = true)
-            RootState.GRANTED -> Look("root ✓", C.OK_TXT, C.OK_BG, "root выдан; нажмите, чтобы проверить снова")
-            RootState.DENIED -> Look("root ✗", C.WARN, C.SURFACE, "root отклонён; нажмите, чтобы запросить снова")
+            RootState.UNKNOWN -> Look("su", C.MUTED, C.SURFACE, t.s(R.string.su_desc_ask), outline = true)
+            RootState.ASKING -> Look("su…", C.TEXT, C.SURFACE, t.s(R.string.su_desc_asking), outline = true)
+            RootState.GRANTED -> Look("root ✓", C.OK_TXT, C.OK_BG, t.s(R.string.su_desc_granted))
+            RootState.DENIED -> Look("root ✗", C.WARN, C.SURFACE, t.s(R.string.su_desc_denied))
         }
         p.text = look.text
         p.setTextColor(look.fg)
@@ -83,19 +84,22 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
         background = GradientDrawable().apply {
             setColor(C.BG); cornerRadius = a.dp(14).toFloat(); setStroke(a.dp(1), C.LINE)
         }
-        val head = SpannableString("Root · напрямую, без FUSE, видно /data/data")
-        head.setSpan(StyleSpan(Typeface.BOLD), 0, 4, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        head.setSpan(ForegroundColorSpan(C.TEXT), 0, 4, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val t = a.tx
+        val head = SpannableString(t.s(R.string.root_head))
+        // Выделено слово до первого « · » («Root»).
+        val bold = head.indexOf(" · ").let { if (it < 0) 0 else it }
+        head.setSpan(StyleSpan(Typeface.BOLD), 0, bold, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        head.setSpan(ForegroundColorSpan(C.TEXT), 0, bold, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         addView(a.label(head, 13f, C.MUTED))
         if (su) addView(a.hbox(8).apply {
             for (path in listOf("/data", "/", "/data/media")) {
                 addView(a.chip(path, false) { scan(path) }.apply {
                     setTextColor(C.MUTED)
-                    contentDescription = "Сканировать как root: $path"
+                    contentDescription = t.s(R.string.root_scan_desc, path)
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             }
         })
-        hint = a.label("root отклонён — нажмите su вверху, чтобы запросить снова", 12f, C.MUTED).apply {
+        hint = a.label(t.s(R.string.root_denied_hint), 12f, C.MUTED).apply {
             visibility = View.GONE
         }
         addView(hint)

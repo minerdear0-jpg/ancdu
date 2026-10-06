@@ -9,9 +9,6 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : Activity() {
     /** Карточка памяти — вход в дерево общего хранилища. */
@@ -105,15 +102,15 @@ class MainActivity : Activity() {
         t.segs?.let { storage.showSegs(it) }
         appsBox.removeAllViews()
         val apps = t.apps
+        val x = tx
         if (apps == null) {
             // Нет «Доступа к истории использования»: AppsActivity объясняет и ведёт в настройки.
-            appsBox.addView(action("Приложения: нет доступа",
-                "нужен доступ к истории использования · подробнее →", false) { openApps() })
+            appsBox.addView(action(x.s(R.string.apps_no_access), x.s(R.string.apps_no_access_sub), false) { openApps() })
             return
         }
         appsBox.addView(hbox().apply {
-            addView(label("Приложения", 15f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label("все →", 14f, C.ACCENT).apply {
+            addView(label(x.s(R.string.apps_title), 15f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(label(x.s(R.string.apps_all), 14f, C.ACCENT).apply {
                 minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
                 setOnClickListener { openApps() }
             })
@@ -121,10 +118,10 @@ class MainActivity : Activity() {
         for (a in apps.take(3)) appsBox.addView(hbox().apply {
             minimumHeight = dp(44)
             isClickable = true; isFocusable = true
-            contentDescription = "${a.label}, ${Fmt.size(a.total)}"
+            contentDescription = "${a.label}, ${Fmt.size(a.total, x)}"
             setOnClickListener { openApps() }
             addView(label(a.label, 15f), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(Fmt.size(a.total), 14f, mono = true))
+            addView(label(Fmt.size(a.total, x), 14f, mono = true))
         })
     }
 
@@ -132,9 +129,6 @@ class MainActivity : Activity() {
     fun lastScans(): List<String> = titles.toList()
     /** Заголовки строк кэшей root-сканов в блоке Root (для тестов). */
     fun rootScans(): List<String> = rootTitles.toList()
-
-    private fun date(ms: Long): String =
-        SimpleDateFormat("dd.MM HH:mm", Locale.forLanguageTag("ru")).format(Date(ms))
 
     private fun renderLast() {
         lastBox.removeAllViews()
@@ -146,12 +140,15 @@ class MainActivity : Activity() {
             val m = CacheMeta.parse(v as? String) ?: return@mapNotNull null
             if (file == storageName) null else file to m
         }.sortedByDescending { it.second.time }
+        val t = tx
         for ((file, m) in rows) {
             val box = (if (m.su) rootPanel.caches else lastBox) ?: continue
-            val title = "Последний скан: ${m.root}"
+            val title = t.s(R.string.last_scan, m.root)
             if (m.su) rootTitles += title else titles += title
-            box.addView(action(title, "${date(m.time)} · ${Fmt.count(m.files)} файлов · ${m.ms} мс" +
-                if (m.su) " · root" else "", false) { openCache(file, m.root, m.su, m.time) })
+            val sub = listOfNotNull(Freshness.date(t, R.string.fmt_day_time, m.time),
+                t.q(R.plurals.files, m.files, Fmt.count(m.files, t.locale)), Fmt.secs(m.ms, t),
+                if (m.su) "root" else null).joinToString(" · ")
+            box.addView(action(title, sub, false) { openCache(file, m.root, m.su, m.time) })
         }
     }
 
@@ -179,12 +176,12 @@ class MainActivity : Activity() {
                     return@runOnUiThread
                 }
                 if (h == 0L) {
-                    showAlert("Кэш повреждён", "Файл кэша удалён, запустите скан заново.")
+                    showAlert(tx.s(R.string.cache_corrupt_title), tx.s(R.string.cache_corrupt_msg))
                     renderLast()
                     storage.render()
                     return@runOnUiThread
                 }
-                Holder.set(h, Kind.CACHE, root, "кэш от ${date(time)}", su, time)
+                Holder.set(h, Kind.CACHE, root, su, time)
                 startActivity(Intent(this, BrowserActivity::class.java))
             }
         }

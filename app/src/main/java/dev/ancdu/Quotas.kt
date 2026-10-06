@@ -35,16 +35,16 @@ object Quotas {
 }
 
 object AppRows {
-    fun fill(a: AppStat, max: Long, sum: Long, row: Row) {
-        val t = a.total
+    fun fill(t: Txt, a: AppStat, max: Long, sum: Long, row: Row) {
+        val total = a.total
         row.name = a.label
         row.sub = a.pkg
-        row.size = Fmt.size(t)
-        row.bar = ListMath.bar(t, max)
-        row.pct = Fmt.pct(t, sum)
-        val f = { v: Long -> if (t <= 0) 0f else (v.toDouble() / t).toFloat() }
+        row.size = Fmt.size(total, t)
+        row.bar = ListMath.bar(total, max)
+        row.pct = Fmt.pct(total, sum)
+        val f = { v: Long -> if (total <= 0) 0f else (v.toDouble() / total).toFloat() }
         row.segs = floatArrayOf(f(a.app), f(a.data - a.cache), f(a.cache))
         row.segColors = intArrayOf(C.FILE, C.ACCENT, C.CACHE)
-        row.desc = "${a.label}, ${row.size}: APK ${Fmt.size(a.app)}, данные ${Fmt.size(a.data - a.cache)}, кэш ${Fmt.size(a.cache)}"
+        row.desc = t.s(R.string.app_desc, a.label, row.size, Fmt.size(a.app, t), Fmt.size(a.data - a.cache, t), Fmt.size(a.cache, t))
     }
 }

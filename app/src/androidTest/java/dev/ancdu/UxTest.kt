@@ -42,7 +42,7 @@ class UxTest {
             Thread.sleep(25)
         }
         assertEquals(ST_DONE.toLong(), p[0])
-        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, "скан", false) }
+        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, false) }
         val a = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
@@ -70,14 +70,14 @@ class UxTest {
             clickName(a, "e/")
             ins.runOnMainSync {
                 assertEquals(View.VISIBLE, a.empty.visibility)
-                assertEquals("пусто", a.empty.text.toString())
+                assertEquals(a.getString(R.string.folder_empty), a.empty.text.toString())
                 a.onBackPressed()
                 assertEquals(View.GONE, a.empty.visibility)
             }
             clickName(a, "locked/")
             ins.runOnMainSync {
                 assertEquals(View.VISIBLE, a.empty.visibility)
-                assertEquals("⚠ нет доступа", a.empty.text.toString())
+                assertEquals(a.getString(R.string.folder_no_access), a.empty.text.toString())
                 a.finish()
             }
         } finally {
@@ -138,7 +138,9 @@ class UxTest {
             assertTrue(waitFor { b!!.badge.text.isNotEmpty() })
             ins.runOnMainSync {
                 val t = b!!.badge.text.toString()
-                assertTrue(t, Regex("скан · [0-9 ]+ эл\\. · \\d+,\\d с").matches(t))
+                // вид дерева и длительность скана; число элементов — только в строке итога
+                assertTrue(Holder.ms >= 0)
+                assertEquals(Badge.text(b.tx, Kind.SCAN, Holder.time, Holder.ms, false), t)
                 b.finish()
             }
         } finally {

@@ -97,7 +97,7 @@ fun Context.action(title: String, sub: String?, primary: Boolean, onClick: () ->
 fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply {
     gravity = Gravity.CENTER
     minWidth = dp(44); minHeight = dp(44)
-    contentDescription = "Назад"
+    contentDescription = tx.s(R.string.back)
     isClickable = true; isFocusable = true
     setOnClickListener { onClick() }
 }
@@ -108,7 +108,7 @@ fun Activity.darkBars() {
 }
 
 /** [onDismiss] — после закрытия любым путём (кнопка, «назад», тап вне диалога). */
-fun Activity.alert(title: String, msg: String, ok: String = "OK", cancel: String? = null,
+fun Activity.alert(title: String, msg: String, ok: String = getString(android.R.string.ok), cancel: String? = null,
                    onDismiss: (() -> Unit)? = null, onOk: () -> Unit = {}): AlertDialog =
     AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
         .setTitle(title).setMessage(msg)

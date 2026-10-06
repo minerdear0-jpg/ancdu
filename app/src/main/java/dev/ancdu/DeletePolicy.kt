@@ -1,19 +1,23 @@
 package dev.ancdu
 
-/** Что удалять нельзя никогда. Чистый Kotlin: решение по пути, флагам узла и виду дерева. */
-object DeletePolicy {
-    const val SYSTEM = "системный путь — удаление отключено"
-    const val OTHER_FS = "другая файловая система — удаление отключено"
-    const val ALL_APP_DATA = "удаляет данные всех приложений — удаление отключено"
-    const val USER_STORAGE = "всё хранилище пользователя — удаление отключено"
-    const val SYSTEM_DIR = "системный каталог — удаление отключено"
-    const val ANDROID_DIR = "служебная папка Android — удаление отключено"
+/** Причина запрета удаления; текст — ресурс [res]. */
+enum class Block(val res: Int) {
+    SYSTEM(R.string.block_system),
+    OTHER_FS(R.string.block_other_fs),
+    ALL_APP_DATA(R.string.block_all_app_data),
+    USER_STORAGE(R.string.block_user_storage),
+    SYSTEM_DIR(R.string.block_system_dir),
+    ANDROID_DIR(R.string.block_android_dir),
     /**
      * Каталог устаревшего дерева (кэш, индекс): экран сначала сам обновляет дерево; эту причину
      * лист показывает, только если обновить не вышло (скан не удался, su отказал).
      */
-    const val REFRESH_FAILED = "дерево не обновилось — каталог не удалить"
+    REFRESH_FAILED(R.string.block_refresh_failed),
+    NO_FAST(R.string.block_no_fast),
+}
 
+/** Что удалять нельзя никогда. Чистый Kotlin: решение по пути, флагам узла и виду дерева. */
+object DeletePolicy {
     private val PROTECTED = listOf("/data/system", "/data/adb", "/data/app", "/data/misc",
         "/system", "/vendor", "/apex", "/proc", "/sys", "/dev")
 
@@ -44,24 +48,24 @@ object DeletePolicy {
      * любом режиме: скан общего хранилища без root таких путей не даёт, а root-сессия или кэш
      * root-скана — ровно то, от чего защищаемся.
      */
-    fun dataBlockReason(path: String): String? {
+    fun dataBlockReason(path: String): Block? {
         val p = normalize(path)
         if (p != "/data" && !p.startsWith("/data/")) return null
         // «.»/«..» в пути дерево не даёт; если встретились — список не доказывает ничего.
-        if (p.split('/').any { it == "." || it == ".." }) return SYSTEM_DIR
-        return if (DATA_ALLOWED.matches(p)) null else SYSTEM_DIR
+        if (p.split('/').any { it == "." || it == ".." }) return Block.SYSTEM_DIR
+        return if (DATA_ALLOWED.matches(p)) null else Block.SYSTEM_DIR
     }
 
     /**
      * Причина запрета, если [path] — ровно корень данных приложений, хранилища пользователя
      * или его папка Android (её содержимое, например Android/data/<pkg>, удалять можно).
      */
-    fun exactBlockReason(path: String): String? {
+    fun exactBlockReason(path: String): Block? {
         val p = normalize(path)
         return when {
-            APP_DATA_ROOTS.matches(p) -> ALL_APP_DATA
-            STORAGE_ROOTS.matches(p) -> USER_STORAGE
-            ANDROID_ROOTS.matches(p) -> ANDROID_DIR
+            APP_DATA_ROOTS.matches(p) -> Block.ALL_APP_DATA
+            STORAGE_ROOTS.matches(p) -> Block.USER_STORAGE
+            ANDROID_ROOTS.matches(p) -> Block.ANDROID_DIR
             else -> null
         }
     }
@@ -71,20 +75,18 @@ object DeletePolicy {
      * потомок корня скана ([sessionRoot] — путь корня).
      */
     fun blockReason(path: String, scanRoot: Boolean, parentIsRoot: Boolean, sessionRoot: String,
-                    flags: Int, kind: Kind): String? = when {
-        flags and F_OTHERFS != 0 -> OTHER_FS
-        scanRoot -> SYSTEM
-        parentIsRoot && sessionRoot.trimEnd('/').isEmpty() -> SYSTEM
-        isSystemPath(path) -> SYSTEM
+                    flags: Int, kind: Kind): Block? = when {
+        flags and F_OTHERFS != 0 -> Block.OTHER_FS
+        scanRoot -> Block.SYSTEM
+        parentIsRoot && sessionRoot.trimEnd('/').isEmpty() -> Block.SYSTEM
+        isSystemPath(path) -> Block.SYSTEM
         else -> exactBlockReason(path) ?: dataBlockReason(path) ?: when {
             flags and F_DIR == 0 -> null
             // Каталог в кэше — содержимое на диске могло измениться после скана; индекс видит не все файлы.
-            kind == Kind.CACHE || kind == Kind.INDEX -> REFRESH_FAILED
+            kind == Kind.CACHE || kind == Kind.INDEX -> Block.REFRESH_FAILED
             else -> null
         }
     }
-
-    const val NO_FAST = "путь нельзя сопоставить с /data/media"
 
     /**
      * Быстрый путь root в обход FUSE: /storage/emulated/<n>/X → /data/media/<n>/X, иначе null.
@@ -109,9 +111,9 @@ object DeletePolicy {
      * [blockReason]; здесь — что сопоставленный путь сам разрешён: строго внутри
      * /data/media/<n>/, не /data/media/<n> и не /data/media/<n>/Android.
      */
-    fun fastBlockReason(path: String): String? {
-        val m = mediaPath(path) ?: return NO_FAST
-        return if (isSystemPath(m)) SYSTEM else exactBlockReason(m) ?: dataBlockReason(m)
+    fun fastBlockReason(path: String): Block? {
+        val m = mediaPath(path) ?: return Block.NO_FAST
+        return if (isSystemPath(m)) Block.SYSTEM else exactBlockReason(m) ?: dataBlockReason(m)
     }
 
     /**

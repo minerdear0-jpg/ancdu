@@ -25,6 +25,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class BrowserActivity : Activity() {
+    /** Тексты в языке экрана (смена языка пересоздаёт экран). */
+    private val txt: Txt by lazy { tx }
     lateinit var list: NcduListView
     var node = 0
         private set
@@ -139,24 +141,23 @@ class BrowserActivity : Activity() {
         } else {
             list.source = src
             load(node, keepScroll)
-            if (r == 0) note(DeleteProgress.freed(Holder.delDisk))
+            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk))
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
                 when {
                     // «Стоп» до начала: пользователь сам остановил — без диалога.
-                    DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.CANCELLED)
-                    r == -DeleteProgress.ELOOP -> report("Не удалось удалить",
-                        "Путь проходит через символическую ссылку — ничего не удалено.")
-                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
-                        "Не удалось получить root — ничего не удалено.")
+                    DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.cancelled(txt))
+                    r == -DeleteProgress.ELOOP -> report(txt.s(R.string.delete_failed), txt.s(R.string.delete_symlink))
+                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report(txt.s(R.string.delete_failed),
+                        txt.s(R.string.delete_no_root))
                     // Файл не удалён: сканировать нечего, ничего не освобождено.
-                    !Holder.delDir -> note(DeleteProgress.freed(0))
+                    !Holder.delDir -> note(DeleteProgress.freed(txt, 0))
                     // Удалено не всё (остановлено, частично): дерево обновляется само
                     // (BgScan.deleteFinished — до слушателей), путь сохраняется. Обновление не
                     // запустилось — сразу итог по прежнему дереву (refreshFailed).
                     else -> {
                         auto.afterDelete(Holder.delNames, Holder.delName, Holder.delDisk)
-                        if (BgScan.active) footer.text = DeleteProgress.REFRESHING
+                        if (BgScan.active) footer.text = DeleteProgress.refreshing(txt)
                         else refreshFailed(auto.take()!!)
                     }
                 }
@@ -173,7 +174,7 @@ class BrowserActivity : Activity() {
         ui.postDelayed(restoreFooter, 4000)
     }
 
-    private fun idleFooter(): String = if (auto.request != null) DeleteProgress.REFRESHING else hint
+    private fun idleFooter(): String = if (auto.request != null) DeleteProgress.refreshing(txt) else hint
 
     private var restoreFooter = Runnable {}
 
@@ -198,7 +199,7 @@ class BrowserActivity : Activity() {
             val dir = flags and F_DIR != 0
             val nm = nameAt(index)
             row.name = shown[index] ?: (if (dir) "$nm/" else nm).also { shown[index] = it }
-            row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v)).also { sizes[index] = it }
+            row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
             row.bar = ListMath.bar(v, maxV)
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
             row.barColor = if (dir) C.ACCENT else C.FILE
@@ -211,9 +212,9 @@ class BrowserActivity : Activity() {
             row.desc = descs[index] ?: buildString {
                 append(nm); append(", "); append(row.size)
                 if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
-                if (dir) append(", каталог")
+                if (dir) { append(", "); append(txt.s(R.string.desc_dir)) }
                 // F_ERR — и нет доступа, и незаконченное удаление: данные узла неполные.
-                if (flags and F_ERR != 0) append(", неполные данные")
+                if (flags and F_ERR != 0) { append(", "); append(txt.s(R.string.desc_incomplete)) }
             }.also { descs[index] = it }
         }
         override fun click(index: Int) {
@@ -240,6 +241,8 @@ class BrowserActivity : Activity() {
         crumbs = hbox()
         crumbScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
+            // На корне крошек нет (путь — в заголовке): строка не схлопывается, шапка не прыгает.
+            minimumHeight = dp(44)
             addView(crumbs)
         }
         top.addView(hbox(4).apply {
@@ -252,16 +255,16 @@ class BrowserActivity : Activity() {
         summary = label("", 13f, C.MUTED, mono = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
         }
-        badge = label(Holder.label, 12f, C.ACCENT, mono = true).apply {
+        badge = label("", 12f, C.ACCENT, mono = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
         }
-        newer = label("новее · обновить", 12f, ON_ACCENT, mono = true, bold = true).apply {
+        newer = label(txt.s(R.string.newer_chip), 12f, ON_ACCENT, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44)
             setPadding(dp(10), 0, dp(10), 0)
             background = rounded(C.ACCENT, dp(10).toFloat())
             isClickable = true; isFocusable = true
-            contentDescription = "Есть более новое дерево — обновить"
+            contentDescription = txt.s(R.string.newer_desc)
             setOnClickListener { promotePending() }
             visibility = View.GONE
         }
@@ -277,7 +280,7 @@ class BrowserActivity : Activity() {
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
         top.addView(chips, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        list = NcduListView(this).apply { longClickLabel = "Удалить или подробнее" }
+        list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label) }
         empty = label("", 15f, C.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(dp(24), 0, dp(24), 0)
@@ -347,7 +350,7 @@ class BrowserActivity : Activity() {
         if (h == 0L) return
         val hit = resolveNode(r.names)
         val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
-        when (val o = AutoPromote.outcome(r, hit.exact, disk)) {
+        when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
             is AutoPromote.Outcome.Footer -> note(o.text)
             AutoPromote.Outcome.Sheet -> openSheet(hit.node)
         }
@@ -363,7 +366,7 @@ class BrowserActivity : Activity() {
         val hit = resolveNode(r.names)
         if (r.delDisk != null) {
             val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
-            note(AutoPromote.unrefreshed(r, hit.exact, disk))
+            note(AutoPromote.unrefreshed(txt, r, hit.exact, disk))
         } else if (hit.exact) {
             openSheet(hit.node)
         }
@@ -447,7 +450,7 @@ class BrowserActivity : Activity() {
     private fun renderGallery() {
         if (!::gallery.isInitialized) return
         gallery.visibility = if (MediaClean.running) View.VISIBLE else View.GONE
-        gallery.text = "галерея: очистка ${Fmt.count(MediaClean.cleaned)}…"
+        gallery.text = txt.s(R.string.gallery_cleaning, Fmt.count(MediaClean.cleaned, txt.locale))
     }
 
     /** Не setSingleLine: он делает setLines(1) и затирает minHeight (общее поле mMinimum) — чип стал бы плоским. */
@@ -457,11 +460,11 @@ class BrowserActivity : Activity() {
         chips.removeAllViews()
         // Равные веса: ширина чипов не зависит от текста. Зазор — SHOW_DIVIDER_MIDDLE у hbox(6).
         val lp = { LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f) }
-        chips.addView(chip("размер", sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { oneLine() }, lp())
-        chips.addView(chip("имя", sort == SORT_NAME) { setSort(SORT_NAME) }.apply { oneLine() }, lp())
-        chips.addView(chip(if (apparent) "видимый" else "на диске", false) { setApparent(!apparent) }.apply {
+        chips.addView(chip(txt.s(R.string.sort_size), sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { oneLine() }, lp())
+        chips.addView(chip(txt.s(R.string.sort_name), sort == SORT_NAME) { setSort(SORT_NAME) }.apply { oneLine() }, lp())
+        chips.addView(chip(txt.s(if (apparent) R.string.size_apparent else R.string.size_disk), false) { setApparent(!apparent) }.apply {
             oneLine()
-            contentDescription = if (apparent) "Размер: видимый; нажмите — на диске" else "Размер: на диске; нажмите — видимый"
+            contentDescription = txt.s(if (apparent) R.string.size_desc_apparent else R.string.size_desc_disk)
         }, lp())
     }
 
@@ -485,13 +488,14 @@ class BrowserActivity : Activity() {
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
         renderHeader()
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
-        empty.text = if (self[3].toInt() and F_ERR == 0) "пусто" else "⚠ нет доступа"
-        summary.text = "${Fmt.size(parentV)} · ${Fmt.count(self[2])} эл."
+        empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
+        summary.text = "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        badge.text = Holder.label + if (full) " · неполный" else ""
+        badge.text = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
         badge.setTextColor(if (full) C.WARN else C.ACCENT)
-        hint = "тап — открыть · долгий — подробнее, удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
+        hint = txt.s(R.string.browser_hint) +
+            if (p[3] > 0) "   ⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else ""
         footer.text = idleFooter()
         renderChips()
         refreshPending()
@@ -499,7 +503,10 @@ class BrowserActivity : Activity() {
         list.scroll = restore
     }
 
-    /** Заголовок и крошки текущего узла. Главный поток, чтения дерева — с [h]. */
+    /**
+     * Заголовок — текущая папка (на корне — путь корня), крошки — её предки: путь виден один раз.
+     * Главный поток, чтения дерева — с [h].
+     */
     private fun renderHeader() {
         val chain = ArrayList<Int>()
         var c = node
@@ -510,24 +517,19 @@ class BrowserActivity : Activity() {
         val rootName = Native.str(Native.path(h, 0)).ifEmpty { Holder.root }
         title.text = if (node == 0) rootName else nameOf(node)
         crumbs.removeAllViews()
-        for ((k, nd) in chain.withIndex()) {
-            val last = k == chain.size - 1
+        for ((k, nd) in chain.dropLast(1).withIndex()) {
             if (k > 0) crumbs.addView(label("›", 12f, C.MUTED, mono = true).apply {
                 setPadding(dp(2), 0, dp(2), 0)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             })
             val text = if (nd == 0) rootName else nameOf(nd)
-            crumbs.addView(label(text, 12f, if (last) C.TEXT else C.MUTED, mono = true).apply {
+            crumbs.addView(label(text, 12f, C.MUTED, mono = true).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 minHeight = dp(44)
                 setPadding(dp(4), 0, dp(4), 0)
-                if (!last) {
-                    isClickable = true; isFocusable = true
-                    contentDescription = "перейти к $text"
-                    setOnClickListener { jumpTo(nd) }
-                } else {
-                    contentDescription = "текущая папка $text"
-                }
+                isClickable = true; isFocusable = true
+                contentDescription = txt.s(R.string.crumb_go, text)
+                setOnClickListener { jumpTo(nd) }
             })
         }
         crumbScroll.post { crumbScroll.fullScroll(View.FOCUS_RIGHT) }
@@ -571,12 +573,12 @@ class BrowserActivity : Activity() {
             promotePending()
             if (h == 0L) return
             val hit = resolveNode(names)
-            if (!hit.exact) { note(DeleteProgress.gone(name)); return }
+            if (!hit.exact) { note(DeleteProgress.gone(txt, name)); return }
             t = hit.node
         }
-        if (blockReason(h, t, Native.str(Native.path(h, t))) == DeletePolicy.REFRESH_FAILED) {
+        if (blockReason(h, t, Native.str(Native.path(h, t))) == Block.REFRESH_FAILED) {
             auto.beforeDelete(pathNames(h, t), nameOf(t), ScanTarget(Holder.root, Holder.viaRoot))
-            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { footer.text = DeleteProgress.REFRESHING; return }
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { footer.text = DeleteProgress.refreshing(txt); return }
             auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
         }
@@ -617,12 +619,12 @@ class BrowserActivity : Activity() {
             name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
             flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
             block = blockReason(handle, target, path), kind = Holder.kind,
-            cacheTime = if (Holder.kind == Kind.CACHE) Holder.label.removePrefix("кэш от ") else null,
+            cacheTime = if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null,
             fast = fastAllowed(path), root = Root.state)
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
-    private fun blockReason(handle: Long, target: Int, path: String): String? {
+    private fun blockReason(handle: Long, target: Int, path: String): Block? {
         val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
         return DeletePolicy.blockReason(path, target == 0, Native.parent(handle, target) == 0,
             Holder.root, inf[3].toInt(), Holder.kind)
@@ -639,12 +641,12 @@ class BrowserActivity : Activity() {
 
     private fun showWait() {
         list.source = null
-        footer.text = "Удаление…"
+        footer.text = txt.s(R.string.deleting)
         dismissWait()
         val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 1000
-            contentDescription = "Прогресс удаления"
+            contentDescription = txt.s(R.string.delete_progress_desc)
         }
         val text = label("", 13f, C.MUTED, mono = true)
         val stop = Button(this).apply {
@@ -662,7 +664,7 @@ class BrowserActivity : Activity() {
         waitBar = bar; waitText = text; waitStop = stop
         lastDecile = -1
         wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle(DeleteProgress.title(Holder.delName)).setView(body).setCancelable(false).show()
+            .setTitle(DeleteProgress.title(txt, Holder.delName)).setView(body).setCancelable(false).show()
         renderWait()
         ui.postDelayed(poll, 100)
     }
@@ -672,14 +674,14 @@ class BrowserActivity : Activity() {
         val done = Holder.deleteProgress()
         val total = Holder.delTotal
         bar.progress = DeleteProgress.permille(done, total)
-        waitText?.text = DeleteProgress.line(done, total, SystemClock.elapsedRealtime() - Holder.delStartMs)
+        waitText?.text = DeleteProgress.line(txt, done, total, SystemClock.elapsedRealtime() - Holder.delStartMs)
         waitStop?.apply {
-            text = if (Holder.delStopping) "Останавливаю…" else "Стоп"
+            text = txt.s(if (Holder.delStopping) R.string.stopping else R.string.stop)
             isEnabled = !Holder.delStopping
         }
         val dec = DeleteProgress.decile(done, total)
         if (dec != lastDecile) {
-            if (lastDecile >= 0 && bar.a11yOn()) bar.announceForAccessibility(DeleteProgress.announce(done, total))
+            if (lastDecile >= 0 && bar.a11yOn()) bar.announceForAccessibility(DeleteProgress.announce(txt, done, total))
             lastDecile = dec
         }
     }
@@ -705,7 +707,7 @@ class BrowserActivity : Activity() {
                             testBulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): Boolean {
         if (busy || isDestroyed) return false
         if (handle != Holder.h || handle != h) {
-            alert("Удаление отменено", "Дерево сменилось, пока был открыт диалог. Ничего не удалено.") {
+            alert(txt.s(R.string.delete_cancelled_title), txt.s(R.string.tree_changed)) {
                 list.source = null; recreate()
             }
             return false
@@ -768,13 +770,13 @@ class BrowserActivity : Activity() {
      * [bulk] — шаг вместо массового (на io до ядра), как у Holder.delete.
      */
     fun deleteBlocking(i: Int, bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): Int {
-        check(Looper.myLooper() != Looper.getMainLooper()) { "deleteBlocking на главном потоке" }
+        check(Looper.myLooper() != Looper.getMainLooper()) { "deleteBlocking on the main thread" }
         var r = Int.MIN_VALUE
         val latch = CountDownLatch(1)
         runOnUiThread {
             if (!startDelete(h, kids[i], done = { r = it; latch.countDown() }, testBulk = bulk)) latch.countDown()
         }
-        check(latch.await(60, TimeUnit.SECONDS)) { "удаление не завершилось за 60 с" }
+        check(latch.await(60, TimeUnit.SECONDS)) { "delete did not finish in 60 s" }
         return r
     }
 }

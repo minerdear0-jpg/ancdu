@@ -1,5 +1,7 @@
 package dev.ancdu
 
+import dev.ancdu.XmlTxt.Companion.EN
+import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -40,7 +42,7 @@ class FreshnessTest {
     private val t = 1_759_700_000_000L       // 21:33:20 UTC
     private fun line(running: Boolean = false, live: Long = 0, cache: Long? = null, scanned: Boolean = false,
                      blocked: Boolean = false, approx: Boolean = false, now: Long = t) =
-        Freshness.line(running, live, cache, scanned, blocked, approx, now, utc)
+        Freshness.line(RU, running, live, cache, scanned, blocked, approx, now, utc)
 
     @Test fun fresh() {
         assertEquals("скан 21:33 · только что", line(cache = t - 5_000, scanned = true))
@@ -50,8 +52,8 @@ class FreshnessTest {
     }
 
     @Test fun refreshingAndFirst() {
-        assertEquals("кэш 21:33 · обновляю… 1 234 эл.", line(running = true, live = 1234, cache = t))
-        assertEquals("4 980 эл. · первый скан", line(running = true, live = 4980))
+        assertEquals("кэш 21:33 · обновляю… 1${Fmt.NBSP}234 эл.", line(running = true, live = 1234, cache = t))
+        assertEquals("4${Fmt.NBSP}980 эл. · первый скан", line(running = true, live = 4980))
     }
 
     @Test fun blockedAndNothing() {
@@ -60,6 +62,18 @@ class FreshnessTest {
         assertEquals("обновить ›", line())
         // идущий скан важнее запрета
         assertEquals("0 эл. · первый скан", line(running = true, blocked = true))
+    }
+
+    @Test fun english() {
+        fun en(running: Boolean = false, live: Long = 0, cache: Long? = null, scanned: Boolean = false,
+               blocked: Boolean = false, approx: Boolean = false, now: Long = t) =
+            Freshness.line(EN, running, live, cache, scanned, blocked, approx, now, utc)
+        assertEquals("scan 21:33 · just now", en(cache = t - 5_000, scanned = true))
+        assertEquals("cache 21:33 · 5 min ago", en(cache = t, now = t + 5 * 60_000))
+        assertEquals("cache 21:33 · Oct 5", en(cache = t, now = t + 2 * 86_400_000L))
+        assertEquals("cache 21:33 · updating… 1,234 items", en(running = true, live = 1234, cache = t))
+        assertEquals("1 item · first scan", en(running = true, live = 1))
+        assertEquals("approximate · refresh ›", en(approx = true))
     }
 
     @Test fun approximate() {
@@ -80,17 +94,18 @@ class FreshnessTest {
         val idx = Freshness.treeTime(Kind.INDEX, t)
         val failed = line(cache = idx, scanned = false, approx = true)
         assertEquals("приблизительно · обновить ›", failed)
-        assertTrue(failed.endsWith(Freshness.REFRESH))     // тап по строке — ручной повтор
-        assertEquals("приблизительно · 1 234 эл. · первый скан",
+        assertTrue(failed.endsWith(Freshness.refresh(RU)))     // тап по строке — ручной повтор
+        assertEquals("приблизительно · 1${Fmt.NBSP}234 эл. · первый скан",
             line(running = true, live = 1234, cache = idx, approx = true))
         // и под энергосбережением — тот же повтор
         assertEquals("приблизительно · обновить ›", line(cache = idx, blocked = true, approx = true))
     }
 
     @Test fun delta() {
-        assertEquals("+1.5 MiB с прошлого скана", Freshness.delta(1_572_864))
-        assertEquals("−2.0 KiB с прошлого скана", Freshness.delta(-2048))
-        assertEquals("±0 B с прошлого скана", Freshness.delta(0))
+        assertEquals("+1,5${Fmt.NBSP}МиБ с прошлого скана", Freshness.delta(RU, 1_572_864))
+        assertEquals("−2,0${Fmt.NBSP}КиБ с прошлого скана", Freshness.delta(RU, -2048))
+        assertEquals("±0${Fmt.NBSP}Б с прошлого скана", Freshness.delta(RU, 0))
+        assertEquals("+1.5${Fmt.NBSP}MiB since last scan", Freshness.delta(EN, 1_572_864))
     }
 }
 

@@ -51,7 +51,7 @@ class DeleteSheetTest {
 
     private fun browse(root: String, kind: Kind = Kind.SCAN, viaRoot: Boolean = false): BrowserActivity {
         val h = scanned(root)
-        ins.runOnMainSync { Holder.set(h, kind, root, "скан", viaRoot) }
+        ins.runOnMainSync { Holder.set(h, kind, root, viaRoot) }
         val a = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
@@ -102,7 +102,7 @@ class DeleteSheetTest {
             assertNull(s.blockText)
             val b = s.deleteButton!!
             assertTrue(b.isEnabled)
-            assertTrue(b.text.toString(), b.text.startsWith("Удалить ") && !b.text.contains("через"))
+            assertEquals(a.getString(R.string.delete_btn_size, Fmt.size(s.p.disk, a.tx)), b.text.toString())
             assertNotNull(b.contentDescription)
             s.cancelButton.performClick()
         }
@@ -154,8 +154,8 @@ class DeleteSheetTest {
         val s = longPress(a, other)
         ins.runOnMainSync {
             assertNull(s.deleteButton)
-            assertEquals(DeletePolicy.OTHER_FS, s.blockText!!.text.toString())
-            assertEquals("Закрыть", s.cancelButton.text.toString())
+            assertEquals(a.getString(Block.OTHER_FS.res), s.blockText!!.text.toString())
+            assertEquals(a.getString(R.string.close), s.cancelButton.text.toString())
             s.dismiss()
         }
     }
@@ -169,7 +169,7 @@ class DeleteSheetTest {
         val s = longPress(a, plain)
         ins.runOnMainSync {
             assertNull(s.deleteButton)
-            assertEquals(DeletePolicy.SYSTEM, s.blockText!!.text.toString())
+            assertEquals(Block.SYSTEM, s.blockText!!.text.toString())
             s.dismiss()
         }
     }
@@ -196,7 +196,7 @@ class DeleteSheetTest {
             val i = indexOf(a, "photos/")
             ins.runOnMainSync {
                 a.list.source!!.longClick(i)
-                assertEquals("обновляю дерево…", a.footerText.toString())
+                assertEquals(DeleteProgress.refreshing(a.tx), a.footerText.toString())
             }
             assertTrue(waitFor(30_000) { Holder.kind == Kind.SCAN && a.sheet?.dialog?.isShowing == true })
             s = a.sheet!!
@@ -231,18 +231,17 @@ class DeleteSheetTest {
         val t0 = System.currentTimeMillis()
         ins.runOnMainSync {
             assertEquals(ctx.packageName, s.p.owner)
-            assertTrue(s.ownerText!!.text.contains("данные приложения"))
+            assertTrue(s.ownerText!!.text.toString().endsWith(a.suffixOf(R.string.owner)))
             val b = s.deleteButton!!
             assertFalse(b.isEnabled)
-            assertTrue(b.text.toString(), b.text.startsWith("Удалить через"))
+            assertTrue(b.text.toString(), b.text.startsWith(a.prefixOf(R.string.delete_in)))
             b.performClick()                      // нажатие до конца паузы ничего не делает
         }
         assertFalse(a.busy)
         assertTrue(waitFor(5_000) { s.deleteButton!!.isEnabled })
         assertTrue(System.currentTimeMillis() - t0 >= DeleteSheet.PAUSE_MS - 100)
         ins.runOnMainSync {
-            assertTrue(s.deleteButton!!.text.startsWith("Удалить "))
-            assertFalse(s.deleteButton!!.text.contains("через"))
+            assertEquals(a.getString(R.string.delete_btn_size, Fmt.size(s.p.disk, a.tx)), s.deleteButton!!.text.toString())
             s.dismiss()
         }
         assertTrue(File(dir, "x/data.bin").exists())
@@ -264,7 +263,7 @@ class DeleteSheetTest {
             val big = DeleteSheet(a, pv(true, 1500)) { chosen = it }.also { it.show() }
             assertNotNull(big.fastBox)
             assertTrue(big.fastBox!!.isChecked)
-            assertEquals("быстро через root (в обход FUSE)", big.fastBox!!.text.toString())
+            assertEquals(a.getString(R.string.fast_box), big.fastBox!!.text.toString())
             big.dismiss()
             for (st in listOf(RootState.UNKNOWN, RootState.DENIED)) {
                 val unsure = DeleteSheet(a, pv(true, 1500, st)) { chosen = it }.also { it.show() }

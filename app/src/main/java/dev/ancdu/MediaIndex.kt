@@ -42,10 +42,10 @@ object MediaIndex {
         val c = try {
             query(ctx, uri, proj, "format != $FORMAT_ASSOCIATION") ?: query(ctx, uri, proj, null)
         } catch (e: SecurityException) {
-            throw IllegalStateException("нет доступа к индексу MediaStore: ${e.message}", e)
+            throw IllegalStateException("no access to the MediaStore index: ${e.message}", e)
         } catch (e: Exception) {
-            throw IllegalStateException("запрос к MediaStore не удался: ${e.message}", e)
-        } ?: throw IllegalStateException("MediaStore недоступен")
+            throw IllegalStateException("MediaStore query failed: ${e.message}", e)
+        } ?: throw IllegalStateException("MediaStore unavailable")
         c.use { cur ->
             val err = IntArray(1)
             val h = Native.indexBegin(ROOT, cur.count * 2L + 4096, err)
