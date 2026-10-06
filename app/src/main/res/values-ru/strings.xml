@@ -53,7 +53,7 @@
     <string name="apps_all">все →</string>
     <string name="apps_no_access">Приложения: нет доступа</string>
     <string name="apps_no_access_sub">нужен доступ к истории использования · подробнее →</string>
-    <string name="apps_grant">Дать доступ к истории ›</string>
+    <string name="apps_grant">Дать доступ к истории</string>
     <string name="last_scan">Последний скан: %1$s</string>
     <string name="last_short">Последний</string>
     <string name="cache_corrupt_title">Кэш повреждён</string>

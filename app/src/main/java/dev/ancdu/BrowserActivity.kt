@@ -100,7 +100,10 @@ class BrowserActivity : LangActivity() {
     private val onClean: () -> Unit = { renderGallery() }
     lateinit var chips: Flow
         private set
-    /** Шапка целиком: её высота не зависит от папки, сортировки, режима размера и чипа «новее». */
+    /**
+     * Шапка целиком: её высота не зависит от сортировки, режима размера и чипа «новее»; на корне
+     * (без строки крошек) она ниже, во всех вложенных папках — одна и та же.
+     */
     lateinit var header: LinearLayout
         private set
     /** Амберный чип «новее · обновить»: в Holder ждёт более новое дерево того же корня. */
@@ -318,9 +321,9 @@ class BrowserActivity : LangActivity() {
             addView(gallery)
         })
         // Подсказка подвала — только первые HINT_SESSIONS открытий браузера (не пересозданий).
-        val ui = getSharedPreferences(LangPrefs.PREFS, MODE_PRIVATE)
-        val sessions = ui.getInt(K_SESSIONS, 0) + if (savedInstanceState == null) 1 else 0
-        if (savedInstanceState == null) ui.edit().putInt(K_SESSIONS, sessions).apply()
+        val uiPrefs = getSharedPreferences(LangPrefs.PREFS, MODE_PRIVATE)
+        val sessions = uiPrefs.getInt(K_SESSIONS, 0) + if (savedInstanceState == null) 1 else 0
+        if (savedInstanceState == null) uiPrefs.edit().putInt(K_SESSIONS, sessions).apply()
         showHint = sessions <= HINT_SESSIONS
         Holder.addDeleteListener(onDeleted)
         MediaClean.addListener(onClean)

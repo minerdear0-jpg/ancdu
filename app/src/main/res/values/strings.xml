@@ -56,7 +56,7 @@
     <string name="apps_all">all →</string>
     <string name="apps_no_access">Apps: no access</string>
     <string name="apps_no_access_sub">needs usage access · details →</string>
-    <string name="apps_grant">Grant usage access ›</string>
+    <string name="apps_grant">Grant usage access</string>
     <string name="last_scan">Last scan: %1$s</string>
     <string name="last_short">Last</string>
     <string name="cache_corrupt_title">Cache damaged</string>
