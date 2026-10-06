@@ -3,9 +3,61 @@ package dev.ancdu
 import dev.ancdu.XmlTxt.Companion.EN
 import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.util.Locale
 import java.util.TimeZone
+
+/** Выбор языка: где он живёт и что из него следует (API 33+ — LocaleManager, 30–32 — prefs). */
+class LangPrefsTest {
+    @Test fun choiceFromTags() {
+        assertEquals(LangChoice.SYSTEM, LangChoice.of(null))
+        assertEquals(LangChoice.SYSTEM, LangChoice.of(""))
+        assertEquals(LangChoice.EN, LangChoice.of("en"))
+        assertEquals(LangChoice.RU, LangChoice.of("ru-RU,en"))
+        assertEquals(LangChoice.RU, LangChoice.of("RU"))
+        assertEquals(LangChoice.SYSTEM, LangChoice.of("de-DE"))     // незнакомый — как в системе
+    }
+
+    @Test fun storedRoundTrip() {
+        for (c in LangChoice.entries) assertEquals(c, LangChoice.of(LangPrefs.store(c)))
+        assertEquals("", LangPrefs.store(LangChoice.SYSTEM))
+    }
+
+    @Test fun effectiveChoice() {
+        // 33+: правда — язык приложения в системе (его меняют и системные настройки)
+        assertEquals(LangChoice.EN, LangPrefs.effective(34, "en", stored = "ru"))
+        assertEquals(LangChoice.SYSTEM, LangPrefs.effective(33, "", stored = "ru"))
+        // 30–32: prefs
+        assertEquals(LangChoice.RU, LangPrefs.effective(30, null, stored = "ru"))
+        assertEquals(LangChoice.SYSTEM, LangPrefs.effective(32, null, stored = null))
+    }
+
+    @Test fun wrapOnlyBelow33AndOnlyExplicit() {
+        assertNull(LangPrefs.wrapLocale(34, "ru"))
+        assertNull(LangPrefs.wrapLocale(30, null))
+        assertNull(LangPrefs.wrapLocale(30, ""))
+        assertEquals(Locale.forLanguageTag("ru"), LangPrefs.wrapLocale(30, "ru"))
+        assertEquals(Locale.forLanguageTag("en"), LangPrefs.wrapLocale(32, "en"))
+    }
+
+    /** Список языков — в locales_config.xml (системные настройки «Язык приложения»). */
+    @Test fun localeConfigListsBoth() {
+        val xml = File("src/main/res/xml/locales_config.xml").readText()
+        for (c in LangChoice.entries.filter { it.tag.isNotEmpty() })
+            assertTrue(c.tag, xml.contains("android:name=\"${c.tag}\""))
+        assertTrue(File("src/main/AndroidManifest.xml").readText().contains("android:localeConfig=\"@xml/locales_config\""))
+    }
+
+    @Test fun languageNames() {
+        assertEquals(listOf("Как в системе", "English", "Русский"), LangChoice.entries.map { RU.s(it.label) })
+        assertEquals(listOf("System", "English", "Русский"), LangChoice.entries.map { EN.s(it.label) })
+        assertEquals("EN", EN.s(R.string.lang_code))
+        assertEquals("RU", RU.s(R.string.lang_code))
+    }
+}
 
 /** Тексты ядра — только по виду; сырой текст пользователю не показывается. */
 class NativeErrTest {

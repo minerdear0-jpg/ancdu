@@ -33,6 +33,14 @@
         <item quantity="other">%1$s errors</item>
     </plurals>
 
+    <!-- Language switch. -->
+    <string name="lang_code">EN</string>
+    <string name="lang_button_desc">Language: %1$s</string>
+    <string name="lang_title">Language</string>
+    <string name="lang_system">System</string>
+    <string name="lang_en" translatable="false">English</string>
+    <string name="lang_ru" translatable="false">Русский</string>
+
     <!-- Common. -->
     <string name="back">Back</string>
     <string name="cancel">Cancel</string>

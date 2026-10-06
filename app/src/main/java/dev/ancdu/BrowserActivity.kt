@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.media.MediaScannerConnection
 import android.os.Bundle
@@ -24,7 +23,7 @@ import java.nio.file.Paths
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-class BrowserActivity : Activity() {
+class BrowserActivity : LangActivity() {
     /** Тексты в языке экрана (смена языка пересоздаёт экран). */
     private val txt: Txt by lazy { tx }
     lateinit var list: NcduListView
@@ -306,13 +305,29 @@ class BrowserActivity : Activity() {
         renderGallery()
         Holder.addSessionListener(onSession)
         BgScan.addListener(onBg)
+        // Пересоздание (смена языка, системой) того же дерева: та же папка, сортировка и режим размера.
+        val st = savedInstanceState?.takeIf { it.getLong(S_H) == h }
+        if (st != null) {
+            sort = st.getInt(S_SORT, SORT_SIZE)
+            apparent = st.getBoolean(S_APPARENT, false)
+            node = st.getInt(S_NODE, 0)
+        }
         if (busy) {
             // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
             showWait()
         } else {
             list.source = src
-            load(0, 0)
+            load(node, st?.getInt(S_SCROLL, 0) ?: 0)
         }
+    }
+
+    override fun onSaveInstanceState(out: Bundle) {
+        super.onSaveInstanceState(out)
+        out.putLong(S_H, h)
+        out.putInt(S_NODE, node)
+        out.putInt(S_SORT, sort)
+        out.putBoolean(S_APPARENT, apparent)
+        out.putInt(S_SCROLL, if (busy) keepScroll else list.scroll)
     }
 
     override fun onResume() {
@@ -388,6 +403,14 @@ class BrowserActivity : Activity() {
         while (c > 0) { chain += Native.name(handle, c); c = Native.parent(handle, c) }
         chain.reverse()
         return chain
+    }
+
+    private companion object {
+        const val S_H = "h"
+        const val S_NODE = "node"
+        const val S_SORT = "sort"
+        const val S_APPARENT = "apparent"
+        const val S_SCROLL = "scroll"
     }
 
     /**

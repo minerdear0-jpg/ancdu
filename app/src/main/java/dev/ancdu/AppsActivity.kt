@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -11,7 +10,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.TextView
 
-class AppsActivity : Activity() {
+class AppsActivity : LangActivity() {
     private var apps: List<AppStat> = emptyList()
     /** Строки форматируются один раз при загрузке; bind только копирует поля. */
     private var rows: List<Row> = emptyList()

@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
@@ -22,7 +21,7 @@ const val EXTRA_SU = "su"
 /** Не запускать свой скан, а ждать идущий фоновый ([BgScan]) — никогда не второй скан. */
 const val EXTRA_ATTACH = "attach"
 
-class ScanActivity : Activity() {
+class ScanActivity : LangActivity() {
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var tiles: Array<TextView>
     private lateinit var cur: TextView

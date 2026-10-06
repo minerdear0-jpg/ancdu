@@ -37,6 +37,11 @@
         <item quantity="other">%1$s ошибки</item>
     </plurals>
 
+    <string name="lang_code">RU</string>
+    <string name="lang_button_desc">Язык: %1$s</string>
+    <string name="lang_title">Язык</string>
+    <string name="lang_system">Как в системе</string>
+
     <string name="back">Назад</string>
     <string name="cancel">Отмена</string>
     <string name="close">Закрыть</string>

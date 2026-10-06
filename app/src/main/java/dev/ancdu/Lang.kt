@@ -1,0 +1,121 @@
+package dev.ancdu
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.app.LocaleManager
+import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
+import android.os.Bundle
+import android.os.LocaleList
+import java.util.Locale
+
+/** Выбор языка интерфейса: системный, English, Русский. [tag] — BCP 47 («» — системный). */
+enum class LangChoice(val tag: String, val label: Int) {
+    SYSTEM("", R.string.lang_system),
+    EN("en", R.string.lang_en),
+    RU("ru", R.string.lang_ru);
+
+    companion object {
+        /** Сохранённое значение или теги LocaleManager («ru-RU,en» → RU); незнакомое — SYSTEM. */
+        fun of(tags: String?): LangChoice {
+            val lang = tags?.substringBefore(',')?.substringBefore('-')?.substringBefore('_')?.lowercase().orEmpty()
+            return entries.firstOrNull { it.tag.isNotEmpty() && it.tag == lang } ?: SYSTEM
+        }
+    }
+}
+
+/**
+ * Чистый Kotlin: где живёт выбор. Он всегда пишется в prefs; на API 33+ правда — язык
+ * приложения в системе (LocaleManager: его меняют и системные настройки «Язык приложения»),
+ * на 30–32 — prefs, а язык применяется обёрткой контекста каждой Activity.
+ */
+object LangPrefs {
+    const val PREFS = "ui"
+    const val KEY = "lang"
+
+    /** Действующий выбор: [appLocales] — LocaleManager.applicationLocales.toLanguageTags() (API 33+). */
+    fun effective(sdk: Int, appLocales: String?, stored: String?): LangChoice =
+        if (sdk >= 33) LangChoice.of(appLocales) else LangChoice.of(stored)
+
+    /** Значение для prefs. */
+    fun store(c: LangChoice): String = c.tag
+
+    /** Язык обёртки контекста: только API < 33 и только явный выбор; иначе null (без обёртки). */
+    fun wrapLocale(sdk: Int, stored: String?): Locale? {
+        if (sdk >= 33) return null
+        val c = LangChoice.of(stored)
+        return if (c == LangChoice.SYSTEM) null else Locale.forLanguageTag(c.tag)
+    }
+}
+
+/** Применение выбора языка. Всё — главный поток. */
+object Lang {
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(LangPrefs.PREFS, Context.MODE_PRIVATE)
+
+    fun stored(ctx: Context): String? = prefs(ctx).getString(LangPrefs.KEY, null)
+
+    fun choice(ctx: Context): LangChoice = LangPrefs.effective(Build.VERSION.SDK_INT,
+        if (Build.VERSION.SDK_INT >= 33) ctx.getSystemService(LocaleManager::class.java)?.applicationLocales?.toLanguageTags() else null,
+        stored(ctx))
+
+    /** attachBaseContext каждой Activity на API 30–32: ресурсы в выбранном языке. */
+    fun wrap(base: Context): Context {
+        val loc = LangPrefs.wrapLocale(Build.VERSION.SDK_INT, stored(base)) ?: return base
+        return withLocale(base, loc)
+    }
+
+    fun withLocale(base: Context, loc: Locale): Context {
+        val cfg = Configuration(base.resources.configuration)
+        cfg.setLocales(LocaleList(loc))
+        return base.createConfigurationContext(cfg)
+    }
+
+    /**
+     * Запомнить и применить [c]. API 33+: LocaleManager — система сама пересоздаёт Activity
+     * (и видит выбор в своих настройках); API 30–32: пересоздаётся [a], остальные экраны —
+     * в своём onResume ([LangActivity]). Дерево и путь живут в Holder и Bundle.
+     */
+    fun set(a: Activity, c: LangChoice) {
+        prefs(a).edit().putString(LangPrefs.KEY, LangPrefs.store(c)).commit()
+        if (Build.VERSION.SDK_INT >= 33) {
+            a.getSystemService(LocaleManager::class.java)?.applicationLocales =
+                if (c == LangChoice.SYSTEM) LocaleList.getEmptyLocaleList() else LocaleList.forLanguageTags(c.tag)
+        } else {
+            a.recreate()
+        }
+    }
+
+    /** Диалог «Системный / English / Русский». */
+    fun ask(a: Activity): AlertDialog {
+        val all = LangChoice.entries
+        val cur = choice(a)
+        return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(a.tx.s(R.string.lang_title))
+            .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
+                d.dismiss()
+                if (all[which] != cur) set(a, all[which])
+            }
+            .show()
+    }
+}
+
+/**
+ * Activity приложения: на API 30–32 ресурсы в выбранном языке ([Lang.wrap]); язык сменили на
+ * другом экране — пересоздаётся при возврате.
+ */
+abstract class LangActivity : Activity() {
+    private var lang: String? = null
+
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        lang = Lang.stored(this)
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang) recreate()
+    }
+}

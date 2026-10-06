@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
@@ -8,9 +7,10 @@ import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import java.io.File
 
-class MainActivity : Activity() {
+class MainActivity : LangActivity() {
     /** Карточка памяти — вход в дерево общего хранилища. */
     lateinit var storage: StorageCard
         private set
@@ -27,6 +27,12 @@ class MainActivity : Activity() {
     var opening = false
         private set
     private var dialog: AlertDialog? = null
+    /** Кнопка языка в шапке («EN ▾»). */
+    lateinit var langButton: TextView
+        private set
+    /** Для тестов: открытый диалог выбора языка. */
+    var langDialog: AlertDialog? = null
+        private set
 
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
     private val onBg: () -> Unit = { BgScan.promoteOnMain(); storage.render() }
@@ -94,6 +100,15 @@ class MainActivity : Activity() {
         addView(label("0.1", 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         // Только когда su есть: без него пилюли нет совсем.
         rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
+        langButton = label("${tx.s(R.string.lang_code)} ▾", 12f, C.MUTED, mono = true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(44); minWidth = dp(44)
+            setPadding(dp(8), 0, dp(4), 0)
+            isClickable = true; isFocusable = true
+            contentDescription = tx.s(R.string.lang_button_desc, tx.s(Lang.choice(this@MainActivity).label))
+            setOnClickListener { dialog?.dismiss(); dialog = Lang.ask(this@MainActivity).also { langDialog = it } }
+        }
+        addView(langButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))
