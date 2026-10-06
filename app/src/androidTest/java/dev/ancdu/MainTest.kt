@@ -108,6 +108,23 @@ class MainTest {
         return v
     }
 
+    /** Описания видимых кнопок action() (64dp) главного экрана. Главный поток. */
+    private fun actions(a: MainActivity): List<String> {
+        val out = ArrayList<String>()
+        fun walk(v: View) {
+            if (v.visibility != View.VISIBLE) return
+            if (v is android.widget.LinearLayout && v.isClickable && v.minimumHeight == a.dp(64))
+                out += v.contentDescription.toString()
+            if (v is android.view.ViewGroup) for (k in 0 until v.childCount) walk(v.getChildAt(k))
+        }
+        walk(a.window.decorView)
+        return out
+    }
+
+    /** Строки «Последний скан» и «Приложения: нет доступа» — не основные кнопки. */
+    private fun secondary(desc: String): Boolean =
+        desc.startsWith(ctx.prefixOf(R.string.last_scan)) || desc.startsWith(ctx.getString(R.string.apps_no_access))
+
     private fun waitFor(ms: Long, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < end) { if (cond()) return true; Thread.sleep(50) }
@@ -127,21 +144,13 @@ class MainTest {
                 .putString("last-su_data.ancdu", "/data|true|99|50|1759700000002")
                 .commit()
             val a = launch().also { act = it }
-            // Без основной кнопки: все крупные кнопки action() (64dp) — строки «Последний скан» или
-            // «Приложения: нет доступа»; вход в дерево — только карточка.
+            // С доступом — без основной кнопки: все видимые кнопки action() (64dp) — строки
+            // «Последний скан» или «Приложения: нет доступа»; вход в дерево — только карточка.
             ins.runOnMainSync {
-                val actions = ArrayList<View>()
-                fun walk(v: View) {
-                    if (v is android.widget.LinearLayout && v.isClickable && v.minimumHeight == a.dp(64)) actions += v
-                    if (v is android.view.ViewGroup) for (k in 0 until v.childCount) walk(v.getChildAt(k))
-                }
-                walk(a.window.decorView)
-                val allowed = listOf(a.prefixOf(R.string.last_scan), a.getString(R.string.apps_no_access))
-                for (v in actions) assertTrue(v.contentDescription.toString(),
-                    allowed.any { v.contentDescription.toString().startsWith(it) })
-                assertEquals(2, actions.count { it.contentDescription.startsWith(a.prefixOf(R.string.last_scan)) })
+                val shown = actions(a)
+                assertEquals(emptyList<String>(), shown.filterNot(::secondary))
+                assertEquals(2, shown.count { it.startsWith(a.prefixOf(R.string.last_scan)) })
             }
-            assertNotNull(findDesc(a, a.getString(R.string.card_desc)))
             assertEquals(listOf(a.getString(R.string.last_scan, "/some/dir")), a.lastScans())
             assertEquals(listOf(a.getString(R.string.last_scan, "/data")), a.rootScans())
             ins.runOnMainSync {
@@ -237,6 +246,8 @@ class MainTest {
                 assertEquals(View.GONE, a.storage.permBox.visibility)
                 a.storage.view.performClick()
                 assertEquals(View.VISIBLE, a.storage.permBox.visibility)
+                // без доступа единственная основная кнопка — «Открыть настройки»
+                assertEquals(listOf(a.getString(R.string.open_settings)), actions(a).filterNot(::secondary))
             }
             assertNotNull(findDesc(a, a.getString(R.string.open_settings)))
             assertNotNull(findText(a, a.getString(R.string.files_access_explain)))
