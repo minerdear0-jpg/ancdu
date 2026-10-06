@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.TextUtils
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -569,7 +570,8 @@ class BrowserActivity : Activity() {
             return false
         }
         // Повторная проверка запретов: путь мимо диалога (тесты) тоже не удалит системное.
-        val path = Native.str(Native.path(handle, target))
+        val pathBytes = Native.path(handle, target)
+        val path = Native.str(pathBytes)
         if (blockReason(handle, target, path) != null) return false
         // Быстрый путь: и исходный, и сопоставленный /data/media-путь проверены политикой.
         if (fast && !fastAllowed(path)) return false
@@ -577,13 +579,21 @@ class BrowserActivity : Activity() {
         val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
         val items = inf[2]
         val disk = inf[0]
+        val dir = inf[3].toInt() and F_DIR != 0
         val name = Native.str(Native.name(handle, target))
         val app = applicationContext
         keepScroll = list.scroll
+        // Без root в общем хранилище: сначала пачками через MediaProvider, затем ядро — как всегда.
+        val bulkPath = MediaBulk.target(pathBytes, viaRoot = Holder.viaRoot, fast = fast)
+        val cr = app.contentResolver
         Holder.delete(handle, target, helper, done, name, items, disk, media = fast,
-            afterIo = if (!fast) null else {
+            bulk = bulkPath?.let { p -> { stopped, add ->
+                val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
+                out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
+            } },
+            afterIo = if (!fast) null else { _ ->
                 // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки.
-                { MediaScannerConnection.scanFile(app, arrayOf(path), null, null) }
+                MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
             })
         showWait()
         return true

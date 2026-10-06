@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -129,31 +130,40 @@ object Holder {
     var delDisk = 0L; private set
 
     /*
-     * Удаление в полёте. Под [delLock]: [delHandle] != 0 только с вызова [delete] до возврата
-     * Native.delete на io (сбрасывается до того, как io перейдёт к следующей задаче, в том числе
-     * к free этого дескриптора) — поэтому Native.deleteProgress/deleteStop под замком никогда не
-     * видят освобождённую сессию. [delStopAsked] — «Стоп» нажат; [delDone] — последний прогресс.
+     * Удаление в полёте. Под [delLock]: [delHandle] != 0 только пока на io идёт шаг ядра —
+     * с момента перед Native.delete (после массового шага MediaStore, если он есть) до его
+     * возврата; сбрасывается до того, как io перейдёт к следующей задаче, в том числе к free
+     * этого дескриптора, — поэтому Native.deleteProgress/deleteStop под замком никогда не видят
+     * освобождённую сессию и не видят счётчик прошлого удаления. [delStopAsked] — «Стоп» нажат;
+     * [delRows] — строк удалено массовым шагом; [delNative] — последний счётчик ядра;
+     * [delDone] — их сумма, последний прогресс.
      */
     private val delLock = Any()
     private var delHandle = 0L
     private var delStopAsked = false
+    private var delRows = 0L
+    private var delNative = 0L
     private var delDone = 0L
+
+    /** Для тестов: строк MediaStore удалено массовым шагом последнего удаления (пишет io). */
+    @Volatile var lastBulkRows = 0L; private set
 
     /**
      * Любой поток (всё под замком; экран зовёт с главного). Сколько записей удалено идущим
-     * (или последним) удалением.
+     * (или последним) удалением: строки массового шага плюс счётчик ядра.
      * Единственный вызов Native на дескрипторе во время delete наряду с [deleteStop].
      */
     fun deleteProgress(): Long = synchronized(delLock) {
-        if (delHandle != 0L) delDone = Native.deleteProgress(delHandle)
+        if (delHandle != 0L) delNative = Native.deleteProgress(delHandle)
+        delDone = DeleteSteps.done(delRows, delNative)
         delDone
     }
 
     /**
-     * Только главный поток. Просит остановить идущее удаление; оно вернёт -EINTR. Стоп, пока
-     * удаление ждёт в очереди io, ядро тоже соблюдает: [delete] всё равно вызывает Native.delete,
-     * ядро сразу возвращает -EINTR, ничего не удалив, и сбрасывает флаг в конце sess_delete.
-     * Вызов только пока [delHandle] != 0 — после возврата
+     * Только главный поток. Просит остановить идущее удаление; оно вернёт -EINTR. Во время
+     * массового шага (и пока удаление ждёт в очереди io) «Стоп» — только флаг: шаг
+     * останавливается между пачками, а ядро тогда не вызывается вовсе (флаг ядра не
+     * трогается). Во время шага ядра флаг передаётся ему ([delHandle] != 0). После возврата
      * Native.delete флаг ядра уже не трогается (остаётся окно в микросекунды между сбросом в
      * ядре и снятием [delHandle]; худший исход — следующее удаление этой сессии сразу
      * остановится, ничего не удалив).
@@ -175,37 +185,59 @@ object Holder {
     /**
      * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
-     * [name] и [total] — для диалога прогресса. Стоп до начала (io ещё занят другим) уже передан
-     * ядру; Native.delete всё равно вызывается — ядро сразу вернёт -EINTR, ничего не тронув, и
-     * сбросит свой флаг (иначе он остановил бы следующее удаление).
+     * [name] и [total] — для диалога прогресса.
+     * [bulk] — необязательный массовый шаг MediaStore на io ДО ядра (дескриптор он не трогает):
+     * получает «нажат ли Стоп» и счётчик удалённых строк. Затем ВСЕГДА Native.delete/deleteMedia
+     * на том же узле — кроме «Стопа» до этого момента (в том числе пока удаление ждало в
+     * очереди io): тогда ядро не вызывается, итог -EINTR (DeleteSteps).
      * [media] — Native.deleteMedia (нужен [helper]): узел удаляется через /data/media в обход FUSE.
-     * [afterIo] — на io сразу после Native.delete/deleteMedia, если удаление запускалось
-     * (например, пересканирование MediaStore).
+     * [afterIo] — на io сразу после шага ядра с его кодом, если удаление не отменено
+     * (например, очистка строк MediaStore).
      */
     fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
                name: String = "", total: Long = 1L, disk: Long = 0L, media: Boolean = false,
-               afterIo: (() -> Unit)? = null) {
+               bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null,
+               afterIo: ((Int) -> Unit)? = null) {
         checkMain("Holder.delete")
         check(!deleting) { "удаление уже идёт" }
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
         delDisk = disk
-        synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
+        synchronized(delLock) { delHandle = 0L; delStopAsked = false; delRows = 0L; delNative = 0L; delDone = 0L }
+        lastBulkRows = 0L
         // Идущий фоновый скан и непоказанное дерево могли увидеть удаляемое — пересканировать.
         BgScan.deleteStarted()
         io.execute {
             var r = -1
+            var nativeRan = false
             try {
-                r = if (media && helper != null) Native.deleteMedia(handle, node, helper)
-                    else Native.delete(handle, node, helper)
+                r = DeleteSteps.run(
+                    bulk = bulk?.let { b -> {
+                        b({ synchronized(delLock) { delStopAsked } }) { n ->
+                            synchronized(delLock) { delRows = DeleteSteps.done(delRows, n) }
+                        }
+                    } },
+                    arm = {
+                        synchronized(delLock) {
+                            if (delStopAsked) false else { delHandle = handle; nativeRan = true; true }
+                        }
+                    },
+                    native = {
+                        if (media && helper != null) Native.deleteMedia(handle, node, helper)
+                        else Native.delete(handle, node, helper)
+                    },
+                    onBulkError = { Log.w("ancdu", "bulk delete failed, rm_tree continues", it) })
             } finally {
                 synchronized(delLock) {
                     // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.
-                    delDone = runCatching { Native.deleteProgress(handle) }.getOrDefault(delDone)
+                    // Ядро не вызывалось — его счётчик относится к прошлому удалению, не берём.
+                    if (nativeRan) delNative = runCatching { Native.deleteProgress(handle) }.getOrDefault(delNative)
                     delHandle = 0L
+                    delDone = DeleteSteps.done(delRows, delNative)
+                    lastBulkRows = delRows
                 }
-                if (afterIo != null && !DeleteProgress.isCancelled(r, delDone)) runCatching { afterIo() }
+                if (afterIo != null && !DeleteProgress.isCancelled(r, delDone)) runCatching { afterIo(r) }
                 // И при исключении: deleting не должен остаться true навсегда.
                 main.post {
                     deleting = false
