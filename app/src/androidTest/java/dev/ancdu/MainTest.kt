@@ -2,7 +2,6 @@ package dev.ancdu
 
 import android.content.Context
 import android.content.Intent
-import android.os.ParcelFileDescriptor
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,34 +17,56 @@ import java.io.File
 class MainTest {
     private val ins = InstrumentationRegistry.getInstrumentation()
 
+    private val prefs get() = ins.targetContext.getSharedPreferences("caches", Context.MODE_PRIVATE)
+
+    /** Снимок «caches» до теста: реальные записи «Последний скан» пользователя. */
+    private fun snapshot(): Map<String, *> = HashMap(prefs.all)
+
+    /** Возвращает «caches» ровно к снимку (с типами значений). */
+    @Suppress("UNCHECKED_CAST")
+    private fun restore(snap: Map<String, *>) {
+        val e = prefs.edit().clear()
+        for ((k, v) in snap) when (v) {
+            is String -> e.putString(k, v)
+            is Boolean -> e.putBoolean(k, v)
+            is Int -> e.putInt(k, v)
+            is Long -> e.putLong(k, v)
+            is Float -> e.putFloat(k, v)
+            is Set<*> -> e.putStringSet(k, v as Set<String>)
+        }
+        e.commit()
+    }
+
     @Test fun showsActionsAndLastScans() {
         val ctx = ins.targetContext
-        ctx.getSharedPreferences("caches", Context.MODE_PRIVATE).edit().clear()
-            .putString("last-app_storage_emulated_0.ancdu", "/storage/emulated/0|false|4980|294|1759700000000")
-            .commit()
-        val act = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
-        ins.waitForIdleSync()
-        val root = act.window.decorView
-        val found = ArrayList<android.view.View>()
-        root.findViewsWithText(found, "Сканировать хранилище, /storage/emulated/0 · без root",
-            android.view.View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
-        assertEquals(1, found.size)
-        assertEquals(listOf("Последний скан: /storage/emulated/0"), act.lastScans())
-        assertNotNull(root.findViewWithTag<SegBar>("segbar"))
-        ins.runOnMainSync { act.finish() }
-        ctx.getSharedPreferences("caches", Context.MODE_PRIVATE).edit().clear().commit()
+        val snap = snapshot()
+        var act: MainActivity? = null
+        try {
+            ctx.getSharedPreferences("caches", Context.MODE_PRIVATE).edit().clear()
+                .putString("last-app_storage_emulated_0.ancdu", "/storage/emulated/0|false|4980|294|1759700000000")
+                .commit()
+            val a = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+            act = a
+            ins.waitForIdleSync()
+            val root = a.window.decorView
+            val found = ArrayList<android.view.View>()
+            root.findViewsWithText(found, "Сканировать хранилище, /storage/emulated/0 · без root",
+                android.view.View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+            assertEquals(1, found.size)
+            assertEquals(listOf("Последний скан: /storage/emulated/0"), a.lastScans())
+            assertNotNull(root.findViewWithTag<SegBar>("segbar"))
+        } finally {
+            act?.let { a -> ins.runOnMainSync { a.finish() } }
+            restore(snap)
+        }
     }
 
-    private fun shell(cmd: String) {
-        ParcelFileDescriptor.AutoCloseInputStream(ins.uiAutomation.executeShellCommand(cmd)).use { it.readBytes() }
-    }
-
-    private fun findDesc(act: MainActivity, desc: String): View? {
+    private fun findDesc(a: MainActivity, desc: String): View? {
         var v: View? = null
         ins.runOnMainSync {
             val found = ArrayList<View>()
-            act.window.decorView.findViewsWithText(found, desc, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+            a.window.decorView.findViewsWithText(found, desc, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
             v = found.firstOrNull()
         }
         return v
@@ -60,22 +81,25 @@ class MainTest {
     /** P4: без доступа к истории использования карточка кликабельна и ведёт на AppsActivity. */
     @Test fun noUsageAccessCardOpensApps() {
         val ctx = ins.targetContext
-        shell("appops set ${ctx.packageName} GET_USAGE_STATS ignore")
+        val prev = AppOps.get(ins, "GET_USAGE_STATS")
         val mon = ins.addMonitor(AppsActivity::class.java.name, null, false)
-        val act = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        var act: MainActivity? = null
         try {
+            AppOps.set(ins, "GET_USAGE_STATS", "ignore")
+            val a = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+            act = a
             var card: View? = null
             assertTrue("нет карточки «нет доступа»",
-                waitFor(10_000) { findDesc(act, "Приложения: нет доступа").also { card = it } != null })
+                waitFor(10_000) { findDesc(a, "Приложения: нет доступа").also { card = it } != null })
             ins.runOnMainSync { card!!.performClick() }
             val apps = ins.waitForMonitorWithTimeout(mon, 5_000)
             assertNotNull("AppsActivity не открыт", apps)
             ins.runOnMainSync { apps.finish() }
         } finally {
             ins.removeMonitor(mon)
-            ins.runOnMainSync { act.finish() }
-            shell("appops set ${ctx.packageName} GET_USAGE_STATS default")
+            act?.let { a -> ins.runOnMainSync { a.finish() } }
+            AppOps.set(ins, "GET_USAGE_STATS", prev)
         }
     }
 
@@ -84,29 +108,30 @@ class MainTest {
         val ctx = ins.targetContext
         val name = "last-app_corrupt_test.ancdu"
         val f = File(ctx.filesDir, name).apply { writeText("not a cache") }
-        val prefs = ctx.getSharedPreferences("caches", Context.MODE_PRIVATE)
-        prefs.edit().clear().putString(name, "/corrupt/test|false|1|1|1759700000000").commit()
-        val act = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        var act: MainActivity? = null
         try {
+            prefs.edit().putString(name, "/corrupt/test|false|1|1|1759700000000").commit()
+            val a = ins.startActivitySync(Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+            act = a
             ins.waitForIdleSync()
             val before = Holder.h
-            val row = findDesc(act, "Последний скан: /corrupt/test")
+            val row = findDesc(a, "Последний скан: /corrupt/test")
             assertNotNull(row)
             ins.runOnMainSync { row!!.performClick() }
             assertTrue("запись кэша не удалена", waitFor(5_000) { !prefs.contains(name) })
             assertTrue("файл кэша не удалён", waitFor(5_000) { !f.exists() })
             ins.waitForIdleSync()
             assertTrue("строка не убрана", waitFor(5_000) {
-                var empty = false
-                ins.runOnMainSync { empty = act.lastScans().isEmpty() }
-                empty
+                var gone = false
+                ins.runOnMainSync { gone = "Последний скан: /corrupt/test" !in a.lastScans() }
+                gone
             })
             assertEquals(before, Holder.h)
             assertFalse(f.exists())
         } finally {
-            ins.runOnMainSync { act.finish() }
-            prefs.edit().clear().commit()
+            act?.let { a -> ins.runOnMainSync { a.finish() } }
+            prefs.edit().remove(name).commit()
             f.delete()
         }
     }

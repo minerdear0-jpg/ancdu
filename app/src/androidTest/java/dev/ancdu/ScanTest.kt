@@ -2,7 +2,6 @@ package dev.ancdu
 
 import android.content.Context
 import android.content.Intent
-import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleCallback
@@ -33,13 +32,14 @@ class ScanTest {
         return false
     }
 
-    private fun shell(cmd: String) {
-        ParcelFileDescriptor.AutoCloseInputStream(ins.uiAutomation.executeShellCommand(cmd)).use { it.readBytes() }
-    }
-
     /** Самое большое доступное приложению дерево — общее хранилище; нужен доступ ко всем файлам. */
     private fun bigRoot(): String {
-        shell("appops set ${ctx.packageName} MANAGE_EXTERNAL_STORAGE allow")
+        if (!filesRestoreScheduled) {
+            // Прежний режим вернётся после выхода процесса теста (см. AppOps.restoreAfterExit).
+            AppOps.restoreAfterExit(ins, "MANAGE_EXTERNAL_STORAGE", AppOps.get(ins, "MANAGE_EXTERNAL_STORAGE"))
+            filesRestoreScheduled = true
+        }
+        AppOps.set(ins, "MANAGE_EXTERNAL_STORAGE", "allow")
         assertTrue("нет MANAGE_EXTERNAL_STORAGE", Perms.files())
         return "/storage/emulated/0"
     }
@@ -153,3 +153,6 @@ class ScanTest {
         assertTrue(waitFor { act.isDestroyed })
     }
 }
+
+/** Один отложенный возврат MANAGE_EXTERNAL_STORAGE на процесс теста. */
+private var filesRestoreScheduled = false
