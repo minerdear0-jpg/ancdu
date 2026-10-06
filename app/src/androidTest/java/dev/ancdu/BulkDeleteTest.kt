@@ -47,6 +47,21 @@ class BulkDeleteTest {
         return out
     }
 
+    private data class Case(val victim: File, val keepDir: File, val keepFile: File, val minRows: Long)
+
+    /** [n] файлов «$prefix$i.txt» в [dir] от имени shell (абсолютные пути); ждёт завершения sh. */
+    private fun shellCreate(dir: File, prefix: String, n: Int) {
+        require(dir.isAbsolute && dir.path.startsWith("/storage/emulated/0/ancdu-test-w"))
+        val fds = ins.uiAutomation.executeShellCommandRw("sh")
+        android.os.ParcelFileDescriptor.AutoCloseOutputStream(fds[1]).use {
+            it.write(("i=0; while [ \$i -lt $n ]; do echo x > \"${dir.path}/$prefix\$i.txt\"; i=\$((i+1)); done; " +
+                "echo done\nexit\n").toByteArray())
+        }
+        val out = android.os.ParcelFileDescriptor.AutoCloseInputStream(fds[0]).use { String(it.readBytes()) }
+        assertTrue("sh: $out", out.contains("done"))
+        assertEquals(n, dir.listFiles { f -> f.name.startsWith(prefix) }?.size ?: 0)
+    }
+
     private fun scanned(dir: File): Long {
         val h = Native.scanStart(dir.path, true, 2, IntArray(1))
         val p = LongArray(6)
@@ -75,7 +90,9 @@ class BulkDeleteTest {
             // Соседний каталог с тем же префиксом имени: LIKE '<target>%' без «/» задел бы его.
             val sibling = File(wrap, "ancdu-test-${tag}2").apply { assertTrue(mkdir()) }
             val sentinel = File(sibling, "sentinel.txt").apply { writeText("keep") }
-            for (i in 0 until 300) File(target, "f$i.txt").writeText("x$i")
+            // Файлы другого процесса (shell) через FUSE: их строки is_pending = 1 и чужие —
+            // именно их не видел массовый шаг до MediaMatch (регрессия с DUT).
+            shellCreate(target, "f", 300)
             val deep = File(target, "sub/deep").apply { assertTrue(mkdirs()) }
             for (i in 0 until 5) File(deep, "g$i.txt").writeText("g$i")
             val hidden = File(target, "hidden").apply { assertTrue(mkdir()) }
@@ -83,7 +100,7 @@ class BulkDeleteTest {
             for (i in 0 until 5) File(hidden, "h$i.txt").writeText("h$i")
             // Пара для метасимвола: неэкранированный «_» в LIKE задел бы tX<tag>.
             val wild = File(wrap, "t_$tag").apply { assertTrue(mkdir()) }
-            for (i in 0 until 20) File(wild, "w$i.txt").writeText("w$i")
+            shellCreate(wild, "w", 20)
             val wildSib = File(wrap, "tX$tag").apply { assertTrue(mkdir()) }
             val wildSentinel = File(wildSib, "sentinel.txt").apply { writeText("keep") }
 
@@ -112,10 +129,13 @@ class BulkDeleteTest {
             }
             fun idle() = assertTrue(waitFor { var ok = false; ins.runOnMainSync { ok = !a.busy && a.list.source != null }; ok })
 
-            for ((victim, keepDir, keepFile) in listOf(Triple(target, sibling, sentinel), Triple(wild, wildSib, wildSentinel))) {
+            for ((victim, keepDir, keepFile, minRows) in listOf(Case(target, sibling, sentinel, 300),
+                    Case(wild, wildSib, wildSentinel, 20))) {
                 assertEquals(0, a.deleteBlocking(indexOf("${victim.name}/")))
                 // Массовый шаг действительно прошёл (MediaProvider принял LIKE … ESCAPE), а не тихий откат на rm_tree.
-                assertTrue("массовый шаг не сработал для ${victim.name}", Holder.lastBulkRows > 0)
+                // …и удалил пачками все строки файлов, а не одну строку каталога (иначе — пофайловый FUSE).
+                assertTrue("массовый шаг для ${victim.name}: ${Holder.lastBulkRows} строк, нужно ≥ $minRows",
+                    Holder.lastBulkRows >= minRows)
                 assertFalse(victim.exists())
                 assertTrue(keepDir.isDirectory)
                 assertEquals("keep", keepFile.readText())

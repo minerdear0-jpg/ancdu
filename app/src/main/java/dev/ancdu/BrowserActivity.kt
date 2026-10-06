@@ -609,6 +609,7 @@ class BrowserActivity : Activity() {
             else MediaBulk.target(pathBytes, viaRoot = Holder.viaRoot, fast = fast)
         if (bulkPath == null && !fast && !Holder.viaRoot && MediaBulk.exactPath(pathBytes) == null)
             Log.i("ancdu", "bulk delete skipped: path is not valid UTF-8")
+        Log.i("ancdu", "delete kind=${Holder.kind} viaRoot=${Holder.viaRoot} fast=$fast bulk=${bulkPath != null} items=$items")
         val cr = app.contentResolver
         val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
         val rootFlags = inf[3].toInt()
@@ -623,6 +624,7 @@ class BrowserActivity : Activity() {
                 } else {
                     val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
                     out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
+                    Log.i("ancdu", "bulk delete rows=${out.deleted} matched=${out.matched} stopped=${out.stopped}")
                 }
             } },
             afterIo = if (!fast) null else { r ->

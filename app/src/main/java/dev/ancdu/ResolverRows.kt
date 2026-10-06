@@ -16,9 +16,7 @@ class ResolverRows(private val cr: ContentResolver, keepFiles: Boolean = false) 
         else uri.buildUpon().appendQueryParameter("deletedata", "false").build()
 
     override fun page(where: String, args: Array<String>, limit: Int): List<MediaRow> {
-        val q = Bundle().apply {
-            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, where)
-            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+        val q = selection(where, args).apply {
             putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.MediaColumns._ID} ASC")
             putString(ContentResolver.QUERY_ARG_SQL_LIMIT, limit.toString())
         }
@@ -38,5 +36,25 @@ class ResolverRows(private val cr: ContentResolver, keepFiles: Boolean = false) 
      */
     override fun delete(ids: LongArray, where: String, args: Array<String>): Int =
         if (ids.isEmpty()) 0
-        else cr.delete(deleteUri, "${MediaStore.MediaColumns._ID} IN (${ids.joinToString(",")}) AND ($where)", args)
+        else cr.delete(deleteUri,
+            selection("${MediaStore.MediaColumns._ID} IN (${ids.joinToString(",")}) AND ($where)", args))
+
+    /**
+     * Выборка для query и delete с теми же правилами видимости. Без MediaMatch MediaProvider
+     * (не FUSE-вызов) молча исключает is_pending/is_trashed строки — у файлов, созданных через
+     * FUSE другими процессами, is_pending часто = 1, и массовый шаг не видел почти ничего.
+     */
+    private fun selection(where: String, args: Array<String>) = Bundle().apply {
+        putString(ContentResolver.QUERY_ARG_SQL_SELECTION, where)
+        putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+        MediaMatch.put { k, v -> putInt(k, v) }
+    }
+}
+
+/** Видимость строк для массовых шагов: и ожидающие (is_pending), и в корзине (is_trashed). */
+object MediaMatch {
+    fun put(put: (String, Int) -> Unit) {
+        put(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+        put(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+    }
 }
