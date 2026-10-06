@@ -146,3 +146,41 @@ class CacheMetaTest {
         assertNull(CacheMeta.parse(null))
     }
 }
+
+class SwapTest {
+    @Test fun directOnlyWhenVisibleUnpinnedIdleAndOwned() {
+        assertTrue(Swap.direct(visible = true, browsers = 0, deleting = false, owns = true))
+        assertFalse(Swap.direct(visible = false, browsers = 0, deleting = false, owns = true))
+        assertFalse(Swap.direct(visible = true, browsers = 1, deleting = false, owns = true))
+        assertFalse(Swap.direct(visible = true, browsers = 0, deleting = true, owns = true))
+        assertFalse("чужой корень (root-сессия)", Swap.direct(visible = true, browsers = 0, deleting = false, owns = false))
+    }
+
+    @Test fun promoteOnReturnNeedsAStoragePending() {
+        assertTrue(Swap.promoteOnMain(pendingStorage = true, mainResumed = true, browsers = 0, deleting = false, owns = true))
+        assertFalse(Swap.promoteOnMain(pendingStorage = false, mainResumed = true, browsers = 0, deleting = false, owns = true))
+        assertFalse(Swap.promoteOnMain(pendingStorage = true, mainResumed = false, browsers = 0, deleting = false, owns = true))
+    }
+
+    /**
+     * «Назад» из браузера: Browser.onPause → Main.onResume → Browser.onDestroy. Браузер снимает
+     * закрепление в onPause при isFinishing, поэтому в Main.onResume browsers уже 0; а снятие
+     * закрепления при уже видимом главном экране снова проверяет подстановку.
+     */
+    @Test fun backNavigationOrder() {
+        val pins = Swap.Pins()
+        pins.pin()                                   // браузер открыт
+        assertFalse(Swap.promoteOnMain(true, mainResumed = false, browsers = pins.count, deleting = false, owns = true))
+        pins.unpin()                                 // Browser.onPause, isFinishing
+        assertTrue(Swap.promoteOnMain(true, mainResumed = true, browsers = pins.count, deleting = false, owns = true))
+        pins.unpin()                                 // Browser.onDestroy — идемпотентно
+        assertEquals(0, pins.count)
+    }
+
+    @Test fun unpinNotifiesSoAResumedMainRechecks() {
+        var notified = 0
+        val pins = Swap.Pins { notified++ }
+        pins.pin(); pins.unpin(); pins.unpin()
+        assertEquals("уведомление только при реальном снятии", 1, notified)
+    }
+}

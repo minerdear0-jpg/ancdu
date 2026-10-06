@@ -112,7 +112,7 @@ object BgScan {
         if (dirty) { discard(cur); return }
         val ctx = app ?: return discard(cur)
         val d = Scans.finish(ctx, cur, ROOT, false, p)
-        publish(cur, Kind.SCAN, "скан" + d.suffix)
+        publish(cur, Kind.SCAN, "скан" + d.suffix, d.time)
         changed()
     }
 
@@ -151,17 +151,26 @@ object BgScan {
      * Сессию другого корня (root-скан /data и т. п.) фоновый скан сам не вытесняет: тоже offer,
      * подставит тап по карточке.
      */
-    private fun publish(handle: Long, kind: Kind, label: String) {
-        if ((mainResumed || attached > 0) && Holder.browsers == 0 && !Holder.deleting && ownsHolder()) {
-            Holder.set(handle, kind, ROOT, label, false)
+    private fun publish(handle: Long, kind: Kind, label: String, time: Long) {
+        if (Swap.direct(mainResumed || attached > 0, Holder.browsers, Holder.deleting, ownsHolder())) {
+            Holder.set(handle, kind, ROOT, label, false, time)
             if (Holder.pending != 0L && Holder.pendingRoot == ROOT) Holder.dropPending()
         } else {
-            Holder.offer(handle, kind, ROOT, label, false)
+            Holder.offer(handle, kind, ROOT, label, false, time)
         }
     }
 
     /** В Holder пусто или дерево общего хранилища без root — его можно заменить свежим. */
     fun ownsHolder(): Boolean = Holder.h == 0L || (Holder.root == ROOT && !Holder.viaRoot)
+
+    /** В Holder ждёт дерево общего хранилища. */
+    fun pendingStorage(): Boolean = Holder.pending != 0L && Holder.pendingRoot == ROOT
+
+    /** Главный экран на виду: подставить ждущее дерево, если его никто не держит. Главный поток. */
+    fun promoteOnMain() {
+        if (Swap.promoteOnMain(pendingStorage(), mainResumed, Holder.browsers, Holder.deleting, ownsHolder()))
+            Holder.promote()
+    }
 
     /** Есть ли что показать на карточке, кроме идущего скана: дерево, ожидание или кэш. */
     private fun noTree(): Boolean {
@@ -189,7 +198,7 @@ object BgScan {
                     return@post
                 }
                 if (!noTree()) { Holder.io.execute { Native.free(ih) }; return@post }
-                publish(ih, Kind.INDEX, "индекс · приблизительно")
+                publish(ih, Kind.INDEX, "индекс · приблизительно", System.currentTimeMillis())
                 changed()
             }
         }, "ancdu-index").apply { isDaemon = true }.start()

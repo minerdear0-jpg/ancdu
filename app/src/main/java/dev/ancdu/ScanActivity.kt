@@ -271,7 +271,7 @@ class ScanActivity : Activity() {
         // Кэш и запись «caches» — на io (FIFO с delete и free этого же дескриптора), см. Scans.finish.
         val d = Scans.finish(this, h, root, su, p)
         // Итог скана — в плашку браузера: «скан · 69 312 эл. · 0,2 с». Тот же дескриптор: только поля.
-        Holder.set(h, Holder.kind, root, Holder.label + d.suffix, su)
+        Holder.set(h, Holder.kind, root, Holder.label + d.suffix, su, d.time)
         startActivity(Intent(this, BrowserActivity::class.java))
         finish()
     }

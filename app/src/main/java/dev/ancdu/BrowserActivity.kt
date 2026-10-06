@@ -108,7 +108,8 @@ class BrowserActivity : Activity() {
         if (Holder.h != h) {
             list.source = null
             h = 0L
-            if (!busy && !promoting) { if (Holder.h == 0L) finish() else recreate() }
+            // Уходящий экран («назад», уже isFinishing) не пересоздаётся.
+            if (!busy && !promoting && !isFinishing) { if (Holder.h == 0L) finish() else recreate() }
         }
     }
 
@@ -129,8 +130,11 @@ class BrowserActivity : Activity() {
                         DeleteProgress.stopped(doneN, Holder.delTotal))
                     r == -DeleteProgress.ELOOP -> report("Не удалось удалить",
                         "Путь проходит через символическую ссылку — ничего не удалено.")
-                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
-                        "Не удалось получить root — ничего не удалено (код $r).")
+                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> {
+                        // su отказал: «root ✓» из прошлого больше не правда (и быстрый путь по умолчанию — выкл.).
+                        Root.denied(this)
+                        report("Не удалось удалить", "Не удалось получить root — ничего не удалено (код $r).")
+                    }
                     else -> report("Не удалось удалить полностью",
                         "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
                 }
@@ -319,11 +323,19 @@ class BrowserActivity : Activity() {
         return null
     }
 
+    override fun onPause() {
+        super.onPause()
+        // «Назад»: Main.onResume идёт раньше нашего onDestroy — закрепление снимается здесь.
+        if (isFinishing) unpin()
+    }
+
+    private fun unpin() { if (pinned) { pinned = false; Holder.unpinBrowser() } }
+
     override fun onDestroy() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
         BgScan.removeListener(onBg)
-        if (pinned) { Holder.unpinBrowser(); pinned = false }
+        unpin()
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null

@@ -17,6 +17,8 @@ object Holder {
     @Volatile var root = ""; private set
     @Volatile var label = ""; private set
     @Volatile var viaRoot = false; private set
+    /** Время дерева (мс): скана или кэша, из которого оно открыто; 0 — неизвестно. */
+    @Volatile var time = 0L; private set
 
     /** Единственный поток для блокирующих и мутирующих операций над сессиями:
      *  delete, saveCache, free. FIFO гарантирует, что free не гоняется с ними. */
@@ -36,10 +38,10 @@ object Holder {
      * вызываются СИНХРОННО — живые экраны отцепляются от старого дескриптора — и только после этого
      * прежняя сессия освобождается на [io] (free может ждать Magisk).
      */
-    fun set(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean) {
+    fun set(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean, time: Long = 0L) {
         checkMain("Holder.set")
         val old = h
-        h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot
+        h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot; this.time = time
         if (old == handle) return
         for (l in sessionListeners.toList()) l()
         if (old != 0L) io.execute { Native.free(old) }
@@ -58,25 +60,31 @@ object Holder {
     var pendingRoot = ""; private set
     var pendingLabel = ""; private set
     var pendingViaRoot = false; private set
+    var pendingTime = 0L; private set
 
     /**
      * Только главный поток. Кладёт [handle] в слот ожидания. Слушателей НЕ вызывает: живые экраны
      * продолжают показывать своё дерево. Прежний непоказанный pending освобождается на [io].
      */
-    fun offer(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean) {
+    fun offer(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean, time: Long = 0L) {
         checkMain("Holder.offer")
         val old = pending
         pending = handle; pendingKind = kind; pendingRoot = root; pendingLabel = label; pendingViaRoot = viaRoot
+        pendingTime = time
         if (old != 0L && old != handle) io.execute { Native.free(old) }
     }
 
-    /** Только главный поток. [set] из слота ожидания, затем слот очищается. false — слот пуст. */
+    /**
+     * Только главный поток. [set] из слота ожидания. Слот очищается ДО set: слушатель внутри set
+     * (offer, dropPending) уже не увидит этот дескриптор и не освободит его второй раз.
+     * false — слот пуст.
+     */
     fun promote(): Boolean {
         checkMain("Holder.promote")
         val p = pending
         if (p == 0L) return false
-        set(p, pendingKind, pendingRoot, pendingLabel, pendingViaRoot)
         pending = 0L
+        set(p, pendingKind, pendingRoot, pendingLabel, pendingViaRoot, pendingTime)
         return true
     }
 
@@ -89,12 +97,15 @@ object Holder {
     }
 
     /**
-     * Сколько живых BrowserActivity закрепили дескриптор (onCreate с h != 0 … onDestroy).
-     * Только главный поток. Пока > 0, фоновый скан не подставляется через [set], а [offer]-ится.
+     * Сколько BrowserActivity закрепили дескриптор (onCreate с h != 0 … onPause при
+     * isFinishing или onDestroy). Только главный поток. Пока > 0, фоновый скан не подставляется
+     * через [set], а [offer]-ится. Снятие закрепления уведомляет экраны (BgScan.changed): уже
+     * видимый главный экран снова проверяет подстановку ждущего дерева.
      */
-    var browsers = 0; private set
-    fun pinBrowser() { checkMain("Holder.pinBrowser"); browsers++ }
-    fun unpinBrowser() { checkMain("Holder.unpinBrowser"); if (browsers > 0) browsers-- }
+    private val pins = Swap.Pins { BgScan.changed() }
+    val browsers: Int get() = pins.count
+    fun pinBrowser() { checkMain("Holder.pinBrowser"); pins.pin() }
+    fun unpinBrowser() { checkMain("Holder.unpinBrowser"); pins.unpin() }
 
     /** Только главный поток. Слушатель вызывается внутри [set] при смене дескриптора, до free(old). */
     fun addSessionListener(l: () -> Unit) { sessionListeners += l }

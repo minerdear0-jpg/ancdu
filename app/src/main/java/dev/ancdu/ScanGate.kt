@@ -69,3 +69,30 @@ object Freshness {
         return sign + Fmt.size(if (bytes < 0) -bytes else bytes) + " с прошлого скана"
     }
 }
+
+/** Чистый Kotlin: когда готовое дерево общего хранилища подставляется, а когда ждёт (offer). */
+object Swap {
+    /**
+     * Подставить сразу (Holder.set): экран, который его покажет, на виду ([visible]: главный или
+     * ждущий ScanActivity), ни один браузер не держит дескриптор, удаления нет, а в Holder пусто
+     * или дерево общего хранилища ([owns]) — чужую root-сессию фоновый скан не вытесняет.
+     */
+    fun direct(visible: Boolean, browsers: Int, deleting: Boolean, owns: Boolean): Boolean =
+        visible && browsers == 0 && !deleting && owns
+
+    /** Ждущее дерево общего хранилища подставляется, как только главный экран снова свободен. */
+    fun promoteOnMain(pendingStorage: Boolean, mainResumed: Boolean, browsers: Int, deleting: Boolean,
+                      owns: Boolean): Boolean =
+        pendingStorage && direct(mainResumed, browsers, deleting, owns)
+
+    /** Счётчик закреплений браузерами; [onUnpin] — после каждого реального снятия. */
+    class Pins(private val onUnpin: () -> Unit = {}) {
+        var count = 0; private set
+        fun pin() { count++ }
+        fun unpin() {
+            if (count == 0) return
+            count--
+            onUnpin()
+        }
+    }
+}
