@@ -127,8 +127,20 @@ class MainTest {
                 .putString("last-su_data.ancdu", "/data|true|99|50|1759700000002")
                 .commit()
             val a = launch().also { act = it }
-            assertNull(findDesc(a, "Сканировать хранилище"))
-            assertNull(findDesc(a, "Быстрый обзор"))
+            // Без основной кнопки: все крупные кнопки action() (64dp) — строки «Последний скан» или
+            // «Приложения: нет доступа»; вход в дерево — только карточка.
+            ins.runOnMainSync {
+                val actions = ArrayList<View>()
+                fun walk(v: View) {
+                    if (v is android.widget.LinearLayout && v.isClickable && v.minimumHeight == a.dp(64)) actions += v
+                    if (v is android.view.ViewGroup) for (k in 0 until v.childCount) walk(v.getChildAt(k))
+                }
+                walk(a.window.decorView)
+                val allowed = listOf(a.prefixOf(R.string.last_scan), a.getString(R.string.apps_no_access))
+                for (v in actions) assertTrue(v.contentDescription.toString(),
+                    allowed.any { v.contentDescription.toString().startsWith(it) })
+                assertEquals(2, actions.count { it.contentDescription.startsWith(a.prefixOf(R.string.last_scan)) })
+            }
             assertNotNull(findDesc(a, a.getString(R.string.card_desc)))
             assertEquals(listOf(a.getString(R.string.last_scan, "/some/dir")), a.lastScans())
             assertEquals(listOf(a.getString(R.string.last_scan, "/data")), a.rootScans())

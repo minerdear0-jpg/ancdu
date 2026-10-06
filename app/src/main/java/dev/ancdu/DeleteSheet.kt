@@ -9,7 +9,13 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -64,6 +70,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Имена показанных детей (для тестов). */
     val childNames = ArrayList<String>()
     lateinit var cancelButton: TextView
+        private set
+    /** Для тестов: строка размера (главное число и видимый размер). */
+    var sizeText: TextView? = null
         private set
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
@@ -187,20 +196,30 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         contentDescription = t.s(R.string.owner_desc, name)
     }
 
-    /** Главное число листа; видимый размер — приглушённо рядом, если отличается. */
-    private fun sizeLine(): View = act.hbox(10).apply {
-        isBaselineAligned = true
-        gravity = Gravity.BOTTOM
+    /**
+     * Главное число листа и видимый размер приглушённо после него — один TextView: внутри частей
+     * пробелы неразрывные, перенос возможен только между ними. Не влезает в строку — видимый
+     * размер уходит на вторую, ничего не обрезается.
+     */
+    private fun sizeLine(): View {
         val main = Fmt.size(p.disk, t) + if (p.dir) " · " + t.items(p.items) else ""
         val apparent = t.s(R.string.apparent_size, Fmt.size(p.apparent, t))
-        addView(act.label(main, 18f, C.TEXT, mono = true, bold = true).apply { setSingleLine(true) })
-        if (p.apparent != p.disk) addView(act.label(apparent, 13f, C.MUTED, mono = true)
-            .apply { setSingleLine(true); ellipsize = TextUtils.TruncateAt.END },
-            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-        contentDescription = t.s(R.string.disk_size_desc, Fmt.size(p.disk, t)) +
-            (if (p.dir) ", " + t.q(R.plurals.items_long, p.items, Fmt.count(p.items, t.locale)) else "") +
-            (if (p.apparent != p.disk) ", $apparent" else "")
+        val text = SpannableStringBuilder(main.replace(' ', Fmt.NBSP))
+        text.setSpan(StyleSpan(Typeface.BOLD), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (p.apparent != p.disk) {
+            text.append("   ")
+            val at = text.length
+            text.append(apparent.replace(' ', Fmt.NBSP))
+            text.setSpan(AbsoluteSizeSpan(13, true), at, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(ForegroundColorSpan(C.MUTED), at, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return act.label(text, 18f, C.TEXT, mono = true).apply {
+            sizeText = this
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            contentDescription = t.s(R.string.disk_size_desc, Fmt.size(p.disk, t)) +
+                (if (p.dir) ", " + t.q(R.plurals.items_long, p.items, Fmt.count(p.items, t.locale)) else "") +
+                (if (p.apparent != p.disk) ", $apparent" else "")
+        }
     }
 
     private fun children(): View = act.vbox(4).apply {

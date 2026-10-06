@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- English (default). Russian: values-ru/strings.xml. Numbers and sizes come from Fmt as %s args. -->
 <resources>
+    <!-- Language of numbers and dates (Txt.locale): the resolved UI language, not the system locale. -->
+    <string name="locale_tag">en</string>
+
     <!-- Units (Fmt): binary sizes and seconds. -->
     <string name="unit_b">B</string>
     <string name="unit_kib">KiB</string>
@@ -87,8 +90,8 @@
     <string name="fresh_refresh">refresh ›</string>
     <string name="fresh_approx">approximate · %1$s</string>
     <string name="just_now">just now</string>
-    <string name="min_ago">%1$s min ago</string>
-    <string name="h_ago">%1$s h ago</string>
+    <string name="min_ago">%1$s\u00A0min ago</string>
+    <string name="h_ago">%1$s\u00A0h ago</string>
     <string name="delta">%1$s since last scan</string>
 
     <!-- Root panel. -->

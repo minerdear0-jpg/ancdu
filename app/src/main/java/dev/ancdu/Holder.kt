@@ -21,6 +21,8 @@ object Holder {
     @Volatile var time = 0L; private set
     /** Длительность скана, давшего дерево (мс), для плашки браузера; -1 — нет (идёт, кэш, индекс). */
     @Volatile var ms = -1L; private set
+    /** Поколение сессии: растёт при каждой смене дескриптора (адрес может повториться после free). */
+    @Volatile var gen = 0L; private set
 
     /** Единственный поток для блокирующих и мутирующих операций над сессиями:
      *  delete, saveCache, free. FIFO гарантирует, что free не гоняется с ними. */
@@ -45,6 +47,7 @@ object Holder {
         val old = h
         h = handle; this.kind = kind; this.root = root; this.viaRoot = viaRoot; this.time = time; this.ms = ms
         if (old == handle) return
+        gen++
         for (l in sessionListeners.toList()) l()
         if (old != 0L) io.execute { Native.free(old) }
     }

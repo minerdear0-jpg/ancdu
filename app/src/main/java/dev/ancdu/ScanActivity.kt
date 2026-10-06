@@ -22,6 +22,8 @@ const val EXTRA_SU = "su"
 const val EXTRA_ATTACH = "attach"
 
 class ScanActivity : LangActivity() {
+    /** Тексты в языке экрана (один объект на экран, не на строку и тик). */
+    private val txt: Txt by lazy { tx }
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var tiles: Array<TextView>
     private lateinit var cur: TextView
@@ -54,9 +56,9 @@ class ScanActivity : LangActivity() {
         override val count get() = liveN
         override fun bind(index: Int, row: Row) {
             val nd = liveNodes[index]
-            row.name = if (nd < 0) tx.s(R.string.scan_other)
+            row.name = if (nd < 0) txt.s(R.string.scan_other)
                        else if (Holder.h != handle) "" else Native.str(Native.liveName(handle, nd))
-            row.size = Fmt.size(liveDisk[index], tx)
+            row.size = Fmt.size(liveDisk[index], txt)
             row.bar = ListMath.bar(liveDisk[index], liveDisk[0])
             row.pct = Fmt.pct(liveDisk[index], p[2])
             row.desc = "${row.name}, ${row.size}"
@@ -106,7 +108,7 @@ class ScanActivity : LangActivity() {
         if (h == 0L) {
             finished = true
             val f = ScanFail(err[0]).also { NativeErr.log("scan start", it) }
-            failure = alert(tx.s(R.string.scan_not_started), NativeErr.text(tx, f), onDismiss = ::leave)
+            failure = alert(txt.s(R.string.scan_not_started), NativeErr.text(txt, f), onDismiss = ::leave)
             return false
         }
         handle = h
@@ -122,7 +124,7 @@ class ScanActivity : LangActivity() {
     private fun buildUi() {
         built = true
         val pad = dp(16)
-        val t = tx
+        val t = txt
         val head = vbox(4).apply {
             addView(label(t.s(R.string.scanning, if (su) "root" else t.s(R.string.no_root)), 13f, C.MUTED))
             addView(label(root, 22f, mono = true, bold = true))
@@ -177,13 +179,13 @@ class ScanActivity : LangActivity() {
         when (p[0].toInt()) {
             ST_RUNNING -> {}
             ST_DONE, ST_FULL -> done(h)
-            ST_CANCELLED -> { log(); drop(); toast(tx.s(R.string.scan_cancelled)); finish() }
+            ST_CANCELLED -> { log(); drop(); toast(txt.s(R.string.scan_cancelled)); finish() }
             else -> {
                 log()
                 val f = ScanFail(0, Native.str(Native.error(h))).also { NativeErr.log("scan", it) }
                 drop()
-                failure = alert(tx.s(R.string.scan_failed),
-                    NativeErr.text(tx, f) + if (su) "\n\n" + tx.s(R.string.scan_root_hint) else "",
+                failure = alert(txt.s(R.string.scan_failed),
+                    NativeErr.text(txt, f) + if (su) "\n\n" + txt.s(R.string.scan_root_hint) else "",
                     onDismiss = ::leave)
             }
         }
@@ -191,7 +193,7 @@ class ScanActivity : LangActivity() {
 
     private fun renderTiles(p: LongArray, path: String) {
         val secs = maxOf(p[4], 1) / 1000.0
-        val t = tx
+        val t = txt
         tiles[0].text = Fmt.count(p[1], t.locale)
         tiles[1].text = Fmt.size(p[2], t)
         tiles[2].text = t.s(R.string.rate_per_s, Fmt.count((p[1] / secs).toLong(), t.locale))
@@ -219,8 +221,8 @@ class ScanActivity : LangActivity() {
             startActivity(Intent(this, BrowserActivity::class.java))
             finish()
         } else {
-            failure = alert(tx.s(R.string.scan_failed),
-                BgScan.failure?.let { NativeErr.text(tx, it) } ?: tx.s(R.string.unknown_error), onDismiss = ::leave)
+            failure = alert(txt.s(R.string.scan_failed),
+                BgScan.failure?.let { NativeErr.text(txt, it) } ?: txt.s(R.string.unknown_error), onDismiss = ::leave)
         }
     }
 
@@ -258,7 +260,7 @@ class ScanActivity : LangActivity() {
         p[0] = ST_CANCELLED.toLong()
         log()
         drop()
-        if (notify) toast(tx.s(R.string.scan_cancelled))
+        if (notify) toast(txt.s(R.string.scan_cancelled))
         finish()
     }
 

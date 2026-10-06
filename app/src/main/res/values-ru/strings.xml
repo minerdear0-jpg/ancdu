@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="locale_tag">ru</string>
     <string name="unit_b">Б</string>
     <string name="unit_kib">КиБ</string>
     <string name="unit_mib">МиБ</string>
@@ -83,8 +84,8 @@
     <string name="fresh_refresh">обновить ›</string>
     <string name="fresh_approx">приблизительно · %1$s</string>
     <string name="just_now">только что</string>
-    <string name="min_ago">%1$s мин назад</string>
-    <string name="h_ago">%1$s ч назад</string>
+    <string name="min_ago">%1$s\u00A0мин назад</string>
+    <string name="h_ago">%1$s\u00A0ч назад</string>
     <string name="delta">%1$s с прошлого скана</string>
 
     <string name="su_desc_ask">su: запросить root</string>

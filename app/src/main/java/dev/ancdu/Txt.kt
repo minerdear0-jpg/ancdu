@@ -10,7 +10,10 @@ import java.util.Locale
  * Чистые объекты (DeleteProgress, Freshness, Fmt…) получают его параметром.
  */
 interface Txt {
-    /** Язык чисел и дат: тот же, что у ресурсов. */
+    /**
+     * Язык чисел и дат — язык, в котором разрешились ресурсы (R.string.locale_tag: en или ru), а не
+     * локаль системы: при немецкой системе интерфейс английский, и числа/месяцы — тоже английские.
+     */
     val locale: Locale
     /** Строка [id]; с [args] — String.format в [locale], без них — как есть. */
     fun s(id: Int, vararg args: Any): String
@@ -19,7 +22,7 @@ interface Txt {
 }
 
 class ResTxt(private val r: Resources) : Txt {
-    override val locale: Locale = r.configuration.locales[0] ?: Locale.ROOT
+    override val locale: Locale = Locale.forLanguageTag(r.getString(R.string.locale_tag))
     override fun s(id: Int, vararg args: Any): String =
         if (args.isEmpty()) r.getString(id) else r.getString(id, *args)
     override fun q(id: Int, n: Long, vararg args: Any): String =

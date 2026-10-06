@@ -29,6 +29,15 @@ class FmtTest {
         assertEquals("1,0${N}ПиБ", Fmt.size(1L shl 50, RU))
     }
 
+    /** Немецкая система: интерфейс английский — и числа, и месяцы английские (не «81,6 GiB»). */
+    @Test fun unsupportedSystemLocaleFollowsUiLanguage() {
+        val de = XmlTxt.DE
+        assertEquals(Locale.ENGLISH.language, de.locale.language)
+        assertEquals("81.6${N}GiB", Fmt.size((81.6 * (1L shl 30)).toLong(), de))
+        assertEquals("4,964", Fmt.count(4964, de.locale))
+        assertEquals("Oct 5", Freshness.date(de, R.string.fmt_day, 1_759_700_000_000L, java.util.TimeZone.getTimeZone("UTC")))
+    }
+
     @Test fun percents() {
         assertEquals("48%", Fmt.pct(48, 100))
         assertEquals("<1%", Fmt.pct(1, 1000))

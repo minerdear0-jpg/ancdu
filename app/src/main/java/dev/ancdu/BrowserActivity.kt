@@ -49,6 +49,8 @@ class BrowserActivity : LangActivity() {
     private var parentV = 0L
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
     private var h = 0L
+    /** Holder.gen дескриптора [h]: ключ сохранённого пути вместе с h. */
+    private var gen = 0L
     private var keepScroll = 0
     private var wait: AlertDialog? = null
     /** Для тестов: полоса, счётчик и кнопка «Стоп» диалога удаления (null — диалога нет). */
@@ -229,6 +231,7 @@ class BrowserActivity : LangActivity() {
         super.onCreate(savedInstanceState)
         darkBars()
         h = Holder.h
+        gen = Holder.gen
         if (h == 0L) { finish(); return }
         Holder.pinBrowser(); pinned = true
         Root.load(this)
@@ -254,8 +257,10 @@ class BrowserActivity : LangActivity() {
         summary = label("", 13f, C.MUTED, mono = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
         }
+        // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
+        // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
         badge = label("", 12f, C.ACCENT, mono = true).apply {
-            setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
         }
         newer = label(txt.s(R.string.newer_chip), 12f, ON_ACCENT, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
@@ -306,24 +311,26 @@ class BrowserActivity : LangActivity() {
         Holder.addSessionListener(onSession)
         BgScan.addListener(onBg)
         // Пересоздание (смена языка, системой) того же дерева: та же папка, сортировка и режим размера.
-        val st = savedInstanceState?.takeIf { it.getLong(S_H) == h }
+        val st = savedInstanceState?.takeIf { it.getLong(S_H) == h && it.getLong(S_GEN, -1) == gen }
         if (st != null) {
             sort = st.getInt(S_SORT, SORT_SIZE)
             apparent = st.getBoolean(S_APPARENT, false)
             node = st.getInt(S_NODE, 0)
+            keepScroll = st.getInt(S_SCROLL, 0)   // и для onDeleted, если удаление ещё идёт
         }
         if (busy) {
             // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
             showWait()
         } else {
             list.source = src
-            load(node, st?.getInt(S_SCROLL, 0) ?: 0)
+            load(node, keepScroll)
         }
     }
 
     override fun onSaveInstanceState(out: Bundle) {
         super.onSaveInstanceState(out)
         out.putLong(S_H, h)
+        out.putLong(S_GEN, gen)
         out.putInt(S_NODE, node)
         out.putInt(S_SORT, sort)
         out.putBoolean(S_APPARENT, apparent)
@@ -332,6 +339,7 @@ class BrowserActivity : LangActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (relaunching) return   // LangActivity уже пересоздаёт экран
         // Сессию сменили, пока экран был скрыт: старые id узлов к новому дереву не относятся.
         if (!busy && Holder.h != h) { list.source = null; recreate(); return }
         refreshPending()
@@ -407,6 +415,7 @@ class BrowserActivity : LangActivity() {
 
     private companion object {
         const val S_H = "h"
+        const val S_GEN = "gen"
         const val S_NODE = "node"
         const val S_SORT = "sort"
         const val S_APPARENT = "apparent"
@@ -428,6 +437,7 @@ class BrowserActivity : LangActivity() {
         promoting = true
         try { Holder.promote() } finally { promoting = false }
         h = Holder.h
+        gen = Holder.gen
         scrollAt.clear()
         if (h == 0L) { finish(); return }
         list.source = src

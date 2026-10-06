@@ -169,7 +169,7 @@ class DeleteSheetTest {
         val s = longPress(a, plain)
         ins.runOnMainSync {
             assertNull(s.deleteButton)
-            assertEquals(Block.SYSTEM, s.blockText!!.text.toString())
+            assertEquals(a.getString(Block.SYSTEM.res), s.blockText!!.text.toString())
             s.dismiss()
         }
     }
@@ -250,6 +250,29 @@ class DeleteSheetTest {
     /** Галочка «быстро через root»: только при доступном быстром пути, по умолчанию от 1000 эл.
      *  и только при выданном root (неизвестно/отказ — выключена).
      *  Лист строится из синтетического превью; «Удалить» не нажимается — ничего не удаляется. */
+    /** Размер и видимый размер не обрезаются: не влезли в строку — видимый переносится. */
+    @Test fun sizeLineWrapsNotTruncates() {
+        val dir = fixture("ds-size")
+        File(dir, "a.bin").writeBytes(ByteArray(10))
+        val a = browse(dir.path)
+        val pv = DeletePreview(
+            name = "DCIM", path = "/storage/emulated/0/DCIM", dir = true, disk = (81.6 * (1L shl 30)).toLong(),
+            apparent = (81.4 * (1L shl 30)).toLong(), items = 63_767, flags = F_DIR, top = emptyList(), more = 0,
+            owner = null, viaRoot = false, block = null, kind = Kind.SCAN, cacheTime = null)
+        lateinit var s: DeleteSheet
+        ins.runOnMainSync { s = DeleteSheet(a, pv) {}.also { it.show() } }
+        ins.waitForIdleSync()
+        ins.runOnMainSync {
+            val v = s.sizeText!!
+            val text = v.text.toString()
+            assertTrue(text, text.contains(Fmt.size(pv.disk, a.tx).replace(' ', Fmt.NBSP)))
+            assertTrue(text, text.contains(Fmt.size(pv.apparent, a.tx).replace(' ', Fmt.NBSP)))
+            for (i in 0 until v.layout.lineCount) assertEquals(text, 0, v.layout.getEllipsisCount(i))
+            assertTrue(v.layout.lineCount <= 2)
+            s.dismiss()
+        }
+    }
+
     @Test fun fastRootCheckbox() {
         val dir = fixture("ds-fast")
         File(dir, "a.bin").writeBytes(ByteArray(10))

@@ -106,6 +106,9 @@ object Lang {
  */
 abstract class LangActivity : Activity() {
     private var lang: String? = null
+    /** onResume этого экземпляра уже вызвал recreate(): подклассы второй раз не пересоздают. */
+    protected var relaunching = false
+        private set
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
 
@@ -116,6 +119,6 @@ abstract class LangActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang) recreate()
+        if (Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang) { relaunching = true; recreate() }
     }
 }

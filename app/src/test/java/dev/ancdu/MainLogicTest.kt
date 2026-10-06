@@ -46,8 +46,8 @@ class FreshnessTest {
 
     @Test fun fresh() {
         assertEquals("скан 21:33 · только что", line(cache = t - 5_000, scanned = true))
-        assertEquals("скан 21:33 · 5 мин назад", line(cache = t, scanned = true, now = t + 5 * 60_000))
-        assertEquals("кэш 21:33 · 2 ч назад", line(cache = t, now = t + 2 * 3_600_000 + 1))
+        assertEquals("скан 21:33 · 5${Fmt.NBSP}мин назад", line(cache = t, scanned = true, now = t + 5 * 60_000))
+        assertEquals("кэш 21:33 · 2${Fmt.NBSP}ч назад", line(cache = t, now = t + 2 * 3_600_000 + 1))
         assertEquals("кэш 21:33 · 05.10", line(cache = t, now = t + 2 * 86_400_000L))
     }
 
@@ -69,7 +69,7 @@ class FreshnessTest {
                blocked: Boolean = false, approx: Boolean = false, now: Long = t) =
             Freshness.line(EN, running, live, cache, scanned, blocked, approx, now, utc)
         assertEquals("scan 21:33 · just now", en(cache = t - 5_000, scanned = true))
-        assertEquals("cache 21:33 · 5 min ago", en(cache = t, now = t + 5 * 60_000))
+        assertEquals("cache 21:33 · 5${Fmt.NBSP}min ago", en(cache = t, now = t + 5 * 60_000))
         assertEquals("cache 21:33 · Oct 5", en(cache = t, now = t + 2 * 86_400_000L))
         assertEquals("cache 21:33 · updating… 1,234 items", en(running = true, live = 1234, cache = t))
         assertEquals("1 item · first scan", en(running = true, live = 1))

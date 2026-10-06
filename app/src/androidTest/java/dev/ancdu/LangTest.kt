@@ -31,16 +31,20 @@ class LangTest {
     private val ctx: Context get() = ins.targetContext
     private val ui get() = ctx.getSharedPreferences(LangPrefs.PREFS, Context.MODE_PRIVATE)
     private var prevStored: String? = null
+    /** Язык приложения в системе до теста (API 33+): тест его возвращает, а не сбрасывает. */
+    private var prevApp: String = ""
 
     @Before fun setUp() {
         prevStored = ui.getString(LangPrefs.KEY, null)
+        if (Build.VERSION.SDK_INT >= 33)
+            prevApp = ctx.getSystemService(LocaleManager::class.java).applicationLocales.toLanguageTags()
         BgScan.auto = false
         Perms.filesOverride = true
         ins.runOnMainSync { Holder.clear(); Holder.dropPending() }
     }
 
     @After fun tearDown() {
-        setLang("")
+        setLang(prevApp)
         if (prevStored == null) ui.edit().remove(LangPrefs.KEY).commit()
         else ui.edit().putString(LangPrefs.KEY, prevStored).commit()
         BgScan.auto = true
@@ -226,6 +230,10 @@ class LangTest {
         assertEquals("81,6${Fmt.NBSP}ГиБ", Fmt.size((81.6 * (1L shl 30)).toLong(), ru.tx))
         val en = Lang.withLocale(ctx, Locale.ENGLISH)
         assertEquals("81.6${Fmt.NBSP}GiB", Fmt.size((81.6 * (1L shl 30)).toLong(), en.tx))
+        // Немецкая система: ресурсы английские — и числа, и месяцы английские
+        val de = Lang.withLocale(ctx, Locale.GERMAN)
+        assertEquals("81.6${Fmt.NBSP}GiB", Fmt.size((81.6 * (1L shl 30)).toLong(), de.tx))
+        assertEquals("Oct 5", Freshness.date(de.tx, R.string.fmt_day, 1_759_700_000_000L, java.util.TimeZone.getTimeZone("UTC")))
         assertNotNull(LangPrefs.wrapLocale(30, "ru"))
     }
 }

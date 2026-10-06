@@ -321,6 +321,14 @@ class BrowserTest {
             ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, false); act.refreshPending() }
             ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
             assertEquals("с чипом «новее»", h0, height())
+            // Самая длинная плашка рядом с чипом переносится (до 2 строк), не обрезается; две строки
+            // 12sp ниже 44dp строки чипа — высота шапки та же.
+            ins.runOnMainSync { act.badge.text = Badge.text(act.tx, Kind.ROOT, 0L, 12_300L, true) }
+            assertEquals("длинная плашка с чипом", h0, height())
+            ins.runOnMainSync {
+                val l = act.badge.layout
+                assertEquals(act.badge.text.toString(), 0, l.getEllipsisCount(l.lineCount - 1))
+            }
             ins.runOnMainSync { act.onBackPressed() }
             assertEquals("корень с чипом «новее»", h0, height())
         } finally {

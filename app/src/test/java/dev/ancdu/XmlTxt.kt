@@ -11,14 +11,18 @@ import javax.xml.parsers.DocumentBuilderFactory
  * Android; id ↔ имя — через R. Формы plurals — правила CLDR для целых (en: one/other;
  * ru: one/few/many).
  */
-class XmlTxt(override val locale: Locale) : Txt {
+class XmlTxt(config: Locale) : Txt {
     private val strings = HashMap<String, String>()
     private val plurals = HashMap<String, Map<String, String>>()
 
     init {
         load(File("src/main/res/values/strings.xml"))
-        if (locale.language == "ru") load(File("src/main/res/values-ru/strings.xml"))
+        // Как у Android: values-<язык конфигурации>, если есть, иначе только значения по умолчанию.
+        if (config.language == "ru") load(File("src/main/res/values-ru/strings.xml"))
     }
+
+    /** Как у ResTxt: язык, в котором разрешились ресурсы. */
+    override val locale: Locale = Locale.forLanguageTag(strings.getValue("locale_tag"))
 
     private fun load(f: File) {
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(f)
@@ -83,5 +87,7 @@ class XmlTxt(override val locale: Locale) : Txt {
     companion object {
         val EN = XmlTxt(Locale.ENGLISH)
         val RU = XmlTxt(Locale.forLanguageTag("ru"))
+        /** Система на немецком: ресурсов de нет — английский, и числа тоже английские. */
+        val DE = XmlTxt(Locale.GERMAN)
     }
 }
