@@ -52,8 +52,17 @@ class NcduListView(ctx: Context) : View(ctx) {
 
     var scroll = 0
         set(v) {
-            field = ListMath.clampScroll(v, source?.count ?: 0, rowHeight, height)
+            val n = ListMath.clampScroll(v, source?.count ?: 0, rowHeight, height)
+            val changed = n != field
+            field = n
             invalidate()
+            if (changed) {
+                val ev = AccessibilityEvent.obtain(AccessibilityEvent.TYPE_VIEW_SCROLLED)
+                onInitializeAccessibilityEvent(ev)
+                ev.scrollY = n
+                ev.maxScrollY = ListMath.maxScroll(source?.count ?: 0, rowHeight, height)
+                parent?.requestSendAccessibilityEvent(this, ev)
+            }
         }
 
     private val row = Row()
@@ -178,6 +187,9 @@ class NcduListView(ctx: Context) : View(ctx) {
                 val l = ListMath.lastVisible(scroll, rowHeight, height, src.count)
                 for (i in f..l) info.addChild(this@NcduListView, i)
                 info.isScrollable = src.count * rowHeight > height
+                val max = ListMath.maxScroll(src.count, rowHeight, height)
+                if (scroll < max) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+                if (scroll > 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
                 return info
             }
             if (id !in 0 until src.count) return null

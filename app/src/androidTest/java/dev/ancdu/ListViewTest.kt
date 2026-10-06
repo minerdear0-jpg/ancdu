@@ -68,5 +68,16 @@ class ListViewTest {
         assertTrue(info.isClickable)
         ins.runOnMainSync { p.performAction(4, AccessibilityNodeInfo.ACTION_CLICK, null) }
         assertEquals(listOf(2, 4), src.clicks)
+
+        fun hasAct(info: AccessibilityNodeInfo, a: Int) = info.actionList.any { it.id == a }
+        val top = p.createAccessibilityNodeInfo(-1)!!
+        assertTrue(hasAct(top, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD))
+        assertTrue(!hasAct(top, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
+        ins.runOnMainSync { p.performAction(-1, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null) }
+        assertTrue(v.scroll > 0)
+        ins.runOnMainSync { v.scroll = Int.MAX_VALUE }
+        val bottom = p.createAccessibilityNodeInfo(-1)!!
+        assertTrue(!hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD))
+        assertTrue(hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
     }
 }
