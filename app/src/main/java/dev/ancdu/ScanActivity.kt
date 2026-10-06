@@ -10,9 +10,9 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 
@@ -28,6 +28,9 @@ class ScanActivity : LangActivity() {
     private lateinit var tiles: Array<TextView>
     private lateinit var cur: TextView
     private lateinit var live: NcduListView
+    /** Развёртка фокусной панели (null — экран прогресса не построен). */
+    var sweep: Sweep? = null
+        private set
     private val p = LongArray(6)
     private val liveNodes = IntArray(256)
     private val liveDisk = LongArray(256)
@@ -126,44 +129,43 @@ class ScanActivity : LangActivity() {
         val pad = dp(16)
         val t = txt
         val head = vbox(4).apply {
-            addView(label(t.s(R.string.scanning, if (su) "root" else t.s(R.string.no_root)), 13f, C.MUTED))
-            addView(label(root, 22f, mono = true, bold = true))
+            addView(caps(t.s(R.string.scanning, if (su) "root" else t.s(R.string.no_root))))
+            addView(label(root, 22f, mono = true))
         }
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(C.AMBER)
-        }
+        // Фокусная панель: скобки и развёртка (пока идёт скан), сетка 2×2.
         val grid = GridLayout(this).apply { columnCount = 2 }
         val names = arrayOf(t.s(R.string.tile_files), t.s(R.string.tile_size), t.s(R.string.tile_speed), t.s(R.string.tile_time))
-        tiles = Array(4) { label("—", 24f, mono = true, bold = true) }
+        tiles = Array(4) { label("—", 24f, if (it == 1) C.AMBER else C.TEXT, mono = true, bold = true).apply { maxLines = 1 } }
         for (i in 0 until 4) {
-            val cell = vbox(6).apply {
-                setPadding(pad, pad, pad, pad)
-                background = box(C.PANEL)
-                addView(label(names[i], 13f, C.MUTED))
+            val cell = vbox(4).apply {
+                setPadding(pad, dp(12), pad, dp(12))
+                addView(caps(names[i]))
                 addView(tiles[i])
             }
             grid.addView(cell, GridLayout.LayoutParams(
-                GridLayout.spec(i / 2, 1f), GridLayout.spec(i % 2, 1f)).apply {
-                width = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
-            })
+                GridLayout.spec(i / 2, 1f), GridLayout.spec(i % 2, 1f)).apply { width = 0 })
         }
-        cur = label("", 13f, mono = true).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.START }
+        val focal = FrameLayout(this).apply {
+            background = Brackets(this@ScanActivity, C.PANEL)
+            setPadding(0, dp(4), 0, dp(4))
+            addView(grid, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            foreground = Sweep(this@ScanActivity).also { sweep = it; it.start() }
+        }
+        cur = label("", 12f, C.MUTED, mono = true).apply { setSingleLine(true); ellipsize = TextUtils.TruncateAt.START }
         live = NcduListView(this).apply { source = liveSrc }
         val cancel = if (attach) action(t.s(R.string.close), t.s(R.string.scan_continues), false) { finished = true; finish() }
-                     else action(t.s(R.string.cancel), null, false) { abort(true) }
+                     else action(t.s(R.string.stop), null, false) { abort(true) }
+        cancel.minimumHeight = dp(48)
         setContentView(vbox(16).apply {
             setBackgroundColor(C.BG)
             setPadding(pad, dp(28), pad, dp(24))
             addView(head)
-            addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            addView(grid, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            addView(vbox(6).apply {
-                setPadding(pad, pad, pad, pad)
-                background = box(C.PANEL)
-                addView(label(t.s(R.string.scan_now), 13f, C.MUTED)); addView(cur)
+            addView(focal, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(vbox(4).apply {
+                addView(caps(t.s(R.string.scan_now)))
+                addView(cur)
             })
-            if (!attach) addView(label(t.s(R.string.scan_largest), 13f, C.MUTED))
+            if (!attach) addView(caps(t.s(R.string.scan_largest)))
             addView(live, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(cancel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
@@ -216,6 +218,7 @@ class ScanActivity : LangActivity() {
             return
         }
         finished = true
+        sweep?.stop()
         if (BgScan.pendingStorage() && !Holder.deleting) Holder.promote()
         if (Holder.h != 0L && Holder.root == BgScan.ROOT && !Holder.viaRoot) {
             startActivity(Intent(this, BrowserActivity::class.java))
@@ -247,6 +250,7 @@ class ScanActivity : LangActivity() {
     /** Скан этому экрану больше не нужен: тик стоп, список отцеплен, сессия освобождается на Holder.io. */
     private fun drop() {
         finished = true
+        sweep?.stop()
         if (::live.isInitialized) live.source = null
         if (Holder.h == handle) Holder.clear()
     }
@@ -274,6 +278,7 @@ class ScanActivity : LangActivity() {
 
     private fun done(h: Long) {
         finished = true
+        sweep?.stop()
         log()
         if (su) { Root.rememberMemfd(this, p[5] == 1L); Root.granted(this) }
         // Кэш и запись «caches» — на io (FIFO с delete и free этого же дескриптора), см. Scans.finish.
@@ -295,6 +300,7 @@ class ScanActivity : LangActivity() {
 
     override fun onDestroy() {
         ui.removeCallbacks(tick)
+        sweep?.stop()
         failure?.dismiss()
         if (attachedReg) {
             // Фоновый скан не наш: не отменяется, просто перестаём ждать.
