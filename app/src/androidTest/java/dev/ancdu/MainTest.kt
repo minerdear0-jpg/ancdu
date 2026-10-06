@@ -108,12 +108,12 @@ class MainTest {
         return v
     }
 
-    /** Описания видимых кнопок action() (64dp) главного экрана. Главный поток. */
+    /** Описания видимых кнопок action() и строк navRow() главного экрана (ACTION_TAG). Главный поток. */
     private fun actions(a: MainActivity): List<String> {
         val out = ArrayList<String>()
         fun walk(v: View) {
             if (v.visibility != View.VISIBLE) return
-            if (v is android.widget.LinearLayout && v.isClickable && v.minimumHeight == a.dp(64))
+            if (v is android.widget.LinearLayout && v.isClickable && v.tag == ACTION_TAG)
                 out += v.contentDescription.toString()
             if (v is android.view.ViewGroup) for (k in 0 until v.childCount) walk(v.getChildAt(k))
         }
@@ -144,7 +144,7 @@ class MainTest {
                 .putString("last-su_data.ancdu", "/data|true|99|50|1759700000002")
                 .commit()
             val a = launch().also { act = it }
-            // С доступом — без основной кнопки: все видимые кнопки action() (64dp) — строки
+            // С доступом — без основной кнопки: все видимые кнопки и строки-переходы — строки
             // «Последний скан» или «Приложения: нет доступа»; вход в дерево — только карточка.
             ins.runOnMainSync {
                 val shown = actions(a)
@@ -159,6 +159,26 @@ class MainTest {
                 assertTrue(a.storage.freshTxt.text.toString(), a.storage.freshTxt.text.startsWith(a.prefixOf(R.string.fresh_cache)))
                 assertNotNull(a.window.decorView.findViewWithTag<SegBar>("segbar"))
                 assertTrue(a.storage.view.isClickable)
+            }
+        } finally {
+            act?.let { a -> ins.runOnMainSync { a.finish() } }
+        }
+    }
+
+    /** Скобки (Brackets) — ровно у одной панели главного экрана: фокусной панели памяти. */
+    @Test fun bracketsOnExactlyOnePanel() {
+        var act: MainActivity? = null
+        try {
+            Perms.filesOverride = true
+            val a = launch().also { act = it }
+            ins.runOnMainSync {
+                val framed = ArrayList<View>()
+                fun walk(v: View) {
+                    if (v.background is Brackets) framed += v
+                    if (v is android.view.ViewGroup) for (k in 0 until v.childCount) walk(v.getChildAt(k))
+                }
+                walk(a.window.decorView)
+                assertEquals(listOf<View>(a.storage.panel), framed)
             }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }

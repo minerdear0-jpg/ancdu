@@ -46,12 +46,13 @@ class MainActivity : LangActivity() {
         val rootCaches = prefs.all.values.any { CacheMeta.parse(it as? String)?.su == true }
         rootPanel = RootPanel(this, Root.suExists(), rootCaches)
         storage = StorageCard(this)
-        val body = vbox(20).apply { setPadding(dp(16), dp(20), dp(16), dp(20)) }
+        val body = vbox(16).apply { setPadding(dp(16), dp(12), dp(16), dp(24)) }
         body.addView(header())
-        body.addView(storage.view)
-        appsBox = vbox(4)
+        body.addView(storage.panel)
+        // Ниже панели — строки без карточек, разделённые волосяными линиями.
+        appsBox = vbox()
         body.addView(appsBox)
-        lastBox = vbox(8)
+        lastBox = vbox()
         body.addView(lastBox)
         rootPanel.block?.let { body.addView(it) }
         setContentView(ScrollView(this).apply { setBackgroundColor(C.BG); addView(body) })
@@ -96,48 +97,57 @@ class MainActivity : LangActivity() {
     fun showAlert(title: String, msg: String) { dialog = alert(title, msg) }
 
     private fun header() = hbox(8).apply {
-        addView(label("ancdu", 26f, mono = true, bold = true))
-        addView(label("0.1", 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        // Только когда su есть: без него пилюли нет совсем.
-        rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
-        langButton = label("${tx.s(R.string.lang_code)} ▾", 12f, C.MUTED, mono = true).apply {
+        addView(label("ANCDU", 20f, mono = true, bold = true).apply { letterSpacing = 0.18f })
+        addView(label("v0.1", 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        langButton = label("${tx.s(R.string.lang_code)} ▾", 12f, C.TEXT, mono = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44); minWidth = dp(44)
-            setPadding(dp(8), 0, dp(4), 0)
+            setPadding(dp(10), 0, dp(10), 0)
+            background = pressable(C.BG, C.FRAME)
             isClickable = true; isFocusable = true
             contentDescription = tx.s(R.string.lang_button_desc, tx.s(Lang.choice(this@MainActivity).label))
             setOnClickListener { dialog?.dismiss(); dialog = Lang.ask(this@MainActivity).also { langDialog = it } }
         }
         addView(langButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        // Только когда su есть: без него пилюли нет совсем.
+        rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))
 
     private fun renderTier0(t: Tier0) {
-        t.segs?.let { storage.showSegs(it) }
         appsBox.removeAllViews()
         val apps = t.apps
         val x = tx
         if (apps == null) {
             // Нет «Доступа к истории использования»: AppsActivity объясняет и ведёт в настройки.
-            appsBox.addView(action(x.s(R.string.apps_no_access), x.s(R.string.apps_no_access_sub), false) { openApps() })
+            appsBox.addView(navRow(x.s(R.string.apps_title), x.s(R.string.apps_grant),
+                "${x.s(R.string.apps_no_access)}, ${x.s(R.string.apps_no_access_sub)}", C.AMBER, mono = false) { openApps() })
+            appsBox.hairline()
             return
         }
         appsBox.addView(hbox().apply {
-            addView(label(x.s(R.string.apps_title), 15f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(x.s(R.string.apps_all), 14f, C.AMBER).apply {
+            addView(caps(x.s(R.string.apps_title)), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(label(x.s(R.string.apps_all), 14f, C.AMBER, bold = true).apply {
                 minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
+                setPadding(dp(8), 0, 0, 0)
+                background = pressable(C.BG)
                 setOnClickListener { openApps() }
             })
         })
-        for (a in apps.take(3)) appsBox.addView(hbox().apply {
-            minimumHeight = dp(44)
-            isClickable = true; isFocusable = true
-            contentDescription = "${a.label}, ${Fmt.size(a.total, x)}"
-            setOnClickListener { openApps() }
-            addView(label(a.label, 15f), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(Fmt.size(a.total, x), 14f, mono = true))
-        })
+        appsBox.hairline()
+        for (a in apps.take(3)) {
+            appsBox.addView(hbox(12).apply {
+                minimumHeight = dp(48)
+                background = pressable(C.BG)
+                isClickable = true; isFocusable = true
+                contentDescription = "${a.label}, ${Fmt.size(a.total, x)}"
+                setOnClickListener { openApps() }
+                addView(label(a.label, 14f), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(label(Fmt.size(a.total, x), 14f, mono = true))
+            })
+            appsBox.hairline()
+        }
     }
 
     /** Заголовки строк «Последний скан» без root (для тестов); общее хранилище — на карточке. */
@@ -163,7 +173,11 @@ class MainActivity : LangActivity() {
             val sub = listOfNotNull(Freshness.date(t, R.string.fmt_day_time, m.time),
                 t.q(R.plurals.files, m.files, Fmt.count(m.files, t.locale)), Fmt.secs(m.ms, t),
                 if (m.su) "root" else null).joinToString(" · ")
-            box.addView(action(title, sub, false) { openCache(file, m.root, m.su, m.time) })
+            // Одна строка «ПОСЛЕДНИЙ /путь · N файлов · 6,1 с · дата ›»; описание — как прежде.
+            val line = listOf(m.root, t.q(R.plurals.files, m.files, Fmt.count(m.files, t.locale)), Fmt.secs(m.ms, t),
+                Freshness.date(t, R.string.fmt_day_time, m.time)).joinToString(" · ")
+            box.addView(navRow(t.s(R.string.last_short), line, "$title, $sub") { openCache(file, m.root, m.su, m.time) })
+            box.hairline()
         }
     }
 

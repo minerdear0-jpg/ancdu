@@ -56,15 +56,18 @@
     <string name="apps_all">all →</string>
     <string name="apps_no_access">Apps: no access</string>
     <string name="apps_no_access_sub">needs usage access · details →</string>
+    <string name="apps_grant">Grant usage access ›</string>
     <string name="last_scan">Last scan: %1$s</string>
+    <string name="last_short">Last</string>
     <string name="cache_corrupt_title">Cache damaged</string>
     <string name="cache_corrupt_msg">The cache file was deleted. Run the scan again.</string>
 
     <!-- Storage card. -->
     <string name="internal_title">Internal storage · /data</string>
     <string name="shared_title">Shared storage</string>
+    <string name="hero_of">of %1$s</string>
+    <string name="legend_used">Used</string>
     <string name="files_access_explain">To measure folders in internal storage, give ancdu “All files access”. ancdu sends nothing anywhere and deletes only after you confirm.</string>
-    <string name="free_used">free %1$s · used %2$s</string>
     <string name="open_tree_need_access">Open tree: allow all files access</string>
     <string name="card_desc">Open shared storage tree</string>
     <string name="card_desc_need_access">%1$s: allow all files access</string>

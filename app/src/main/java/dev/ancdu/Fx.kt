@@ -16,6 +16,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
+import android.util.TypedValue
+import android.widget.TextView
 import kotlin.math.max
 
 /**
@@ -160,5 +162,25 @@ class Flow(ctx: Context, private val hGap: Int, private val vGap: Int, private v
             val top = paddingTop + ys[i] + (lineH[lineOf[i]] - c.measuredHeight) / 2
             c.layout(left, top, left + c.measuredWidth, top + c.measuredHeight)
         }
+    }
+}
+
+/**
+ * Одна строка крупного числа: не влезает в ширину — шрифт уменьшается (не переносится, не
+ * режется). [maxSp] — размер при достаточной ширине (с учётом масштаба шрифта).
+ */
+class FitText(ctx: Context, private val maxSp: Float) : TextView(ctx) {
+    init { maxLines = 1; textSize = maxSp }
+
+    override fun onMeasure(ws: Int, hs: Int) {
+        if (MeasureSpec.getMode(ws) != MeasureSpec.UNSPECIFIED) {
+            val avail = MeasureSpec.getSize(ws) - totalPaddingLeft - totalPaddingRight
+            val max = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, maxSp, resources.displayMetrics)
+            val cur = textSize
+            val need = paint.measureText(text.toString()) * max / cur
+            val px = if (need <= avail || need <= 0f) max else max * avail / need * 0.98f
+            if (px != cur) setTextSize(TypedValue.COMPLEX_UNIT_PX, px)
+        }
+        super.onMeasure(ws, hs)
     }
 }

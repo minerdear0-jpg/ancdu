@@ -1,54 +1,62 @@
 package dev.ancdu
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 
-/** Полоса заполнения раздела: сегменты яруса 0 или одна доля «занято». */
+/**
+ * Полоса раздела 12dp: контур FRAME, занято — амбер, свободно — синий 30%, риски на 25/50/75%.
+ * Первое значение заполняется 0→[used] за 400 мс (ease-out), если анимации не выключены.
+ */
 class SegBar(ctx: Context) : View(ctx) {
-    var segs: List<Seg>? = null
-        set(v) { field = v; contentDescription = describe(); invalidate() }
     var used = 0f
-        set(v) { field = v; contentDescription = describe(); invalidate() }
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val clip = Path()
-    private val r = RectF()
+        set(v) {
+            field = v
+            contentDescription = context.tx.s(R.string.bar_used, "${(v * 100).toInt()}%")
+            if (first) {
+                first = false
+                if (Motion.on()) {
+                    fill = ValueAnimator.ofFloat(0f, v).apply {
+                        duration = 400
+                        interpolator = DecelerateInterpolator()
+                        addUpdateListener { shown = it.animatedValue as Float; invalidate() }
+                        start()
+                    }
+                    return
+                }
+            }
+            fill?.cancel()
+            shown = v
+            invalidate()
+        }
+    /** Для тестов: анимация первого заполнения (null — её не было: анимации выключены). */
+    var fill: ValueAnimator? = null
+        private set
+    private var first = true
+    private var shown = 0f
+    private val paint = Paint()
+    private val one = ctx.dp(1).toFloat()
 
     init { tag = "segbar" }
-
-    private fun describe(): String {
-        val t = context.tx
-        return segs?.joinToString { "${t.s(it.label)} ${Fmt.size(it.bytes, t)}" }
-            ?: t.s(R.string.bar_used, "${(used * 100).toInt()}%")
-    }
 
     override fun onMeasure(w: Int, h: Int) =
         setMeasuredDimension(MeasureSpec.getSize(w), context.dp(12))
 
     override fun onDraw(c: Canvas) {
-        val rad = height / 2f
-        r.set(0f, 0f, width.toFloat(), height.toFloat())
-        clip.reset(); clip.addRoundRect(r, rad, rad, Path.Direction.CW)
-        c.save(); c.clipPath(clip)
-        paint.color = C.PANEL2
-        c.drawRect(r, paint)
-        val s = segs
-        if (s != null) {
-            val total = s.sumOf { it.bytes }.coerceAtLeast(1)
-            var x = 0f
-            for (seg in s) {
-                val w = width * (seg.bytes.toFloat() / total)
-                paint.color = seg.color
-                c.drawRect(x, 0f, x + w, height.toFloat(), paint)
-                x += w
-            }
-        } else {
-            paint.color = C.AMBER
-            c.drawRect(0f, 0f, width * used, height.toFloat(), paint)
-        }
-        c.restore()
+        val w = width.toFloat(); val h = height.toFloat()
+        val l = one; val t = one; val r = w - one; val b = h - one
+        val split = l + (r - l) * shown
+        paint.color = (C.BLUE and 0x00FFFFFF) or 0x4D000000   // свободно: 30%
+        c.drawRect(split, t, r, b, paint)
+        paint.color = C.AMBER
+        c.drawRect(l, t, split, b, paint)
+        paint.color = C.BG
+        for (k in 1..3) { val x = l + (r - l) * k / 4f; c.drawRect(x, t, x + one, b, paint) }
+        paint.color = C.FRAME
+        c.drawRect(0f, 0f, w, one, paint); c.drawRect(0f, h - one, w, h, paint)
+        c.drawRect(0f, 0f, one, h, paint); c.drawRect(w - one, 0f, w, h, paint)
     }
 }
