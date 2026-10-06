@@ -115,6 +115,9 @@ class BrowserActivity : Activity() {
 
     private val onDeleted: (Int) -> Unit = { r ->
         dismissWait()
+        // su отказал: «root ✓» из прошлого больше не правда (и быстрый путь по умолчанию — выкл.).
+        // Только prefs и Root.state — и для уходящего экрана.
+        if (DeletePolicy.nothingDeleted(r, Holder.delRoot)) Root.denied(this)
         if (h == 0L || Holder.h != h) {
             list.source = null
             recreate()
@@ -130,11 +133,8 @@ class BrowserActivity : Activity() {
                         DeleteProgress.stopped(doneN, Holder.delTotal))
                     r == -DeleteProgress.ELOOP -> report("Не удалось удалить",
                         "Путь проходит через символическую ссылку — ничего не удалено.")
-                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> {
-                        // su отказал: «root ✓» из прошлого больше не правда (и быстрый путь по умолчанию — выкл.).
-                        Root.denied(this)
-                        report("Не удалось удалить", "Не удалось получить root — ничего не удалено (код $r).")
-                    }
+                    DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
+                        "Не удалось получить root — ничего не удалено (код $r).")
                     else -> report("Не удалось удалить полностью",
                         "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
                 }
