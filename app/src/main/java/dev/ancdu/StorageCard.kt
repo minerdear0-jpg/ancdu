@@ -170,7 +170,7 @@ class StorageCard(private val a: MainActivity) {
             disk == null -> "${Fmt.count(items)} эл."
             else -> "${Fmt.size(disk)} · ${Fmt.count(items)} эл."
         }
-        val running = BgScan.running
+        val running = BgScan.storageRunning
         scanLine.visibility = if (running) View.VISIBLE else View.INVISIBLE
         val line = Freshness.line(running, BgScan.p[1], time, scanned, gate == Gate.POWER, approx,
             System.currentTimeMillis())

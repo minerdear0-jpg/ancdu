@@ -209,8 +209,8 @@ class ScanActivity : Activity() {
             return
         }
         finished = true
-        if (Holder.pending != 0L && Holder.pendingRoot == BgScan.ROOT && !Holder.deleting) Holder.promote()
-        if (Holder.h != 0L && Holder.root == BgScan.ROOT) {
+        if (BgScan.pendingStorage() && !Holder.deleting) Holder.promote()
+        if (Holder.h != 0L && Holder.root == BgScan.ROOT && !Holder.viaRoot) {
             startActivity(Intent(this, BrowserActivity::class.java))
             finish()
         } else {

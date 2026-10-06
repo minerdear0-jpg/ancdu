@@ -223,6 +223,7 @@ class BrowserActivity : Activity() {
         if (h == 0L) { finish(); return }
         Holder.pinBrowser(); pinned = true
         Root.load(this)
+        BgScan.bind(this)
         val top = vbox(12).apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
         title = label("", 20f, C.TEXT, bold = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE

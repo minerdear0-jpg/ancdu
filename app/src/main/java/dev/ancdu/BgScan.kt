@@ -8,7 +8,8 @@ import android.util.Log
 
 /**
  * Фоновый скан общего хранилища без root: кэш показывается сразу, свежее дерево подставляется,
- * когда готово (stale-while-revalidate). Всё состояние — только главный поток.
+ * когда готово (stale-while-revalidate). Он же обновляет показанное браузером дерево любого корня
+ * в том же режиме su ([refresh], [deleteFinished]). Всё состояние — только главный поток.
  *
  * Дескриптор идущего скана ПРИВАТЕН до Holder.set/offer: пока скан идёт, на нём вызывается
  * только Native.progress (атомики) из [poll]. После терминального состояния владелец (этот
@@ -20,12 +21,20 @@ object BgScan {
     /** Скан дольше этого при отсутствии кэша — карточка показывает приблизительный индекс. */
     const val INDEX_AFTER_MS = 2000L
 
+    /** Цель скана: корень и режим su. */
+    private data class Target(val root: String, val su: Boolean)
+    private val STORAGE = Target(ROOT, false)
+
     private val ui = Handler(Looper.getMainLooper())
     private var h = 0L
+    /** Цель идущего (или последнего) скана. */
+    private var cur = STORAGE
+    /** Цель пересканирования [rescan]. */
+    private var next = STORAGE
     private var app: Context? = null
     /** Удаление шло, пока скан шёл, — итог мог увидеть полуудалённое: выбросить и пересканировать. */
     private var dirty = false
-    /** Пересканировать, когда закончится идущее удаление. */
+    /** Пересканировать [next]: после идущего удаления или следом за идущим сканом другой цели. */
     private var rescan = false
     private var indexing = false
 
@@ -37,6 +46,8 @@ object BgScan {
     var failure: String? = null; private set
 
     val running: Boolean get() = h != 0L
+    /** Идёт скан именно общего хранилища без root (карточка главного экрана). */
+    val storageRunning: Boolean get() = running && cur == STORAGE
     /** Идёт скан или ждёт пересканирование после удаления. */
     val active: Boolean get() = h != 0L || rescan
 
@@ -70,18 +81,25 @@ object BgScan {
         return g
     }
 
-    /** Ручной или автоматический запуск. false — не запущен (уже идёт, удаление, нет доступа, ошибка). */
-    fun start(ctx: Context): Boolean {
-        if (running || Holder.deleting || !Perms.files()) return false
+    /** Контекст приложения для сканов, которые запускает не экран ([deleteFinished]). Главный поток. */
+    fun bind(ctx: Context) { app = ctx.applicationContext }
+
+    /** Ручной или автоматический запуск скана общего хранилища. false — не запущен (уже идёт, удаление, нет доступа, ошибка). */
+    fun start(ctx: Context): Boolean = start(ctx, STORAGE)
+
+    private fun start(ctx: Context, t: Target): Boolean {
+        if (running || Holder.deleting || (!t.su && !Perms.files())) return false
         app = ctx.applicationContext
         val err = IntArray(1)
-        val nh = Native.scanStart(ROOT, true, 0, err)
+        // su — как root-скан ScanActivity: хелпер под su, запуск с главного потока (не Holder.io).
+        val nh = if (t.su) Native.rootStart(Root.helper(ctx), t.root, true, Root.memfdAllowed(ctx), err)
+                 else Native.scanStart(t.root, true, 0, err)
         if (nh == 0L) {
             failure = "Скан не запущен: код ошибки ${err[0]}"
             changed()
             return false
         }
-        h = nh; dirty = false; rescan = false; failure = null; path = ""; p.fill(0)
+        h = nh; cur = t; dirty = false; rescan = false; failure = null; path = ""; p.fill(0)
         ui.post(poll)
         changed()
         return true
@@ -89,47 +107,53 @@ object BgScan {
 
     private val poll = object : Runnable {
         override fun run() {
-            val cur = h
-            if (cur == 0L) return
-            path = Native.str(Native.progress(cur, p))
+            val handle = h
+            if (handle == 0L) return
+            path = Native.str(Native.progress(handle, p))
             when (p[0].toInt()) {
                 ST_RUNNING -> {
-                    if (p[4] >= INDEX_AFTER_MS && noTree()) startIndex()
+                    if (p[4] >= INDEX_AFTER_MS && cur == STORAGE && noTree()) startIndex()
                     changed()
                     ui.postDelayed(this, 100)
                 }
-                ST_DONE, ST_FULL -> done(cur)
-                else -> failed(cur)
+                ST_DONE, ST_FULL -> done(handle)
+                else -> failed(handle)
             }
         }
     }
 
-    private fun log(state: String) = Log.i("ancdu", "bgscan state=$state files=${p[1]} ms=${p[4]}")
+    private fun log(state: String) =
+        Log.i("ancdu", "bgscan state=$state su=${cur.su} files=${p[1]} ms=${p[4]}")
 
-    private fun done(cur: Long) {
+    private fun done(handle: Long) {
         h = 0L
         log("done")
-        if (dirty) { discard(cur); return }
-        val ctx = app ?: return discard(cur)
-        val d = Scans.finish(ctx, cur, ROOT, false, p)
-        publish(cur, Kind.SCAN, "скан" + d.suffix, d.time)
+        if (dirty) { discard(handle); return }
+        val ctx = app ?: return discard(handle)
+        val t = cur
+        if (t.su) { Root.rememberMemfd(ctx, p[5] == 1L); Root.granted(ctx) }
+        val d = Scans.finish(ctx, handle, t.root, t.su, p)
+        publish(handle, t, if (t.su) Kind.ROOT else Kind.SCAN, (if (t.su) "root · скан" else "скан") + d.suffix, d.time)
+        // Ждёт обновление другой цели (браузер) — следом; во время удаления — после него.
+        if (rescan && !Holder.deleting) restart()
         changed()
     }
 
-    private fun failed(cur: Long) {
+    private fun failed(handle: Long) {
         h = 0L
         log("failed")
         // Скан закончился — владелец читает текст ошибки, затем дескриптор уходит на io.
-        failure = Native.str(Native.error(cur)).ifEmpty { "неизвестная ошибка" }
-        Holder.io.execute { Native.free(cur) }
+        failure = Native.str(Native.error(handle)).ifEmpty { "неизвестная ошибка" }
+        Holder.io.execute { Native.free(handle) }
         if (dirty) { rescanSoon(); return }
-        if (noTree()) startIndex()
+        if (cur == STORAGE && noTree()) startIndex()
+        if (rescan && !Holder.deleting) restart()
         changed()
     }
 
     /** «Грязный» итог: освобождается, скан повторяется (после удаления, если оно ещё идёт). */
-    private fun discard(cur: Long) {
-        Holder.io.execute { Native.free(cur) }
+    private fun discard(handle: Long) {
+        Holder.io.execute { Native.free(handle) }
         rescanSoon()
     }
 
@@ -142,33 +166,34 @@ object BgScan {
     private fun restart() {
         rescan = false
         val ctx = app
-        if (ctx == null || !start(ctx)) changed()
+        if (ctx == null || !start(ctx, next)) changed()
     }
 
     /**
-     * Подставить готовое дерево: главный экран (или ждущий ScanActivity) на виду и ни один
-     * браузер не держит дескриптор — сразу Holder.set; иначе — Holder.offer (без рывка дерева).
-     * Сессию другого корня (root-скан /data и т. п.) фоновый скан сам не вытесняет: тоже offer,
-     * подставит тап по карточке.
+     * Подставить готовое дерево цели [t]: главный экран (или ждущий скан хранилища ScanActivity)
+     * на виду и ни один браузер не держит дескриптор — сразу Holder.set; иначе — Holder.offer (без
+     * рывка дерева). Сессию другого корня или другого режима su фоновый скан сам не вытесняет:
+     * тоже offer — подставит браузер (тот же корень и режим) или тап по карточке.
      */
-    private fun publish(handle: Long, kind: Kind, label: String, time: Long) {
-        if (Swap.direct(mainResumed || attached > 0, Holder.browsers, Holder.deleting, ownsHolder())) {
-            Holder.set(handle, kind, ROOT, label, false, time)
-            if (Holder.pending != 0L && Holder.pendingRoot == ROOT) Holder.dropPending()
+    private fun publish(handle: Long, t: Target, kind: Kind, label: String, time: Long) {
+        val visible = mainResumed || (attached > 0 && t == STORAGE)
+        if (Swap.direct(visible, Holder.browsers, Holder.deleting, ownsHolder(t))) {
+            Holder.set(handle, kind, t.root, label, t.su, time)
+            if (Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, t.root, t.su)) Holder.dropPending()
         } else {
-            Holder.offer(handle, kind, ROOT, label, false, time)
+            Holder.offer(handle, kind, t.root, label, t.su, time)
         }
     }
 
-    /** В Holder пусто или дерево общего хранилища без root — его можно заменить свежим. */
-    fun ownsHolder(): Boolean = Holder.h == 0L || (Holder.root == ROOT && !Holder.viaRoot)
+    /** В Holder пусто или дерево того же корня в том же режиме su — его можно заменить свежим. */
+    private fun ownsHolder(t: Target): Boolean = Holder.h == 0L || (Holder.root == t.root && Holder.viaRoot == t.su)
 
-    /** В Holder ждёт дерево общего хранилища. */
-    fun pendingStorage(): Boolean = Holder.pending != 0L && Holder.pendingRoot == ROOT
+    /** В Holder ждёт дерево общего хранилища без root. */
+    fun pendingStorage(): Boolean = Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, ROOT, false)
 
     /** Главный экран на виду: подставить ждущее дерево, если его никто не держит. Главный поток. */
     fun promoteOnMain() {
-        if (Swap.promoteOnMain(pendingStorage(), mainResumed, Holder.browsers, Holder.deleting, ownsHolder()))
+        if (Swap.promoteOnMain(pendingStorage(), mainResumed, Holder.browsers, Holder.deleting, ownsHolder(STORAGE)))
             Holder.promote()
     }
 
@@ -199,42 +224,52 @@ object BgScan {
                 }
                 if (!noTree()) { Holder.io.execute { Native.free(ih) }; return@post }
                 // У индекса нет времени скана: карточка не скажет «только что».
-                publish(ih, Kind.INDEX, "индекс · приблизительно", 0L)
+                publish(ih, STORAGE, Kind.INDEX, "индекс · приблизительно", 0L)
                 changed()
             }
         }, "ancdu-index").apply { isDaemon = true }.start()
     }
 
     /**
-     * Holder.delete, главный поток, до постановки удаления на io. Идущий скан станет «грязным»;
-     * непоказанное дерево общего хранилища уже устарело — выбрасывается, пересканирование после
-     * удаления.
+     * Holder.delete, главный поток, до постановки удаления на io. Идущий скан станет «грязным» и
+     * повторится; непоказанное дерево уже устарело — выбрасывается, пересканирование после
+     * удаления (root — только если root выдан: сам фоновый скан Magisk не спрашивает).
      */
     fun deleteStarted() {
-        if (running) dirty = true
-        if (Holder.pending != 0L && Holder.pendingRoot == ROOT) {
+        if (running) { dirty = true; next = cur }
+        if (Holder.pending != 0L) {
+            val t = Target(Holder.pendingRoot, Holder.pendingViaRoot)
             Holder.dropPending()
-            rescan = true
+            if (!t.su || Root.state == RootState.GRANTED) { next = t; rescan = true }
         }
     }
 
     /**
      * Holder.delete завершилось с кодом [r] (главный поток, до слушателей удаления): отложенное
      * пересканирование. Удалено не всё ([DeleteProgress.refreshAfter]) — показанное дерево
-     * обновляется само, даже если скана не было.
+     * обновляется само в том же режиме su, даже если скана не было. Root — только после
+     * root-удаления (выдача только что использована) или если root выдан.
      */
     fun deleteFinished(r: Int) {
-        if (DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress()) && ownsHolder()) rescan = true
+        val t = Target(Holder.root, Holder.viaRoot)
+        if (Holder.h != 0L && DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress()) &&
+            (!t.su || Holder.delRoot || Root.state == RootState.GRANTED)) { next = t; rescan = true }
         if (rescan && !running) restart()
     }
 
     /**
-     * Браузер: обновить показанное дерево [root] (режим [su]) перед удалением каталога из
-     * устаревшего дерева. Итог — как у любого фонового скана: Holder.offer и [changed]. Идёт скан
-     * той же цели — его итог и есть обновление. false — обновить нельзя или скан не запущен.
+     * Браузер, по долгому тапу: обновить показанное дерево [root] в режиме [su] перед удалением
+     * каталога из устаревшего дерева. su может вызвать запрос Magisk — только как прямой итог
+     * действия пользователя. Итог — как у любого фонового скана: Holder.offer и [changed]. Идёт
+     * скан той же цели — его итог и есть обновление; другой — этот следом. false — не запущен.
      */
     fun refresh(ctx: Context, root: String, su: Boolean): Boolean {
-        if (root != ROOT || su) return false
-        return running || start(ctx)
+        val t = Target(root, su)
+        app = ctx.applicationContext
+        if (running) {
+            if (cur != t) { next = t; rescan = true }
+            return true
+        }
+        return start(ctx, t)
     }
 }

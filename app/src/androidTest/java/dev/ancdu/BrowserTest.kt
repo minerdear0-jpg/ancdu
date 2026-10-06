@@ -13,6 +13,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -408,6 +409,169 @@ class BrowserTest {
             assertTrue(File(dir, "f.txt").exists())
         } finally {
             ins.runOnMainSync { Holder.dropPending(); act.finish() }
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Кэш, который записал фоновый скан фикстуры: файл и запись «caches». */
+    private fun forgetCache(dir: File) {
+        val ctx = ins.targetContext
+        Holder.io.submit {}.get()   // saveCache стоит на io
+        Holder.cacheFile(ctx, dir.path, false).delete()
+        ctx.getSharedPreferences(Scans.PREFS, android.content.Context.MODE_PRIVATE).edit()
+            .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
+    }
+
+    private fun index(act: BrowserActivity, name: String): Int {
+        var k = -1
+        ins.runOnMainSync {
+            val src = act.list.source!!
+            val row = Row()
+            k = (0 until src.count).firstOrNull { row.reset(); src.bind(it, row); row.name == name } ?: -1
+        }
+        return k
+    }
+
+    /** Узел [name] среди детей текущего уровня: items (с самим узлом) или -1. */
+    private fun items(act: BrowserActivity, name: String): Long {
+        val k = index(act, name)
+        if (k < 0) return -1
+        var v = -1L
+        ins.runOnMainSync {
+            val c = IntArray(Native.childCount(Holder.h, act.node))
+            val n = Native.children(Holder.h, act.node, SORT_SIZE, false, c)
+            for (j in 0 until n) if (Native.str(Native.name(Holder.h, c[j])) == name.trimEnd('/'))
+                v = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(c[j]), 1, it) }[2]
+        }
+        return v
+    }
+
+    /**
+     * Кэш: долгий тап по каталогу — листа сразу нет, подвал «обновляю дерево…»; экран сам
+     * сканирует корень и открывает лист того же каталога со свежими числами.
+     */
+    @Test fun cacheDirLongPressRefreshesThenSheet() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("cdir")
+        File(dir, "sub").mkdirs()
+        File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
+        File(dir, "f.txt").writeBytes(ByteArray(10))
+        val h = scanned(dir)
+        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false) }
+        File(dir, "sub/new.bin").writeBytes(ByteArray(100_000))   // диск изменился после «кэша»
+        Perms.filesOverride = true
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            val i = index(act, "sub/")
+            ins.runOnMainSync {
+                act.list.source!!.longClick(i)
+                assertTrue(act.sheet?.dialog?.isShowing != true)
+                assertEquals("обновляю дерево…", act.footerText.toString())
+            }
+            assertTrue(waitFor(30_000) { act.sheet?.dialog?.isShowing == true })
+            ins.runOnMainSync {
+                assertNotEquals(h, Holder.h)
+                assertEquals(Kind.SCAN, Holder.kind)
+                val s = act.sheet!!
+                assertEquals(File(dir, "sub").path, s.p.path)
+                assertEquals(3L, s.p.items)                  // sub + big.bin + new.bin — новые числа
+                assertNotNull(s.deleteButton)
+                s.dismiss()
+            }
+            assertTrue(File(dir, "sub/big.bin").exists())
+            assertTrue(waitFor { !BgScan.active })
+        } finally {
+            Perms.filesOverride = null
+            ins.runOnMainSync { act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Удалено не всё (каталог без права записи внутри): никакого диалога; экран сам обновляет
+     * дерево, остаётся на том же пути, подвал «освобождено … · остаток в списке».
+     */
+    @Test fun partialDeleteRefreshesAndKeepsPath() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("part")
+        val sub = File(dir, "a/sub").apply { mkdirs() }
+        File(sub, "x.bin").writeBytes(ByteArray(50_000))
+        val locked = File(sub, "locked").apply { mkdirs() }
+        File(locked, "y.bin").writeBytes(ByteArray(20_000))
+        assertTrue(locked.setWritable(false, false))
+        scan(dir)
+        Perms.filesOverride = true
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            ins.runOnMainSync { act.list.source!!.click(0) }       // a/
+            var h0 = 0L
+            ins.runOnMainSync { h0 = Holder.h }
+            val r = act.deleteBlocking(index(act, "sub/"))
+            assertNotEquals(0, r)
+            assertTrue(waitFor(30_000) { Holder.h != h0 && act.footerText.startsWith("освобождено ") })
+            ins.runOnMainSync {
+                assertNull(act.lastAlert)                          // ни «остановлено», ни «частично»
+                assertTrue(act.footerText.toString(), act.footerText.endsWith(" · остаток в списке"))
+                assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
+            }
+            assertFalse(File(sub, "x.bin").exists())
+            assertTrue(File(locked, "y.bin").exists())
+            assertEquals(3L, items(act, "sub/"))                    // sub + locked + y.bin — как на диске
+            assertTrue(waitFor { !BgScan.active })
+        } finally {
+            Perms.filesOverride = null
+            locked.setWritable(true, true)
+            ins.runOnMainSync { act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * «Стоп» посреди удаления: никакого диалога; дерево обновляется само до настоящего остатка,
+     * путь сохраняется.
+     */
+    @Test fun stopMidDeleteRefreshesAndKeepsPath() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("stop")
+        val sub = File(dir, "a/sub").apply { mkdirs() }
+        for (d in 0 until 20) {
+            val dd = File(sub, "d$d").apply { mkdirs() }
+            for (k in 0 until 1000) File(dd, "f$k").writeBytes(ByteArray(1))
+        }
+        scan(dir)
+        Perms.filesOverride = true
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            ins.runOnMainSync { act.list.source!!.click(0) }       // a/
+            val i = index(act, "sub/")
+            var r = Int.MIN_VALUE
+            val deleter = Thread { r = act.deleteBlocking(i) }.apply { start() }
+            assertTrue(waitFor(30_000) { !act.busy || Holder.deleteProgress() > 0 })
+            ins.runOnMainSync { act.stopDelete() }
+            deleter.join(60_000)
+            assertFalse(deleter.isAlive)
+            assumeTrue("удаление закончилось раньше «Стоп»", r != 0)
+            assertEquals(-DeleteProgress.EINTR, r)
+            assertTrue(waitFor(30_000) { act.footerText.startsWith("освобождено ") })
+            ins.runOnMainSync {
+                assertNull(act.lastAlert)
+                assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
+            }
+            val left = if (sub.exists()) sub.walk().count().toLong() else -1L
+            assertEquals(left, items(act, "sub/"))                // остаток в дереве = остаток на диске
+            assertTrue(waitFor { !BgScan.active })
+        } finally {
+            Perms.filesOverride = null
+            ins.runOnMainSync { act.finish() }
+            forgetCache(dir)
             dir.deleteRecursively()
         }
     }

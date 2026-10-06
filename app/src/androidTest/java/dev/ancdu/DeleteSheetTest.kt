@@ -174,24 +174,51 @@ class DeleteSheetTest {
         }
     }
 
-    @Test fun indexModeDisablesDirDelete() {
+    /**
+     * Индекс: долгий тап по каталогу — «обновляю дерево…», экран сам сканирует корень и открывает
+     * лист того же каталога уже в свежем дереве (с кнопкой «Удалить»); файл — лист сразу.
+     */
+    @Test fun indexDirRefreshesThenSheet() {
         val dir = fixture("ds3")
         File(dir, "photos").mkdirs()
         File(dir, "photos/a.jpg").writeBytes(ByteArray(3000))
         File(dir, "b.jpg").writeBytes(ByteArray(10))
-        val a = browse(dir.path, kind = Kind.INDEX)
-        var s = longPress(a, indexOf(a, "photos/"))
-        ins.runOnMainSync {
-            assertNull(s.deleteButton)
-            assertEquals(DeletePolicy.REFRESH_FAILED, s.blockText!!.text.toString())
-            s.dismiss()
+        Perms.filesOverride = true
+        try {
+            val a = browse(dir.path, kind = Kind.INDEX)
+            var s = longPress(a, indexOf(a, "b.jpg"))
+            ins.runOnMainSync {
+                assertEquals(Kind.INDEX, Holder.kind)        // файл: без обновления
+                assertNotNull(s.deleteButton)
+                assertNull(s.blockText)
+                s.dismiss()
+            }
+            val i = indexOf(a, "photos/")
+            ins.runOnMainSync {
+                a.list.source!!.longClick(i)
+                assertEquals("обновляю дерево…", a.footerText.toString())
+            }
+            assertTrue(waitFor(30_000) { Holder.kind == Kind.SCAN && a.sheet?.dialog?.isShowing == true })
+            s = a.sheet!!
+            ins.runOnMainSync {
+                assertEquals(File(dir, "photos").path, s.p.path)
+                assertNotNull(s.deleteButton)
+                assertNull(s.blockText)
+                s.dismiss()
+            }
+            assertTrue(waitFor { !BgScan.active })
+        } finally {
+            Perms.filesOverride = null
+            forgetCache(dir)
         }
-        s = longPress(a, indexOf(a, "b.jpg"))
-        ins.runOnMainSync {
-            assertNotNull(s.deleteButton)
-            assertNull(s.blockText)
-            s.dismiss()
-        }
+    }
+
+    /** Кэш, который записал фоновый скан фикстуры: файл и запись «caches». */
+    private fun forgetCache(dir: File) {
+        Holder.io.submit {}.get()   // saveCache стоит на io
+        Holder.cacheFile(ctx, dir.path, false).delete()
+        ctx.getSharedPreferences(Scans.PREFS, android.content.Context.MODE_PRIVATE).edit()
+            .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
     }
 
     /** Данные приложения как root: кнопка выключена 1,5 с с обратным отсчётом, затем включается. */
