@@ -81,11 +81,19 @@ class BulkDeleteTest {
             val hidden = File(target, "hidden").apply { assertTrue(mkdir()) }
             File(hidden, ".nomedia").writeText("")
             for (i in 0 until 5) File(hidden, "h$i.txt").writeText("h$i")
+            // Пара для метасимвола: неэкранированный «_» в LIKE задел бы tX<tag>.
+            val wild = File(wrap, "t_$tag").apply { assertTrue(mkdir()) }
+            for (i in 0 until 20) File(wild, "w$i.txt").writeText("w$i")
+            val wildSib = File(wrap, "tX$tag").apply { assertTrue(mkdir()) }
+            val wildSentinel = File(wildSib, "sentinel.txt").apply { writeText("keep") }
 
             // Строки появляются асинхронно — ждём ограниченно.
             assertTrue("строки MediaStore не появились: ${rows(target.path, true).size}",
                 waitFor(30_000) { rows(target.path, true).size >= 300 })
-            val sentinelRow = waitFor(10_000) { rows(sentinel.path, false).isNotEmpty() }
+            assertTrue("строки t_ не появились", waitFor(30_000) { rows(wild.path, true).size >= 20 })
+            // Без строк соседей проверка «не задели соседа» была бы пустой.
+            assertTrue("нет строки ${sentinel.path}", waitFor(15_000) { rows(sentinel.path, false).isNotEmpty() })
+            assertTrue("нет строки ${wildSentinel.path}", waitFor(15_000) { rows(wildSentinel.path, false).isNotEmpty() })
 
             val h = scanned(wrap)
             ins.runOnMainSync { Holder.set(h, Kind.SCAN, wrap.path, "скан", false) }
@@ -93,28 +101,32 @@ class BulkDeleteTest {
                 Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
             act = a
             ins.waitForIdleSync()
-            var idx = -1
-            ins.runOnMainSync {
-                val src = a.list.source!!
-                for (i in 0 until src.count) {
-                    val row = Row().also { src.bind(i, it) }
-                    if (row.name == "${target.name}/") idx = i
+            fun indexOf(name: String): Int {
+                var idx = -1
+                ins.runOnMainSync {
+                    val src = a.list.source!!
+                    for (i in 0 until src.count) if (Row().also { src.bind(i, it) }.name == name) idx = i
                 }
+                assertTrue("нет строки $name", idx >= 0)
+                return idx
             }
-            assertTrue("нет строки ${target.name}/", idx >= 0)
+            fun idle() = assertTrue(waitFor { var ok = false; ins.runOnMainSync { ok = !a.busy && a.list.source != null }; ok })
 
-            assertEquals(0, a.deleteBlocking(idx))
-            assertTrue("массовый шаг не сработал", Holder.lastBulkRows > 0)
-            assertFalse(target.exists())
-            assertTrue(sibling.isDirectory)
-            assertEquals("keep", sentinel.readText())
-            assertEquals(emptyList<String>(), rows(target.path, true))
-            if (sentinelRow) assertEquals(listOf(sentinel.path), rows(sentinel.path, false))
-            assertTrue(waitFor { var ok = false; ins.runOnMainSync { ok = !a.busy && a.list.source != null }; ok })
+            for ((victim, keepDir, keepFile) in listOf(Triple(target, sibling, sentinel), Triple(wild, wildSib, wildSentinel))) {
+                assertEquals(0, a.deleteBlocking(indexOf("${victim.name}/")))
+                // Массовый шаг действительно прошёл (MediaProvider принял LIKE … ESCAPE), а не тихий откат на rm_tree.
+                assertTrue("массовый шаг не сработал для ${victim.name}", Holder.lastBulkRows > 0)
+                assertFalse(victim.exists())
+                assertTrue(keepDir.isDirectory)
+                assertEquals("keep", keepFile.readText())
+                assertEquals(emptyList<String>(), rows(victim.path, true))
+                assertEquals(listOf(keepFile.path), rows(keepFile.path, false))
+                idle()
+            }
             ins.runOnMainSync {
                 val src = a.list.source!!
-                val names = (0 until src.count).map { Row().also { r -> src.bind(it, r) }.name }
-                assertEquals(listOf("${sibling.name}/"), names)
+                val names = (0 until src.count).map { Row().also { r -> src.bind(it, r) }.name }.toSet()
+                assertEquals(setOf("${sibling.name}/", "${wildSib.name}/"), names)
             }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
