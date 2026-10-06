@@ -10,7 +10,10 @@ import android.os.Process
 import android.provider.Settings
 
 object Perms {
-    fun files(): Boolean = Environment.isExternalStorageManager()
+    /** Для тестов: подмена «доступа ко всем файлам» (его смена убивает процесс). null — настоящий. */
+    @Volatile var filesOverride: Boolean? = null
+
+    fun files(): Boolean = filesOverride ?: Environment.isExternalStorageManager()
 
     fun usage(ctx: Context): Boolean {
         val ops = ctx.getSystemService(AppOpsManager::class.java)
