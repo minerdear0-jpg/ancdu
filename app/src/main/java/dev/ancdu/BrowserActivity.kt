@@ -86,8 +86,12 @@ class BrowserActivity : Activity() {
         } else {
             list.source = src
             load(node, keepScroll)
-            if (r != 0 && !isFinishing) alert("Не удалось удалить полностью",
-                "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+            if (r != 0 && !isFinishing) {
+                if (DeletePolicy.nothingDeleted(r, Holder.viaRoot)) alert("Не удалось удалить",
+                    "Не удалось получить root — ничего не удалено (код $r).")
+                else alert("Не удалось удалить полностью",
+                    "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+            }
         }
     }
 

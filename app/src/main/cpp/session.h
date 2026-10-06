@@ -31,6 +31,7 @@ int sess_wait(session *s);
 /* Арена только в ST_DONE / ST_FULL, иначе NULL. */
 arena *sess_arena(session *s);
 /* 0 — путь удалён целиком, узел убран из дерева; иначе <0, узел помечен F_ERR.
- * prefix == NULL — удаление в процессе, иначе через helper --rm под prefix. */
+ * prefix == NULL — удаление в процессе, иначе через helper --rm под prefix; тогда -EPERM —
+ * root не получен или хелпер не запустился (ничего не удалено), -EIO — возможно частично. */
 int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper);
 void sess_free(session *s);

@@ -71,6 +71,23 @@ int main(void) {
   CHECK(sess_delete(p, odd, SH, ANCDU_CLI) == 0);
   CHECK(access(pj(T, "it's\nodd"), F_OK) != 0);
   CHECK_EQ_U(a->disk[0], before - odd_disk);
+
+  /* root не получен — хелпер не запускался, ничего не удалено: -EPERM (в UI «ничего не
+   * удалено»). Убит сигналом — мог успеть удалить часть: -EIO, как выход 5. */
+  {
+    static const char *const DENY[] = {"sh", "-c", "exit 1", NULL};
+    static const char *const NOSU[] = {"/nonexistent-ancdu-su", NULL};
+    static const char *const KILLED[] = {"sh", "-c", "kill -KILL $$", NULL};
+    uint32_t d1 = find(a, "d1");
+    uint64_t total = a->disk[0];
+    CHECK(sess_delete(p, d1, DENY, ANCDU_CLI) == -EPERM);
+    CHECK(sess_delete(p, d1, NOSU, ANCDU_CLI) == -EPERM);
+    CHECK(sess_delete(p, d1, SH, "/nonexistent-ancdu-helper") == -EPERM);
+    CHECK(sess_delete(p, d1, KILLED, ANCDU_CLI) == -EIO);
+    CHECK(access(pj(T, "d1/f1"), F_OK) == 0);
+    CHECK(a->flags[d1] & F_ERR);
+    CHECK_EQ_U(a->disk[0], total);
+  }
   sess_free(p);
 
   /* memfd: эталон пересчитан после удаления */

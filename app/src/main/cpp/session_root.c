@@ -290,11 +290,14 @@ int sess_delete(session *s, uint32_t node, const char *const *prefix, const char
     char *pfx[4] = {0};
     for (int i = 0; i < 3 && prefix[i]; i++) pfx[i] = (char *)prefix[i];
     pid_t pid = spawn_cmd(pfx, cmd, NULL, NULL, NULL);
-    /* pid < 0 — запуск не удался; code < 0 — waitpid не удался: не «удалено». */
-    int code = pid < 0 ? (int)pid : exit_status(pid);
+    /* -EPERM — хелпер до rm_tree не дошёл, ничего не удалено: su не запустился (pid < 0),
+     * отказал или хелпер не нашёлся/не стартовал (выход не 0 и не 5, < 128).
+     * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
+     * или waitpid не удался (code < 0) — исход неизвестен. */
+    int code = pid < 0 ? -EPERM : exit_status(pid);
     free(cmd);
     gone = code == 0;
-    r = gone ? 0 : code < 0 ? code : (code == 5 ? -EIO : -EPERM);
+    r = gone ? 0 : pid < 0 ? -EPERM : (code < 0 || code == 5 || code >= 128) ? -EIO : -EPERM;
   }
   free(path);
   if (gone) {
