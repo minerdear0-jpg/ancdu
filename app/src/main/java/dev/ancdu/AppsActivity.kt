@@ -60,7 +60,7 @@ class AppsActivity : Activity() {
                 Perms.askUsage(this@AppsActivity)
             })
         }
-        errorText = label("", 15f, C.FREE_TXT).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
+        errorText = label("", 15f, C.WARN).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(header())
