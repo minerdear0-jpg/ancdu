@@ -176,6 +176,18 @@ class SwapTest {
         assertFalse("чужой корень (root-сессия)", Swap.direct(visible = true, browsers = 0, deleting = false, owns = false))
     }
 
+    /** B1: ждущее дерево — «новее» только того же корня И того же режима su. */
+    @Test fun newerNeedsSameRootAndSameSuMode() {
+        val s = "/storage/emulated/0"
+        assertTrue(Swap.newer(7L, s, false, s, false))
+        assertTrue(Swap.newer(7L, "/data", true, "/data", true))
+        assertFalse("слот пуст", Swap.newer(0L, s, false, s, false))
+        assertFalse("другой корень", Swap.newer(7L, "/data", false, s, false))
+        // скан без root не предлагается поверх root-дерева того же пути (и наоборот)
+        assertFalse(Swap.newer(7L, s, false, s, true))
+        assertFalse(Swap.newer(7L, s, true, s, false))
+    }
+
     @Test fun promoteOnReturnNeedsAStoragePending() {
         assertTrue(Swap.promoteOnMain(pendingStorage = true, mainResumed = true, browsers = 0, deleting = false, owns = true))
         assertFalse(Swap.promoteOnMain(pendingStorage = false, mainResumed = true, browsers = 0, deleting = false, owns = true))

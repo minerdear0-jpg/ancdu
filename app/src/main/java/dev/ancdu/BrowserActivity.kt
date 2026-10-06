@@ -294,8 +294,9 @@ class BrowserActivity : Activity() {
         refreshPending()
     }
 
-    /** Есть ли в Holder более новое дерево того же корня. Главный поток. */
-    private fun hasNewer(): Boolean = Holder.pending != 0L && Holder.pendingRoot == Holder.root
+    /** Есть ли в Holder более новое дерево того же корня и того же режима su. Главный поток. */
+    private fun hasNewer(): Boolean =
+        Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, Holder.root, Holder.viaRoot)
 
     /** Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт. */
     fun refreshPending() {

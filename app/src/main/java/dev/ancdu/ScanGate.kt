@@ -92,6 +92,13 @@ object Swap {
                       owns: Boolean): Boolean =
         pendingStorage && direct(mainResumed, browsers, deleting, owns)
 
+    /**
+     * Ждущее дерево ([pending] != 0) — более новое для показанного: тот же корень И тот же режим
+     * su. Скан без root не предлагается поверх root-дерева того же пути — он отнял бы доступ.
+     */
+    fun newer(pending: Long, pendingRoot: String, pendingViaRoot: Boolean, root: String, viaRoot: Boolean): Boolean =
+        pending != 0L && pendingRoot == root && pendingViaRoot == viaRoot
+
     /** Счётчик закреплений браузерами; [onUnpin] — после каждого реального снятия. */
     class Pins(private val onUnpin: () -> Unit = {}) {
         var count = 0; private set
