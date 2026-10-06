@@ -1,6 +1,8 @@
 package dev.ancdu
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -27,6 +29,34 @@ object Holder {
         val old = h
         h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot
         if (old != 0L && old != handle) io.execute { Native.free(old) }
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+    private val deleteListeners = ArrayList<(Int) -> Unit>()
+
+    /** Идёт удаление (на любом дескрипторе). Только главный поток. Пока true — никаких чтений дерева. */
+    var deleting = false; private set
+
+    /** Только главный поток. Слушатели — живые экраны; получают код завершения удаления. */
+    fun addDeleteListener(l: (Int) -> Unit) { deleteListeners += l }
+    fun removeDeleteListener(l: (Int) -> Unit) { deleteListeners -= l }
+
+    /**
+     * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
+     * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
+     */
+    fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {}) {
+        check(Looper.myLooper() == Looper.getMainLooper()) { "Holder.delete не с главного потока" }
+        check(!deleting) { "удаление уже идёт" }
+        deleting = true
+        io.execute {
+            val r = Native.delete(handle, node, helper)
+            main.post {
+                deleting = false
+                for (l in deleteListeners.toList()) l(r)
+                done(r)
+            }
+        }
     }
 
     fun progress(): LongArray = LongArray(6).also { if (h != 0L) Native.progress(h, it) }

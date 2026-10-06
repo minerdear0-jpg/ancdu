@@ -3,27 +3,38 @@ package dev.ancdu
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class BrowserTest {
     private val ins = InstrumentationRegistry.getInstrumentation()
 
-    @Test fun navigateSortDelete() {
-        val ctx = ins.targetContext
-        val dir = File(ctx.cacheDir, "br").apply { deleteRecursively(); mkdirs() }
-        File(dir, "sub").mkdirs()
-        File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
-        File(dir, "a.txt").writeBytes(ByteArray(5000))
-        File(dir, "b.txt").writeBytes(ByteArray(10))
+    /** Опрос с таймаутом: выходит при успехе, иначе после [ms]. */
+    private fun waitFor(ms: Long = 10_000, ok: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < deadline) {
+            var r = false
+            ins.runOnMainSync { r = ok() }
+            if (r) return true
+            Thread.sleep(20)
+        }
+        return false
+    }
 
-        val err = IntArray(1)
-        val h = Native.scanStart(dir.path, true, 2, err)
+    private fun scan(dir: File) {
+        val h = Native.scanStart(dir.path, true, 2, IntArray(1))
         val p = LongArray(6)
         val deadline = System.currentTimeMillis() + 10_000
         while (true) {
@@ -33,6 +44,73 @@ class BrowserTest {
         }
         assertEquals(ST_DONE.toLong(), p[0])
         Holder.set(h, Kind.SCAN, dir.path, "скан", false)
+    }
+
+    /** Только с главного потока. */
+    private fun resumedBrowser(): BrowserActivity? =
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+            .filterIsInstance<BrowserActivity>().firstOrNull()
+
+    /** Удаление переживает пересоздание экрана: новый экземпляр не читает дерево, пока оно идёт. */
+    @Test fun deleteSurvivesRecreate() {
+        val ctx = ins.targetContext
+        val dir = File(ctx.cacheDir, "br2").apply { deleteRecursively(); mkdirs() }
+        File(dir, "keep.bin").writeBytes(ByteArray(50_000))
+        File(dir, "gone.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act1 = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        var count = 0
+        ins.runOnMainSync { count = act1.list.source!!.count }
+        assertEquals(2, count)
+
+        // Заслонка на io: удаление встанет в очередь за ней и не начнётся, пока её не откроем.
+        val gate = CountDownLatch(1)
+        Holder.io.execute { gate.await(30, TimeUnit.SECONDS) }
+        var r = Int.MIN_VALUE
+        val deleter = Thread { r = act1.deleteBlocking(1) }.apply { start() } // по размеру: 1 — gone.bin
+        assertTrue(waitFor { Holder.deleting })
+
+        ins.runOnMainSync { act1.recreate() }
+        assertTrue(waitFor { resumedBrowser().let { it != null && it !== act1 } })
+        lateinit var act2: BrowserActivity
+        ins.runOnMainSync { act2 = resumedBrowser()!! }
+        assertNotSame(act1, act2)
+        ins.runOnMainSync {
+            assertTrue(act2.busy)
+            assertNull(act2.list.source)
+            assertEquals(0, act2.loads)
+        }
+
+        gate.countDown()
+        deleter.join(30_000)
+        assertFalse(deleter.isAlive)
+        assertEquals(0, r)
+        assertTrue(waitFor { !act2.busy && act2.list.source != null })
+        ins.runOnMainSync {
+            assertEquals(1, act2.loads)
+            val src = act2.list.source!!
+            assertEquals(1, src.count)
+            val row = Row().also { src.bind(0, it) }
+            assertEquals("keep.bin", row.name)
+        }
+        assertFalse(File(dir, "gone.bin").exists())
+        assertTrue(File(dir, "keep.bin").exists())
+
+        ins.runOnMainSync { act2.finish() }
+        dir.deleteRecursively()
+    }
+
+    @Test fun navigateSortDelete() {
+        val ctx = ins.targetContext
+        val dir = File(ctx.cacheDir, "br").apply { deleteRecursively(); mkdirs() }
+        File(dir, "sub").mkdirs()
+        File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
+        File(dir, "a.txt").writeBytes(ByteArray(5000))
+        File(dir, "b.txt").writeBytes(ByteArray(10))
+
+        scan(dir)
 
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity

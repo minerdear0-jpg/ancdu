@@ -16,6 +16,11 @@ class BrowserActivity : Activity() {
     lateinit var list: NcduListView
     var node = 0
         private set
+    /** Идёт удаление (Holder.deleting): Native не вызывается, ввод игнорируется. */
+    val busy get() = Holder.deleting
+    /** Для тестов: сколько раз уровень читался из дерева. */
+    var loads = 0
+        private set
     private var sort = SORT_SIZE
     private var apparent = false
     private var kids = IntArray(0)
@@ -29,16 +34,29 @@ class BrowserActivity : Activity() {
     private var descs = arrayOfNulls<String>(0)
     private var maxV = 0L
     private var parentV = 0L
-    private var loadedH = 0L
-    /** Идёт удаление: никаких вызовов Native на дескрипторе, ввод игнорируется. */
-    private var busy = false
+    /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
+    private var h = 0L
+    private var keepScroll = 0
+    private var wait: AlertDialog? = null
     private val scrollAt = HashMap<Int, Int>()
     private lateinit var crumbs: TextView
     private lateinit var summary: TextView
     private lateinit var badge: TextView
     private lateinit var footer: TextView
     private lateinit var chips: LinearLayout
-    private val h get() = Holder.h
+
+    private val onDeleted: (Int) -> Unit = { r ->
+        wait?.dismiss(); wait = null
+        if (Holder.h != h) {
+            list.source = null
+            recreate()
+        } else {
+            list.source = src
+            load(node, keepScroll)
+            if (r != 0 && !isFinishing) alert("Не удалось удалить полностью",
+                "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+        }
+    }
 
     private fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
 
@@ -81,6 +99,7 @@ class BrowserActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkBars()
+        h = Holder.h
         if (h == 0L) { finish(); return }
         val top = vbox(12).apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
         crumbs = label("", 14f, C.MUTED, mono = true).apply {
@@ -91,8 +110,7 @@ class BrowserActivity : Activity() {
             addView(crumbs, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
         summary = label("", 13f, C.MUTED, mono = true)
-        val full = Holder.progress()[0] == ST_FULL.toLong()
-        badge = label(Holder.label + if (full) " · неполный" else "", 12f, if (full) C.WARN else C.ACCENT, mono = true)
+        badge = label(Holder.label, 12f, C.ACCENT, mono = true)
         chips = hbox(6)
         top.addView(hbox(8).apply {
             setPadding(dp(8), 0, 0, 0)
@@ -107,15 +125,29 @@ class BrowserActivity : Activity() {
             addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(footer)
         })
-        list.source = src
-        load(0, 0)
+        Holder.addDeleteListener(onDeleted)
+        if (busy) {
+            // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
+            showWait()
+        } else {
+            list.source = src
+            load(0, 0)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        // Сессию сменили, пока экран был скрыт: прежнее дерево уже освобождается.
-        if (!busy && loadedH != 0L && Holder.h != loadedH) recreate()
+        // Сессию сменили, пока экран был скрыт: старые id узлов к новому дереву не относятся.
+        if (!busy && Holder.h != h) { list.source = null; recreate() }
     }
+
+    override fun onDestroy() {
+        Holder.removeDeleteListener(onDeleted)
+        wait?.dismiss(); wait = null
+        super.onDestroy()
+    }
+
+    private fun progress(): LongArray = LongArray(6).also { Native.progress(h, it) }
 
     private fun renderChips() {
         chips.removeAllViews()
@@ -128,8 +160,8 @@ class BrowserActivity : Activity() {
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
 
     private fun load(target: Int, restore: Int) {
+        loads++
         node = target
-        loadedH = h
         // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
         kids = IntArray(Native.childCount(h, node))
         n = maxOf(0, Native.children(h, node, sort, apparent, kids))
@@ -142,8 +174,11 @@ class BrowserActivity : Activity() {
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
         crumbs.text = Native.str(Native.path(h, node))
         summary.text = "${Fmt.size(parentV)} · ${Fmt.count(self[2])} эл."
-        val errs = Holder.progress()[3]
-        footer.text = "тап — открыть · долгий — удалить" + if (errs > 0) "   ⚠ ${Fmt.count(errs)} ошибок" else ""
+        val p = progress()
+        val full = p[0] == ST_FULL.toLong()
+        badge.text = Holder.label + if (full) " · неполный" else ""
+        badge.setTextColor(if (full) C.WARN else C.ACCENT)
+        footer.text = "тап — открыть · долгий — удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
         renderChips()
         list.refresh()
         list.scroll = restore
@@ -162,46 +197,40 @@ class BrowserActivity : Activity() {
 
     private fun askDelete(i: Int) {
         val o = 4 * i
-        val path = Native.str(Native.path(h, kids[i]))
+        val handle = h
+        val target = kids[i]
+        val path = Native.str(Native.path(handle, target))
         val approx = if (Holder.kind == Kind.INDEX) "\n(размер по индексу, приблизительно)" else ""
         alert("Удалить «${nameAt(i)}»?",
             "$path\n\nОсвободится: ${Fmt.size(info[o])}$approx\nЭлементов: ${Fmt.count(info[o + 2])}\n\n" +
                 "Без корзины. Действие необратимо.",
-            ok = "Удалить", cancel = "Отмена") {
-            startDelete(i) { r ->
-                if (r != 0 && !isDestroyed) alert("Не удалось удалить полностью",
-                    "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
-            }
-        }
+            ok = "Удалить", cancel = "Отмена") { startDelete(handle, target) }
+    }
+
+    private fun showWait() {
+        list.source = null
+        footer.text = "Удаление…"
+        wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setMessage("Удаление…").setCancelable(false).show()
     }
 
     /**
-     * Главный поток. Удаление строки i на [Holder.io]; пока оно идёт, список отцеплен,
-     * поверх — неотменяемый модальный диалог, Native на дескрипторе не вызывается.
-     * [done] вызывается на главном потоке после перезагрузки уровня.
+     * Главный поток. Удаляет узел [target] сессии [handle] — ровно ту пару, что показал диалог.
+     * Завершение получает живой экземпляр через Holder (onDeleted), затем [done].
      */
-    private fun startDelete(i: Int, done: (Int) -> Unit) {
-        val handle = h
-        val target = kids[i]
-        val helper = if (Holder.viaRoot) Root.helper(this) else null
-        val keep = list.scroll
-        busy = true
-        list.source = null
-        footer.text = "Удаление…"
-        val wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setMessage("Удаление…").setCancelable(false).show()
-        Holder.io.execute {
-            val r = Native.delete(handle, target, helper)
-            runOnUiThread {
-                busy = false
-                if (!isDestroyed) {
-                    wait.dismiss()
-                    list.source = src
-                    load(node, keep)
-                }
-                done(r)
+    private fun startDelete(handle: Long, target: Int, done: (Int) -> Unit = {}): Boolean {
+        if (busy || isDestroyed) return false
+        if (handle != Holder.h || handle != h) {
+            alert("Удаление отменено", "Дерево сменилось, пока был открыт диалог. Ничего не удалено.") {
+                list.source = null; recreate()
             }
+            return false
         }
+        val helper = if (Holder.viaRoot) Root.helper(this) else null
+        keepScroll = list.scroll
+        showWait()
+        Holder.delete(handle, target, helper, done)
+        return true
     }
 
     /** Для тестов: синхронное удаление строки i. Вызывать с тестового потока, не с главного. */
@@ -209,7 +238,9 @@ class BrowserActivity : Activity() {
         check(Looper.myLooper() != Looper.getMainLooper()) { "deleteBlocking на главном потоке" }
         var r = Int.MIN_VALUE
         val latch = CountDownLatch(1)
-        runOnUiThread { startDelete(i) { r = it; latch.countDown() } }
+        runOnUiThread {
+            if (!startDelete(h, kids[i]) { r = it; latch.countDown() }) latch.countDown()
+        }
         check(latch.await(60, TimeUnit.SECONDS)) { "удаление не завершилось за 60 с" }
         return r
     }
