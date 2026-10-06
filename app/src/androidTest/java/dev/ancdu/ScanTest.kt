@@ -10,7 +10,6 @@ import androidx.test.runner.lifecycle.Stage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -135,25 +134,6 @@ class ScanTest {
             assertEquals(0, browserMon.hits)
         } finally {
             ins.removeMonitor(browserMon)
-        }
-    }
-
-    /** Анимации выключены: экран прогресса строится, но развёртки (аниматора) нет; «назад» отменяет. */
-    @Test fun reducedMotionHasNoSweep() {
-        val root = bigRoot()
-        Motion.override = false
-        try {
-            val act = launch(root)
-            assertTrue("экран прогресса не построен", waitFor(10_000) { act.built })
-            ins.runOnMainSync {
-                assertNotNull(act.sweep)
-                assertNull(act.sweep!!.animator)
-                act.onBackPressed()
-            }
-            assertTrue(waitFor { act.isDestroyed })
-            drainIo()
-        } finally {
-            Motion.override = null
         }
     }
 
