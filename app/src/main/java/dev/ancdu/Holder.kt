@@ -115,8 +115,9 @@ object Holder {
     /**
      * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
-     * [name] и [total] — для диалога прогресса. Стоп до начала (io ещё занят другим) — удаление
-     * не запускается, результат -EINTR, ничего не удалено.
+     * [name] и [total] — для диалога прогресса. Стоп до начала (io ещё занят другим) уже передан
+     * ядру; Native.delete всё равно вызывается — ядро сразу вернёт -EINTR, ничего не тронув, и
+     * сбросит свой флаг (иначе он остановил бы следующее удаление).
      * [media] — Native.deleteMedia (нужен [helper]): узел удаляется через /data/media в обход FUSE.
      * [afterIo] — на io сразу после Native.delete/deleteMedia, если удаление запускалось
      * (например, пересканирование MediaStore).
@@ -133,22 +134,16 @@ object Holder {
         synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
         io.execute {
             var r = -1
-            var ran = false
             try {
-                if (synchronized(delLock) { delStopAsked }) {
-                    r = -DeleteProgress.EINTR
-                } else {
-                    ran = true
-                    r = if (media && helper != null) Native.deleteMedia(handle, node, helper)
-                        else Native.delete(handle, node, helper)
-                }
+                r = if (media && helper != null) Native.deleteMedia(handle, node, helper)
+                    else Native.delete(handle, node, helper)
             } finally {
                 synchronized(delLock) {
                     // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.
-                    if (ran) delDone = runCatching { Native.deleteProgress(handle) }.getOrDefault(delDone)
+                    delDone = runCatching { Native.deleteProgress(handle) }.getOrDefault(delDone)
                     delHandle = 0L
                 }
-                if (ran && afterIo != null) runCatching { afterIo() }
+                if (afterIo != null && !DeleteProgress.isCancelled(r, delDone)) runCatching { afterIo() }
                 // И при исключении: deleting не должен остаться true навсегда.
                 main.post {
                     deleting = false

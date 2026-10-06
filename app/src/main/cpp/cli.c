@@ -96,8 +96,10 @@ static void *watch_stdin(void *p) {
  * stderr: «progress N» не чаще раза в 100 мс и итоговая строка; N — удалено записей.
  * --watch-stdin: EOF на stdin (приложение закрыло его, работает и через su) — стоп.
  * Родитель пути не должен проходить через симлинк (rm_parent_real): иначе отказ до
- * удаления, выход 7 (ничего не удалено).
- * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — путь отклонён. */
+ * удаления, выход 7. Родителя нет (ENOENT) и самого пути нет — уже удалён, выход 0.
+ * Иная ошибка проверки (EACCES, ENAMETOOLONG…) — выход 8. В обоих отказах ничего не удалено.
+ * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — симлинк в родителе,
+ * 8 — родителя не проверить. */
 typedef struct {
   _Atomic uint64_t done;
   _Atomic int stop;
@@ -129,8 +131,11 @@ static void *rm_progress(void *p) {
 static int run_rm(const char *path, int threads, int watch) {
   int pr = rm_parent_real(path);
   if (pr) {
-    fprintf(stderr, "progress 0\nrm: refused: %s\n", strerror(-pr));
-    return 7;
+    struct stat st;
+    fputs("progress 0\n", stderr);
+    if (pr == -ENOENT && lstat(path, &st) != 0 && errno == ENOENT) return 0; /* уже удалён */
+    fprintf(stderr, "rm: refused: %s\n", strerror(-pr));
+    return pr == -ELOOP ? 7 : 8;
   }
   if (watch) {
     /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */

@@ -156,6 +156,10 @@ class BrowserTest {
         }
         for (i in 0 until 3) assertTrue(File(sub, "f$i.bin").exists())
 
+        // Отменённый в очереди стоп не переходит на следующее удаление: то же удаляется целиком.
+        assertEquals(0, act.deleteBlocking(0))
+        assertFalse(sub.exists())
+
         ins.runOnMainSync { act.finish() }
         dir.deleteRecursively()
     }

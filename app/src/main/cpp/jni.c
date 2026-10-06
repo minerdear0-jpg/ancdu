@@ -242,9 +242,11 @@ FN(jint, source)(JNIEnv *e, jclass c, jlong h) {
   return a ? (jint)a->h->source : -1;
 }
 
+/* Узел проверяет sess_delete (а не tree()): он же сбрасывает флаг стопа при любом исходе. */
 FN(jint, delete)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
   (void)c;
-  if (!tree(h, node)) return -EINVAL;
+  if (!h) return -EINVAL;
+  if (node < 0) node = 0; /* 0 — корень, sess_delete отклонит */
   if (!helper) return sess_delete(SESS(h), (uint32_t)node, NULL, NULL);
   const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
   int r = sess_delete(SESS(h), (uint32_t)node, SU, hp);
@@ -267,7 +269,9 @@ FN(void, deleteStop)(JNIEnv *e, jclass c, jlong h) {
 /* Удаление в обход FUSE: узел /storage/emulated/<n>/X удаляется как /data/media/<n>/X под su. */
 FN(jint, deleteMedia)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
   (void)c;
-  if (!tree(h, node) || !helper) return -EINVAL;
+  if (!h) return -EINVAL;
+  if (node < 0) node = 0; /* 0 — корень, sess_delete_media отклонит */
+  if (!helper) return sess_delete_media(SESS(h), (uint32_t)node, SU, NULL); /* -EINVAL */
   const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
   int r = sess_delete_media(SESS(h), (uint32_t)node, SU, hp);
   (*e)->ReleaseStringUTFChars(e, helper, hp);

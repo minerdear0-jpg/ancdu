@@ -36,9 +36,10 @@ arena *sess_arena(session *s);
  * 6 — остановлено (частично). Итог: -EINTR — остановлено sess_delete_stop (частично,
  * в обоих режимах); -EPERM — root не получен или хелпер не запустился (ничего не удалено);
  * -ELOOP — хелпер отказал (выход 7): родитель пути проходит через симлинк, ничего не удалено;
+ * выход 8 (родителя не проверить: EACCES, ENAMETOOLONG…) — -EPERM, ничего не удалено;
  * -EIO — частично (выход 5), хелпер убит сигналом или waitpid не удался (исход неизвестен).
  * В начале обнуляет счётчик; флаг стопа сбрасывает в КОНЦЕ — стоп, присланный до начала,
- * срабатывает (ничего не удаляется, -EINTR). In-process — rm_default_threads(path) рабочих. */
+ * срабатывает: -EINTR сразу, ничего не тронуто, узел не помечен, хелпер/su не запускается. In-process — rm_default_threads(path) рабочих. */
 int sess_delete(session *s, uint32_t node, const char *const *prefix, const char *helper);
 /* Как sess_delete через helper --rm под prefix (обязателен), но удаляет не путь узла
  * /storage/emulated/<n>/X, а тот же файл без FUSE — /data/media/<n>/X (media_path).

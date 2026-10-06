@@ -321,8 +321,12 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     path = mp;
   }
   /* del_stop здесь НЕ сбрасывается: стоп, пришедший пока удаление ждало в очереди,
-   * должен сработать. Сброс — в конце. */
+   * должен сработать. Сброс — в конце (delete_and_reset). */
   atomic_store(&s->del_done, 0);
+  if (atomic_load(&s->del_stop)) { /* остановлено до начала: ничего не тронуто, su не зовём */
+    free(path);
+    return -EINTR;
+  }
   int gone;
   if (!prefix) {
     r = rm_tree_ex(path, rm_default_threads(path), &s->del_done, &s->del_stop);
@@ -367,6 +371,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
      * отказал или хелпер не нашёлся/не стартовал (выход не 0, 5, 6, < 128).
      * -EINTR — выход 6: остановлен через stdin (sess_delete_stop), удалено частично.
      * -ELOOP — выход 7: родитель пути проходит через симлинк, ничего не удалено.
+     * -EPERM — и выход 8: родителя пути не проверить (EACCES, ENAMETOOLONG…), ничего не удалено.
      * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
     free(cmd);
@@ -375,6 +380,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     else if (pid < 0) r = -EPERM;
     else if (code == 6) r = -EINTR;
     else if (code == 7) r = -ELOOP;
+    else if (code == 8) r = -EPERM;
     else if (code < 0 || code == 5 || code >= 128) r = -EIO;
     else r = -EPERM;
   }

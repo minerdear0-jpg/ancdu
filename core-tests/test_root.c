@@ -120,6 +120,13 @@ int main(void) {
   mk_dir(pj(T, "prog/sub"));
   write_file(pj(T, "prog/sub/d"), 1);
   write_file(pj(T, "prog/sub/e"), 1);
+  mk_dir(pj(T, "vanish"));
+  mk_dir(pj(T, "vanish/inner"));
+  write_file(pj(T, "vanish/inner/x"), 1);
+  mk_dir(pj(T, "acc"));
+  mk_dir(pj(T, "acc/mid"));
+  mk_dir(pj(T, "acc/mid/leaf"));
+  write_file(pj(T, "acc/mid/leaf/x"), 1);
   mk_dir(pj(T, "pre"));
   write_file(pj(T, "pre/x"), 1);
   mk_dir(pj(T, "pre2"));
@@ -156,16 +163,47 @@ int main(void) {
   CHECK(access(pj(T, "prog"), F_OK) != 0);
   CHECK_EQ_U(sess_delete_progress(p), 7);
 
-  /* стоп до начала удаления (пока оно ждало в очереди) срабатывает: хелпер стартует с
-   * закрытым stdin, ничего не удалено, -EINTR; флаг сброшен в конце — повтор удаляет */
+  /* Порядок вызовов Holder при «Стоп», пока удаление ждало в очереди io: deleteStop, затем
+   * delete. Ядро сразу возвращает -EINTR: хелпер (и su) не запускается — обёртка-счётчик
+   * не вызвана, ничего не удалено, узел не помечен; флаг сброшен в конце — следующее
+   * удаление того же узла проходит целиком. */
   {
+    char QW[4096], QS[4200], QC[4200];
+    snprintf(QW, sizeof QW, "%s", mk_tmp());
+    snprintf(QS, sizeof QS, "%s/count.sh", QW);
+    snprintf(QC, sizeof QC, "%s/count", QW);
+    write_wrapper(QS, QC, "unused");
     uint32_t pre = find(a, "pre");
     sess_delete_stop(p);
-    CHECK(sess_delete(p, pre, SH, ANCDU_CLI) == -EINTR);
+    CHECK(sess_delete(p, pre, SH, QS) == -EINTR);
+    CHECK_EQ_U(launches(QC), 0);
     CHECK_EQ_U(sess_delete_progress(p), 0);
     CHECK(access(pj(T, "pre/x"), F_OK) == 0);
-    CHECK(sess_delete(p, pre, SH, ANCDU_CLI) == 0);
+    CHECK(!(a->flags[pre] & F_ERR));
+    CHECK(sess_delete(p, pre, SH, QS) == 0);
+    CHECK_EQ_U(launches(QC), 1);
     CHECK(access(pj(T, "pre"), F_OK) != 0);
+    rm_dir_tree_for_tests(QW);
+  }
+
+  /* родителя пути нет (удалён снаружи): хелпер считает путь удалённым — 0, узел убран */
+  {
+    uint32_t inner = find(a, "inner");
+    CHECK(rm_tree(pj(T, "vanish")) == 0);
+    CHECK(rm_parent_real(pj(T, "vanish/inner")) == -ENOENT);
+    CHECK(sess_delete(p, inner, SH, ANCDU_CLI) == 0);
+    CHECK(a->flags[inner] & F_DELETED);
+  }
+
+  /* родителя не проверить (EACCES): выход 8 → -EPERM («ничего не удалено»), не -ELOOP */
+  if (geteuid() != 0) {
+    uint32_t sub = find(a, "leaf");
+    CHECK(chmod(pj(T, "acc"), 0) == 0);
+    CHECK(rm_parent_real(pj(T, "acc/mid/leaf")) == -EACCES);
+    CHECK(sess_delete(p, sub, SH, ANCDU_CLI) == -EPERM);
+    CHECK(chmod(pj(T, "acc"), 0755) == 0);
+    CHECK(access(pj(T, "acc/mid/leaf/x"), F_OK) == 0);
+    CHECK(a->flags[sub] & F_ERR);
   }
 
   /* обход FUSE: путь узла не под /storage/emulated/<n>/ — -EINVAL, хелпер не запускался */
@@ -285,6 +323,7 @@ int main(void) {
     CHECK(sess_delete(ip, pre2, NULL, NULL) == -EINTR);
     CHECK_EQ_U(sess_delete_progress(ip), 0);
     CHECK(access(pj(T, "pre2/x"), F_OK) == 0);
+    CHECK(!(a->flags[pre2] & F_ERR));
     CHECK(sess_delete(ip, pre2, NULL, NULL) == 0);
     CHECK(access(pj(T, "pre2"), F_OK) != 0);
   }

@@ -30,8 +30,12 @@ int rm_default_threads(const char *path);
 
 /* Для удаления под root: 0, если ни один компонент родителя path не симлинк
  * (realpath(dirname) == dirname); -ELOOP — есть симлинк или путь не нормализован,
- * -EINVAL — путь не абсолютный или отказ rm_tree_target, иначе -errno realpath.
- * Только чтение ФС. */
+ * -EINVAL — путь не абсолютный или отказ rm_tree_target, иначе -errno realpath
+ * (-ENOENT — родителя нет). Только чтение ФС.
+ * Принятый остаток (check-then-act): после проверки компоненты родителя заново
+ * разрешаются lstat/stat/rm_at в rm_tree_ex, и подмена компонента на симлинк между
+ * проверкой и удалением не ловится. Полное решение — openat2(RESOLVE_NO_SYMLINKS) или
+ * обход компонентов openat(O_NOFOLLOW|O_DIRECTORY) с удалением относительно fd родителя. */
 int rm_parent_real(const char *path);
 
 /* rm_tree_ex(path, 1, NULL, NULL). */
