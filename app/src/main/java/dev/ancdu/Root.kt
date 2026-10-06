@@ -90,6 +90,12 @@ object Root {
         if (state != RootState.GRANTED) publish(ctx.applicationContext, RootState.GRANTED)
     }
 
+    /** Главный поток. Root-операция получила отказ (-EPERM до удаления) — root отклонён. */
+    fun denied(ctx: Context) {
+        load(ctx)
+        if (state != RootState.DENIED) publish(ctx.applicationContext, RootState.DENIED)
+    }
+
     /**
      * Главный поток. Ручной запрос root: `su -c id` на ОТДЕЛЬНОМ потоке — не Holder.io: запрос
      * Magisk/KernelSU/APatch может висеть до [TIMEOUT_MS], и io не должен вставать за ним.
@@ -108,18 +114,38 @@ object Root {
         }, "ancdu-su").apply { isDaemon = true }.start()
     }
 
-    /** Поток запроса. Потоки процесса закрываются всегда; по таймауту процесс уничтожается. */
+    /** Сколько вывода su сохраняется для разбора (остальное читается и выбрасывается). */
+    private const val OUT_CAP = 64 * 1024
+
+    /**
+     * Поток запроса. Вывод (stderr слит в stdout) вычитывается ПАРАЛЛЕЛЬНО с waitFor отдельным
+     * потоком: болтливая обёртка su не встанет на полном канале до таймаута. Потоки процесса
+     * закрываются всегда; по таймауту процесс уничтожается (и канал закрывается — чтение выходит).
+     */
     private fun runSu(timeoutMs: Long): Probe {
         val p = try {
             ProcessBuilder("su", "-c", "id").redirectErrorStream(true).start()
         } catch (e: Exception) {
             return Probe(null, "", false)
         }
+        val buf = java.io.ByteArrayOutputStream()
+        val drain = Thread({
+            runCatching {
+                val chunk = ByteArray(4096)
+                val input = p.inputStream
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    synchronized(buf) { if (buf.size() < OUT_CAP) buf.write(chunk, 0, minOf(n, OUT_CAP - buf.size())) }
+                }
+            }
+        }, "ancdu-su-out").apply { isDaemon = true }
         try {
             p.outputStream.close()
-            // Вывод `id` — одна короткая строка: помещается в буфер канала, читается после выхода.
+            drain.start()
             if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) return Probe(null, "", true)
-            val out = String(p.inputStream.readBytes())
+            drain.join(2_000)   // вывод дочитывается после выхода процесса
+            val out = synchronized(buf) { buf.toString("UTF-8") }
             return Probe(p.exitValue(), out, false)
         } finally {
             runCatching { p.outputStream.close() }
