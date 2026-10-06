@@ -33,6 +33,8 @@ class MainActivity : Activity() {
     private var gen = 0
     /** Идёт открытие кэша на Holder.io: повторные тапы игнорируются. */
     private var opening = false
+    /** Идёт построение индекса: повторные тапы игнорируются. */
+    private var indexing = false
     private var dialog: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +45,7 @@ class MainActivity : Activity() {
         body.addView(header())
         body.addView(card())
         body.addView(action("Сканировать хранилище", "/storage/emulated/0 · без root", true) { scanStorage() })
+        body.addView(action("Быстрый обзор (по индексу)", "≈1 с · без обхода FUSE · приблизительно", false) { quickIndex() })
         body.addView(rootBlock())
         lastBox = vbox(8)
         body.addView(lastBox)
@@ -231,5 +234,39 @@ class MainActivity : Activity() {
 
     private fun startScan(root: String, su: Boolean) {
         startActivity(Intent(this, ScanActivity::class.java).putExtra(EXTRA_ROOT, root).putExtra(EXTRA_SU, su))
+    }
+
+    /**
+     * Ярус 1. Дескриптор строится на рабочем потоке и до публикации никому не виден; Holder.set — на
+     * главном. Экран закрылся — неопубликованный дескриптор освобождается на Holder.io.
+     */
+    private fun quickIndex() {
+        if (indexing) return
+        if (!Perms.files()) { scanStorage(); return }
+        indexing = true
+        val status = label("Читаю индекс MediaStore…", 13f, C.MUTED)
+        body.addView(status, 3)
+        val app = applicationContext
+        Thread {
+            val t0 = System.nanoTime()
+            val res = runCatching { MediaIndex.build(app) }
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            android.util.Log.i("ancdu", "index ms=$ms ok=${res.isSuccess}")
+            runOnUiThread {
+                indexing = false
+                val h = res.getOrNull() ?: 0L
+                if (isDestroyed || isFinishing) {
+                    if (h != 0L) Holder.io.execute { Native.free(h) }
+                    return@runOnUiThread
+                }
+                body.removeView(status)
+                if (h == 0L) {
+                    dialog = alert("Индекс недоступен", res.exceptionOrNull()?.message ?: "")
+                    return@runOnUiThread
+                }
+                Holder.set(h, Kind.INDEX, MediaIndex.ROOT, "индекс · приблизительно", false)
+                startActivity(Intent(this, BrowserActivity::class.java))
+            }
+        }.start()
     }
 }
