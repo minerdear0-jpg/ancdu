@@ -51,3 +51,14 @@ class DeletePolicyTest {
             flags = F_DIR or F_OTHERFS))
     }
 }
+
+class DeleteTierTest {
+    @Test fun pauseTier() {
+        val gib = 1L shl 30
+        assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib - 1))
+        assertTrue(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib))
+        assertFalse(DeletePolicy.needsPause(viaRoot = true, owned = false, disk = 10))
+        assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = true, disk = 10))
+        assertTrue(DeletePolicy.needsPause(viaRoot = true, owned = true, disk = 10))
+    }
+}

@@ -31,4 +31,10 @@ object DeletePolicy {
         kind == Kind.INDEX && flags and F_DIR != 0 -> INDEX_DIR
         else -> null
     }
+
+    private const val GIB = 1L shl 30
+
+    /** Серьёзное удаление: кнопка «Удалить» включается не сразу. */
+    fun needsPause(viaRoot: Boolean, owned: Boolean, disk: Long): Boolean =
+        (viaRoot && owned) || disk >= GIB
 }

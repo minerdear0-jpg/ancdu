@@ -38,6 +38,9 @@ class BrowserActivity : Activity() {
     private var h = 0L
     private var keepScroll = 0
     private var wait: AlertDialog? = null
+    /** Для тестов: открытый лист удаления. */
+    var sheet: DeleteSheet? = null
+        private set
     private val scrollAt = HashMap<Int, Int>()
     private lateinit var crumbs: TextView
     private lateinit var summary: TextView
@@ -102,7 +105,8 @@ class BrowserActivity : Activity() {
             }.also { descs[index] = it }
         }
         override fun click(index: Int) {
-            if (busy || info[4 * index + 3].toInt() and F_DIR == 0) return
+            if (busy) return
+            if (info[4 * index + 3].toInt() and F_DIR == 0) { askDelete(index); return }
             scrollAt[node] = list.scroll
             load(kids[index], 0)
         }
@@ -159,6 +163,7 @@ class BrowserActivity : Activity() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
         wait?.dismiss(); wait = null
+        sheet?.dismiss(); sheet = null
         super.onDestroy()
     }
 
@@ -193,7 +198,7 @@ class BrowserActivity : Activity() {
         val full = p[0] == ST_FULL.toLong()
         badge.text = Holder.label + if (full) " · неполный" else ""
         badge.setTextColor(if (full) C.WARN else C.ACCENT)
-        footer.text = "тап — открыть · долгий — удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
+        footer.text = "тап — открыть · долгий — подробнее, удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
         renderChips()
         list.refresh()
         list.scroll = restore
@@ -210,18 +215,43 @@ class BrowserActivity : Activity() {
         }
     }
 
+    /**
+     * Лист удаления для строки [i]. Главный поток, чтения дерева — с закреплённым [h]; пара
+     * (дескриптор, узел) фиксируется здесь, подтверждение удаляет ровно её.
+     */
     private fun askDelete(i: Int) {
-        val o = 4 * i
         val handle = h
         val target = kids[i]
+        sheet?.dismiss()
+        sheet = DeleteSheet(this, preview(handle, target, nameAt(i))) { startDelete(handle, target) }
+            .also { it.show() }
+    }
+
+    private fun preview(handle: Long, target: Int, name: String): DeletePreview {
         val path = Native.str(Native.path(handle, target))
-        val reason = blockReason(handle, target, path)
-        if (reason != null) { alert("«${nameAt(i)}»", "$path\n\n$reason"); return }
-        val approx = if (Holder.kind == Kind.INDEX) "\n(размер по индексу, приблизительно)" else ""
-        alert("Удалить «${nameAt(i)}»?",
-            "$path\n\nОсвободится: ${Fmt.size(info[o])}$approx\nЭлементов: ${Fmt.count(info[o + 2])}\n\n" +
-                "Без корзины. Действие необратимо.",
-            ok = "Удалить", cancel = "Отмена") { startDelete(handle, target) }
+        val self = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
+        val flags = self[3].toInt()
+        val dir = flags and F_DIR != 0
+        var top = emptyList<Pair<String, Long>>()
+        var more = 0
+        if (dir) {
+            val ch = IntArray(Native.childCount(handle, target))
+            val cn = maxOf(0, Native.children(handle, target, SORT_SIZE, false, ch))
+            val k = minOf(cn, 3)
+            if (k > 0) {
+                val ci = LongArray(4 * k).also { Native.nodeInfo(handle, ch, k, it) }
+                top = (0 until k).map { j ->
+                    val nm = Native.str(Native.name(handle, ch[j]))
+                    (if (ci[4 * j + 3].toInt() and F_DIR != 0) "$nm/" else nm) to ci[4 * j]
+                }
+            }
+            more = cn - k
+        }
+        return DeletePreview(
+            name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
+            flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
+            block = blockReason(handle, target, path), kind = Holder.kind,
+            cacheTime = if (Holder.kind == Kind.CACHE) Holder.label.removePrefix("кэш от ") else null)
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
