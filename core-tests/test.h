@@ -63,11 +63,22 @@ static void mk_dir(const char *path) {
   if (mkdir(path, 0755) != 0) { perror(path); exit(2); }
 }
 
+/* Свежий каталог фикстуры. Только абсолютный путь: тесты удаляют внутри него,
+ * и относительный путь зависел бы от cwd. */
 static char *mk_tmp(void) {
   const char *base = getenv("TMPDIR");
+  if (!base) base = "/tmp";
+  if (base[0] != '/') {
+    fprintf(stderr, "mk_tmp: TMPDIR must be an absolute path, got \"%s\"\n", base);
+    exit(2);
+  }
   static char p[4096];
-  snprintf(p, sizeof p, "%s/ancdu-test-XXXXXX", base ? base : "/tmp");
+  snprintf(p, sizeof p, "%s/ancdu-test-XXXXXX", base);
   if (!mkdtemp(p)) { perror("mkdtemp"); exit(2); }
+  if (p[0] != '/' || strncmp(p, base, strlen(base)) != 0) {
+    fprintf(stderr, "mk_tmp: created \"%s\" outside base \"%s\"\n", p, base);
+    exit(2);
+  }
   return p;
 }
 

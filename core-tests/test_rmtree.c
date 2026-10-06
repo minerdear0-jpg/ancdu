@@ -65,6 +65,18 @@ static int cross_fs_child(const char *t) {
   CHECK(umount(pj(t, "other")) == 0);
   CHECK(rm_tree(pj(t, "x")) == 0);
   CHECK(rm_tree(pj(t, "other")) == 0);
+
+  /* вершина-точка монтирования прямо под «/» (ветка «родитель — корень»), с завершающим
+   * слешем. «/» здесь — каталог теста: chroot(t), подтверждённый по st_dev/st_ino до вызова.
+   * Без подтверждения rm_tree не вызывается. tmpfs исчезает вместе с namespace. */
+  mk_dir(pj(t, "top"));
+  if (mount("none", pj(t, "top"), "tmpfs", 0, NULL) != 0) return 1;
+  write_file(pj(t, "top/inside"), 10);
+  struct stat ts, rs;
+  if (stat(t, &ts) != 0 || chroot(t) != 0 || chdir("/") != 0) return 1;
+  if (stat("/", &rs) != 0 || rs.st_dev != ts.st_dev || rs.st_ino != ts.st_ino) return 1;
+  CHECK(rm_tree("/top/") == -EXDEV);
+  CHECK(access("/top/inside", F_OK) == 0);
   return t_fail ? 1 : 0;
 }
 
@@ -160,11 +172,6 @@ int main(void) {
 
   /* другая ФС: реальные tmpfs в собственном mount namespace */
   cross_fs(t);
-
-  /* вершина — точка монтирования системы (/proc): отказ без попытки удаления */
-  struct stat sr, sp;
-  if (stat("/", &sr) == 0 && stat("/proc", &sp) == 0 && sr.st_dev != sp.st_dev)
-    CHECK(rm_tree("/proc/") == -EXDEV);
 
   CHECK(rm_tree(t) == 0);
   CHECK(access(t, F_OK) != 0);

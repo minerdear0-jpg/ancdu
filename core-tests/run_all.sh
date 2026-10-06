@@ -2,6 +2,8 @@
 # Полный прогон: обычная сборка, ASan+UBSan, TSan, сверка с du.
 set -euo pipefail
 cd "$(dirname "$0")"
+# cwd здесь — core-tests/, а ctest запускает тесты из каталога сборки. Тесты не должны
+# зависеть от cwd: все фикстуры (и всё, что удаляется) — только внутри mk_tmp().
 run() {
   local dir=$1 san=$2
   cmake -S . -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
