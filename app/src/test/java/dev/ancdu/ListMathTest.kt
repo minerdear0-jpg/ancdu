@@ -26,4 +26,11 @@ class ListMathTest {
         assertEquals(0.5f, ListMath.bar(50, 100))
         assertEquals(1f, ListMath.bar(500, 100))
     }
+
+    @Test fun rowHeights() {
+        // мелкий шрифт: минимальная высота
+        assertEquals(56, ListMath.rowHeight(56, 20, 8))
+        // крупный шрифт (fontScale 1.3+): строка растёт под текст и отступы
+        assertEquals(60, ListMath.rowHeight(56, 44, 8))
+    }
 }

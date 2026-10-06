@@ -1,6 +1,10 @@
 package dev.ancdu
 
+import android.content.res.Configuration
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.SystemClock
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
@@ -79,5 +83,37 @@ class ListViewTest {
         val bottom = p.createAccessibilityNodeInfo(-1)!!
         assertTrue(!hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_FORWARD))
         assertTrue(hasAct(bottom, AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))
+    }
+
+    /** Крупный шрифт: строка не меньше 56 dp и вмещает текст (sp) с отступами 8 dp. */
+    @Test fun rowsFitLargeFonts() {
+        val base = ins.targetContext
+        for (scale in listOf(1.0f, 1.3f, 2.0f)) {
+            val cfg = Configuration(base.resources.configuration).apply { fontScale = scale }
+            val ctx = base.createConfigurationContext(cfg)
+            lateinit var v: NcduListView
+            ins.runOnMainSync { v = NcduListView(ctx) }
+            val textH = Paint().apply {
+                typeface = Typeface.MONOSPACE
+                textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, ctx.resources.displayMetrics)
+            }.fontMetricsInt.let { it.descent - it.ascent }
+            assertTrue("scale=$scale", v.rowHeight >= ctx.dp(56))
+            assertTrue("scale=$scale: ${v.rowHeight} < $textH + 16dp", v.rowHeight >= textH + 2 * ctx.dp(8))
+        }
+    }
+
+    @Test fun longClickActionLabel() {
+        lateinit var v: NcduListView
+        ins.runOnMainSync {
+            v = NcduListView(ins.targetContext)
+            v.source = Src()
+            v.longClickLabel = "Удалить или подробнее"
+            v.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY))
+            v.layout(0, 0, 1080, 1000)
+        }
+        val info = v.accessibilityNodeProvider.createAccessibilityNodeInfo(0)!!
+        val a = info.actionList.first { it.id == AccessibilityNodeInfo.ACTION_LONG_CLICK }
+        assertEquals("Удалить или подробнее", a.label)
     }
 }

@@ -14,4 +14,6 @@ object ListMath {
     }
     fun bar(value: Long, max: Long): Float =
         if (max <= 0) 0f else (value.toDouble() / max).toFloat().coerceIn(0f, 1f)
+    /** Высота строки: не меньше [minH], но и не меньше текста [textH] с отступами [pad] сверху и снизу. */
+    fun rowHeight(minH: Int, textH: Int, pad: Int): Int = maxOf(minH, textH + 2 * pad)
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
@@ -15,7 +16,12 @@ class AppsActivity : Activity() {
     /** Строки форматируются один раз при загрузке; bind только копирует поля. */
     private var rows: List<Row> = emptyList()
     private var gen = 0
-    private lateinit var list: NcduListView
+    /** Для тестов: сколько раз данные применены к списку. */
+    var loaded = 0
+        private set
+    /** Для тестов. */
+    lateinit var list: NcduListView
+        private set
     private lateinit var title: TextView
 
     private val src = object : RowSource {
@@ -31,34 +37,64 @@ class AppsActivity : Activity() {
         }
     }
 
+    private lateinit var listBox: LinearLayout
+    private lateinit var askBox: LinearLayout
+    private lateinit var errorText: TextView
+
+    /** Экран строится один раз; onResume только перечитывает данные и обновляет список на месте. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkBars()
+        list = NcduListView(this).apply { withSub = true; source = src }
+        listBox = vbox().apply {
+            addView(legend())
+            addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(label("Данные StorageStatsManager · работает без root · тап — настройки приложения",
+                12f, C.MUTED).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) })
+        }
+        askBox = vbox(16).apply {
+            setPadding(dp(16), dp(8), dp(16), dp(24))
+            addView(label("Чтобы показать, сколько места занимает каждое приложение, нужен " +
+                "«Доступ к истории использования». ancdu читает только размеры, без истории.", 15f))
+            addView(action("Открыть настройки", "Доступ к истории использования → ancdu", true) {
+                Perms.askUsage(this@AppsActivity)
+            })
+        }
+        errorText = label("", 15f, C.FREE_TXT).apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
+        setContentView(vbox().apply {
+            setBackgroundColor(C.BG)
+            addView(header())
+            addView(listBox, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(askBox)
+            addView(errorText)
+        })
     }
 
     override fun onResume() {
         super.onResume()
         val my = ++gen
-        if (!Perms.usage(this)) { showAsk(); return }
-        showList()
+        if (!Perms.usage(this)) { show(askBox); return }
+        show(listBox)
         Thread {
             val t = try { Quotas.load(applicationContext) } catch (e: Exception) {
                 runOnUiThread {
                     if (isDestroyed || my != gen) return@runOnUiThread
-                    showError(e.message ?: e.toString())
+                    errorText.text = "Не удалось загрузить размеры приложений: ${e.message ?: e}"
+                    show(errorText)
                 }
                 return@Thread
             }
-            val loaded = t.apps.orEmpty()
-            val max = loaded.firstOrNull()?.total ?: 0
-            val sum = loaded.sumOf { it.total }
-            val built = loaded.map { a -> Row().also { AppRows.fill(a, max, sum, it) } }
+            val got = t.apps.orEmpty()
+            val max = got.firstOrNull()?.total ?: 0
+            val sum = got.sumOf { it.total }
+            val built = got.map { a -> Row().also { AppRows.fill(a, max, sum, it) } }
             runOnUiThread {
                 if (isDestroyed || my != gen) return@runOnUiThread
-                apps = loaded
+                apps = got
                 rows = built
-                title.text = "${loaded.size} · ${Fmt.size(sum)}"
-                list.refresh()
+                loaded++
+                title.text = "${got.size} · ${Fmt.size(sum)}"
+                list.refresh()   // прокрутка сохраняется (refresh только ограничивает её)
             }
         }.start()
     }
@@ -66,6 +102,10 @@ class AppsActivity : Activity() {
     override fun onPause() {
         gen++
         super.onPause()
+    }
+
+    private fun show(v: View) {
+        for (x in listOf(listBox, askBox, errorText)) x.visibility = if (x === v) View.VISIBLE else View.GONE
     }
 
     private fun header(): LinearLayout = hbox(8).apply {
@@ -83,39 +123,5 @@ class AppsActivity : Activity() {
             s.setSpan(android.text.style.ForegroundColorSpan(c), 0, 1, 0)
             addView(label(s, 12f, C.MUTED))
         }
-    }
-
-    private fun showList() {
-        list = NcduListView(this).apply { withSub = true; source = src }
-        setContentView(vbox().apply {
-            setBackgroundColor(C.BG)
-            addView(header())
-            addView(legend())
-            addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            addView(label("Данные StorageStatsManager · работает без root · тап — настройки приложения",
-                12f, C.MUTED).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) })
-        })
-    }
-
-    private fun showError(msg: String) {
-        setContentView(vbox(16).apply {
-            setBackgroundColor(C.BG)
-            setPadding(dp(16), dp(24), dp(16), dp(24))
-            addView(header())
-            addView(label("Не удалось загрузить размеры приложений: $msg", 15f, C.FREE_TXT))
-        })
-    }
-
-    private fun showAsk() {
-        setContentView(vbox(16).apply {
-            setBackgroundColor(C.BG)
-            setPadding(dp(16), dp(24), dp(16), dp(24))
-            addView(header())
-            addView(label("Чтобы показать, сколько места занимает каждое приложение, нужен " +
-                "«Доступ к истории использования». ancdu читает только размеры, без истории.", 15f))
-            addView(action("Открыть настройки", "Доступ к истории использования → ancdu", true) {
-                Perms.askUsage(this@AppsActivity)
-            })
-        })
     }
 }

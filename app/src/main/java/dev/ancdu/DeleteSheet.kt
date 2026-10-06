@@ -9,11 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.text.SpannableStringBuilder
-import android.text.Spanned
 import android.text.TextUtils
-import android.text.style.AbsoluteSizeSpan
-import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -119,7 +115,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         val title = if (p.block == null) "Удалить «${p.name}»?" else "«${p.name}»"
         addView(act.hbox(8).apply {
             addView(act.label(title, 18f, C.TEXT, bold = true).apply {
-                maxLines = 2; ellipsize = TextUtils.TruncateAt.MIDDLE
+                setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             if (p.viaRoot) addView(act.label("КАК ROOT", 11f, Color.WHITE, mono = true, bold = true).apply {
                 setPadding(act.dp(8), act.dp(3), act.dp(8), act.dp(3))
@@ -161,20 +157,19 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         contentDescription = "владелец: $name, данные приложения"
     }
 
-    private fun sizeLine(): TextView {
-        val sb = SpannableStringBuilder(Fmt.size(p.disk))
-        if (p.dir) sb.append(" · ${Fmt.count(p.items)} эл.")
-        if (p.apparent != p.disk) {
-            val start = sb.length
-            sb.append("   ${Fmt.size(p.apparent)} apparent")
-            sb.setSpan(AbsoluteSizeSpan(13, true), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            sb.setSpan(ForegroundColorSpan(C.MUTED), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        return act.label(sb, 18f, C.TEXT, mono = true, bold = true).apply {
-            contentDescription = "размер на диске ${Fmt.size(p.disk)}" +
-                (if (p.dir) ", ${Fmt.count(p.items)} элементов" else "") +
-                (if (p.apparent != p.disk) ", apparent ${Fmt.size(p.apparent)}" else "")
-        }
+    /** Главное число листа; apparent — приглушённо рядом, если отличается. */
+    private fun sizeLine(): View = act.hbox(10).apply {
+        isBaselineAligned = true
+        gravity = Gravity.BOTTOM
+        val main = Fmt.size(p.disk) + if (p.dir) " · ${Fmt.count(p.items)} эл." else ""
+        addView(act.label(main, 18f, C.TEXT, mono = true, bold = true).apply { setSingleLine(true) })
+        if (p.apparent != p.disk) addView(act.label("apparent ${Fmt.size(p.apparent)}", 13f, C.MUTED, mono = true)
+            .apply { setSingleLine(true); ellipsize = TextUtils.TruncateAt.END },
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        contentDescription = "размер на диске ${Fmt.size(p.disk)}" +
+            (if (p.dir) ", ${Fmt.count(p.items)} элементов" else "") +
+            (if (p.apparent != p.disk) ", apparent ${Fmt.size(p.apparent)}" else "")
     }
 
     private fun children(): View = act.vbox(4).apply {

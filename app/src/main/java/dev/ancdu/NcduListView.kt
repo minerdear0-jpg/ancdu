@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -48,7 +49,11 @@ class NcduListView(ctx: Context) : View(ctx) {
     var withSub = false
         set(v) { field = v; requestLayout(); invalidate() }
 
-    val rowHeight: Int get() = context.dp(if (withSub) 64 else 56)
+    /** TalkBack: подпись действия «долгое нажатие» на строках; null — без подписи. */
+    var longClickLabel: CharSequence? = null
+
+    /** Высота строки: 56/64 dp, но растёт под крупный шрифт (sp), чтобы текст не обрезался. */
+    val rowHeight: Int get() = if (withSub) rowSub else rowPlain
 
     var scroll = 0
         set(v) {
@@ -68,14 +73,21 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val row = Row()
     private val scroller = OverScroller(ctx)
     private val pad = ctx.dp(16)
-    private val sizeW = ctx.dp(76)
-    private val barW = ctx.dp(64)
-    private val pctW = ctx.dp(40)
+    private val barW = ctx.dp(40)
     private val gap = ctx.dp(10)
+    private fun sp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, context.resources.displayMetrics)
     private val mono = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Typeface.MONOSPACE; textSize = ctx.dp(14).toFloat(); color = C.TEXT
+        typeface = Typeface.MONOSPACE; textSize = sp(14f); color = C.TEXT
     }
-    private val small = Paint(mono).apply { textSize = ctx.dp(12).toFloat(); color = C.MUTED }
+    private val small = Paint(mono).apply { textSize = sp(12f); color = C.MUTED }
+    // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
+    private val sizeW = maxOf(ctx.dp(76), Paint(mono).apply { isFakeBoldText = true }.measureText("1023.9 MiB").toInt())
+    private val pctW = maxOf(ctx.dp(40), small.measureText("100% ").toInt())
+    private val mainH = mono.fontMetricsInt.let { it.descent - it.ascent }
+    private val subH = small.fontMetricsInt.let { it.descent - it.ascent }
+    private val subGap = ctx.dp(2)
+    private val rowPlain = ListMath.rowHeight(ctx.dp(56), mainH, ctx.dp(8))
+    private val rowSub = ListMath.rowHeight(ctx.dp(64), mainH + subGap + subH, ctx.dp(8))
     private val fill = Paint()
     private val tmp = Rect()
 
@@ -134,8 +146,12 @@ class NcduListView(ctx: Context) : View(ctx) {
         val w = width
         fill.color = C.LINE
         c.drawRect(0f, (top + rh - 1).toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
-        val mid = top + (if (row.sub != null) rh / 2 - context.dp(4) else rh / 2)
-        val base = mid + (mono.textSize / 3)
+        // Блок текста (имя и, если есть, подпись) центрируется по вертикали строки.
+        val sub = row.sub
+        val blockH = if (sub != null) mainH + subGap + subH else mainH
+        val blockTop = top + (rh - blockH) / 2
+        val base = (blockTop - mono.fontMetricsInt.ascent).toFloat()
+        val mid = blockTop + mainH / 2
         var x = pad
         // размер (по правому краю колонки)
         mono.isFakeBoldText = true
@@ -167,13 +183,15 @@ class NcduListView(ctx: Context) : View(ctx) {
         // процент
         c.drawText(row.pct, x.toFloat(), base, small)
         x += pctW
-        // имя (обрезка по ширине)
+        // имя: метка не режется, имя — посередине (начало и конец видны)
         mono.color = row.nameColor
-        val label = if (row.mark.isEmpty()) row.name else "${row.mark} ${row.name}"
-        val avail = (w - pad - x).toFloat()
-        val n = mono.breakText(label, true, avail, null)
-        c.drawText(if (n < label.length) label.substring(0, maxOf(0, n - 1)) + "…" else label, x.toFloat(), base, mono)
-        row.sub?.let { c.drawText(it, x.toFloat(), base + context.dp(18), small) }
+        val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
+        val avail = (w - pad - x).toFloat() - mono.measureText(mark)
+        c.drawText(mark + Ellipsis.middle(row.name, avail, mono::measureText), x.toFloat(), base, mono)
+        if (sub != null) {
+            val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
+            c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)
+        }
     }
 
     // ---------- доступность: каждая видимая строка — виртуальный узел ----------
@@ -205,7 +223,9 @@ class NcduListView(ctx: Context) : View(ctx) {
                 isEnabled = true
                 isVisibleToUser = true
                 addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
-                addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK)
+                val lcl = longClickLabel
+                addAction(if (lcl == null) AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK
+                          else AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, lcl))
                 val top = id * rowHeight - scroll
                 tmp.set(0, top, width, top + rowHeight)
                 setBoundsInParent(tmp)

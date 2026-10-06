@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.GridLayout
@@ -37,6 +38,9 @@ class ScanActivity : Activity() {
     private var finished = false
     /** Для тестов: диалог ошибки, если показан. */
     var failure: AlertDialog? = null
+        private set
+    /** Экран прогресса построен (скан идёт ≥ [SHOW_AFTER_MS]); до этого — только фон. */
+    var built = false
         private set
     /** Для тестов: число файлов, показанное последним обновлением. */
     val files: Long get() = p[1]
@@ -75,8 +79,9 @@ class ScanActivity : Activity() {
         // Пересоздан, а скана уже нет (закончился с ошибкой/отменой или процесс перезапущен) —
         // назад к главному, а не новый скан (root-скан снова спросил бы Magisk).
         if (started && !resumed) { finished = true; finish(); return }
+        // Только фон: короткий скан не мигает экраном прогресса; он строится в update() через 400 мс.
+        setContentView(View(this).apply { setBackgroundColor(C.BG) })
         if (!resumed && !start()) return
-        buildUi()
         ui.post(tick)
     }
 
@@ -100,6 +105,7 @@ class ScanActivity : Activity() {
     }
 
     private fun buildUi() {
+        built = true
         val pad = dp(16)
         val head = vbox(4).apply {
             addView(label("Сканирование · " + (if (su) "root" else "без root"), 13f, C.MUTED))
@@ -149,15 +155,8 @@ class ScanActivity : Activity() {
         // Сессию сменили или освободили не мы — её дескриптор больше не наш.
         if (Holder.h != h) { finished = true; finish(); return }
         val path = Native.progress(h, p)
-        val secs = maxOf(p[4], 1) / 1000.0
-        tiles[0].text = Fmt.count(p[1])
-        tiles[1].text = Fmt.size(p[2])
-        tiles[2].text = Fmt.count((p[1] / secs).toLong()) + "/с"
-        tiles[3].text = String.format(java.util.Locale.ROOT, "%02d:%04.1f", p[4] / 60000, (p[4] % 60000) / 1000.0)
-        cur.text = Native.str(path)
-        liveN = Native.liveTop(h, liveNodes, liveDisk)
-        sortLive()
-        live.refresh()
+        if (!built && p[0] == ST_RUNNING.toLong() && p[4] >= SHOW_AFTER_MS) buildUi()
+        if (built) render(h, path)
         when (p[0].toInt()) {
             ST_RUNNING -> {}
             ST_DONE, ST_FULL -> done(h)
@@ -171,6 +170,18 @@ class ScanActivity : Activity() {
                     onDismiss = ::leave)
             }
         }
+    }
+
+    private fun render(h: Long, path: ByteArray) {
+        val secs = maxOf(p[4], 1) / 1000.0
+        tiles[0].text = Fmt.count(p[1])
+        tiles[1].text = Fmt.size(p[2])
+        tiles[2].text = Fmt.count((p[1] / secs).toLong()) + "/с"
+        tiles[3].text = String.format(java.util.Locale.ROOT, "%02d:%04.1f", p[4] / 60000, (p[4] % 60000) / 1000.0)
+        cur.text = Native.str(path)
+        liveN = Native.liveTop(h, liveNodes, liveDisk)
+        sortLive()
+        live.refresh()
     }
 
     private fun sortLive() {
@@ -219,6 +230,10 @@ class ScanActivity : Activity() {
         val app: Context = applicationContext
         val file = Holder.cacheFile(app, root, su)
         val meta = "$root|$su|${p[1]}|${p[4]}|${System.currentTimeMillis()}"
+        // Итог скана — в плашку браузера: «скан · 69 312 эл. · 0,2 с». Тот же дескриптор: только поля.
+        val items = LongArray(4).also { Native.nodeInfo(h, intArrayOf(0), 1, it) }[2]
+        Holder.set(h, Holder.kind, root, Holder.label + " · ${Fmt.count(items)} эл. · " +
+            String.format(java.util.Locale.forLanguageTag("ru"), "%.1f с", p[4] / 1000.0), su)
         // На io: FIFO с delete и free этого же дескриптора (контракт Native).
         Holder.io.execute {
             if (Native.saveCache(h, file.path) == 0)
@@ -226,6 +241,10 @@ class ScanActivity : Activity() {
         }
         startActivity(Intent(this, BrowserActivity::class.java))
         finish()
+    }
+
+    companion object {
+        const val SHOW_AFTER_MS = 400L
     }
 
     @Deprecated("Activity API")

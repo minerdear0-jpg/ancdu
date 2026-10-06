@@ -5,8 +5,12 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Looper
 import android.text.TextUtils
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
@@ -42,9 +46,22 @@ class BrowserActivity : Activity() {
     var sheet: DeleteSheet? = null
         private set
     private val scrollAt = HashMap<Int, Int>()
-    private lateinit var crumbs: TextView
+    /** Заголовок: имя текущей папки (на верхнем уровне — путь корня). */
+    lateinit var title: TextView
+        private set
+    /** Крошки пути: сегмент i ведёт к узлу crumbNodes[i]. */
+    private lateinit var crumbs: LinearLayout
+    private lateinit var crumbScroll: HorizontalScrollView
+    /** Для тестов: узлы сегментов крошек от корня до текущей папки. */
+    var crumbNodes = IntArray(0)
+        private set
+    /** Пустая папка: сообщение по центру вместо списка. */
+    lateinit var empty: TextView
+        private set
     private lateinit var summary: TextView
-    private lateinit var badge: TextView
+    /** Плашка вида дерева («скан · 69 312 эл. · 0,2 с»). */
+    lateinit var badge: TextView
+        private set
     private lateinit var footer: TextView
     private lateinit var chips: LinearLayout
 
@@ -119,12 +136,20 @@ class BrowserActivity : Activity() {
         h = Holder.h
         if (h == 0L) { finish(); return }
         val top = vbox(12).apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
-        crumbs = label("", 14f, C.MUTED, mono = true).apply {
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.START
+        title = label("", 20f, C.TEXT, bold = true).apply {
+            setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
+        }
+        crumbs = hbox()
+        crumbScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(crumbs)
         }
         top.addView(hbox(4).apply {
             addView(backButton { onBackPressed() })
-            addView(crumbs, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(vbox().apply {
+                addView(title)
+                addView(crumbScroll, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
         summary = label("", 13f, C.MUTED, mono = true)
         badge = label(Holder.label, 12f, C.ACCENT, mono = true)
@@ -134,12 +159,20 @@ class BrowserActivity : Activity() {
             addView(vbox().apply { addView(summary); addView(badge) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(chips)
         })
-        list = NcduListView(this)
+        list = NcduListView(this).apply { longClickLabel = "Удалить или подробнее" }
+        empty = label("", 15f, C.MUTED).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(24), 0, dp(24), 0)
+            visibility = View.GONE
+        }
         footer = label("", 12f, C.MUTED, mono = true).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) }
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(top)
-            addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(FrameLayout(this@BrowserActivity).apply {
+                addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(footer)
         })
         Holder.addDeleteListener(onDeleted)
@@ -192,7 +225,13 @@ class BrowserActivity : Activity() {
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
-        crumbs.text = Native.str(Native.path(h, node))
+        renderHeader()
+        empty.visibility = if (n == 0) View.VISIBLE else View.GONE
+        empty.text = when {
+            self[3].toInt() and F_ERR == 0 -> "пусто"
+            Holder.viaRoot -> "⚠ нет доступа"
+            else -> "⚠ нет доступа — сканируйте как root"
+        }
         summary.text = "${Fmt.size(parentV)} · ${Fmt.count(self[2])} эл."
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
@@ -202,6 +241,49 @@ class BrowserActivity : Activity() {
         renderChips()
         list.refresh()
         list.scroll = restore
+    }
+
+    /** Заголовок и крошки текущего узла. Главный поток, чтения дерева — с [h]. */
+    private fun renderHeader() {
+        val chain = ArrayList<Int>()
+        var c = node
+        while (c > 0) { chain += c; c = Native.parent(h, c) }
+        chain += 0
+        chain.reverse()
+        crumbNodes = chain.toIntArray()
+        val rootName = Native.str(Native.path(h, 0)).ifEmpty { Holder.root }
+        title.text = if (node == 0) rootName else nameOf(node)
+        crumbs.removeAllViews()
+        for ((k, nd) in chain.withIndex()) {
+            val last = k == chain.size - 1
+            if (k > 0) crumbs.addView(label("›", 12f, C.MUTED, mono = true).apply {
+                setPadding(dp(2), 0, dp(2), 0)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
+            val text = if (nd == 0) rootName else nameOf(nd)
+            crumbs.addView(label(text, 12f, if (last) C.TEXT else C.MUTED, mono = true).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                minHeight = dp(44)
+                setPadding(dp(4), 0, dp(4), 0)
+                if (!last) {
+                    isClickable = true; isFocusable = true
+                    contentDescription = "перейти к $text"
+                    setOnClickListener { jumpTo(nd) }
+                } else {
+                    contentDescription = "текущая папка $text"
+                }
+            })
+        }
+        crumbScroll.post { crumbScroll.fullScroll(View.FOCUS_RIGHT) }
+    }
+
+    private fun nameOf(nd: Int): String = Native.str(Native.name(h, nd))
+
+    /** Переход к предку [target] из крошек: его прокрутка восстанавливается, более глубоких — забываются. */
+    fun jumpTo(target: Int) {
+        if (busy || target == node || target !in crumbNodes) return
+        for (nd in crumbNodes.dropWhile { it != target }.drop(1)) scrollAt.remove(nd)
+        load(target, scrollAt.remove(target) ?: 0)
     }
 
     @Deprecated("Activity API")
