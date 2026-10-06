@@ -183,7 +183,7 @@ class DeleteSheetTest {
         var s = longPress(a, indexOf(a, "photos/"))
         ins.runOnMainSync {
             assertNull(s.deleteButton)
-            assertEquals(DeletePolicy.INDEX_DIR, s.blockText!!.text.toString())
+            assertEquals(DeletePolicy.REFRESH_FAILED, s.blockText!!.text.toString())
             s.dismiss()
         }
         s = longPress(a, indexOf(a, "b.jpg"))

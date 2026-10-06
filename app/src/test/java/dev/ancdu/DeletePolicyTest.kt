@@ -131,12 +131,13 @@ class DeletePolicyTest {
         assertNull(reason("/data/data/com.a/f", sessionRoot = "/storage/emulated/0", kind = Kind.SCAN))
     }
 
+    /** Каталог устаревшего дерева (кэш): экран обновляет дерево сам, причина видна, если не вышло. */
     @Test fun cacheDirs() {
         val s = "/storage/emulated/0"
-        assertEquals(DeletePolicy.STALE_CACHE, reason("$s/DCIM", flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.STALE_CACHE,
+        assertEquals(DeletePolicy.REFRESH_FAILED, reason("$s/DCIM", flags = F_DIR, kind = Kind.CACHE))
+        assertEquals(DeletePolicy.REFRESH_FAILED,
             reason("$s/Download", parentIsRoot = true, flags = F_DIR, kind = Kind.CACHE))
-        assertEquals(DeletePolicy.STALE_CACHE,
+        assertEquals(DeletePolicy.REFRESH_FAILED,
             reason("/data/data/com.a", sessionRoot = "/data", flags = F_DIR, kind = Kind.CACHE))
         // файлы в кэше удалять можно
         assertNull(reason("$s/DCIM/a.jpg", kind = Kind.CACHE))
@@ -169,8 +170,8 @@ class DeletePolicyTest {
         assertEquals(DeletePolicy.SYSTEM, reason("/mnt", sessionRoot = "/", parentIsRoot = true, flags = F_DIR))
         assertEquals(DeletePolicy.SYSTEM, reason("/data/app/x", sessionRoot = "/data", flags = F_DIR))
         assertNull(reason("/data/data/com.a", sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
-        // индекс: каталоги нельзя, файлы можно
-        assertEquals(DeletePolicy.INDEX_DIR, reason("/storage/emulated/0/DCIM", flags = F_DIR, kind = Kind.INDEX))
+        // индекс: каталоги — только после обновления дерева, файлы можно
+        assertEquals(DeletePolicy.REFRESH_FAILED, reason("/storage/emulated/0/DCIM", flags = F_DIR, kind = Kind.INDEX))
         assertNull(reason("/storage/emulated/0/DCIM/a.jpg", kind = Kind.INDEX))
         // ↪ сильнее системного пути и индекса
         assertEquals(DeletePolicy.OTHER_FS, reason("/proc", sessionRoot = "/", parentIsRoot = true,
@@ -178,33 +179,24 @@ class DeletePolicyTest {
     }
 }
 
-class PendingTreeTest {
-    private fun reason(path: String, flags: Int, kind: Kind, pending: Boolean) =
-        DeletePolicy.blockReason(path, false, false, "/storage/emulated/0", flags, kind, pending)
+class StaleTreeReasonTest {
+    private fun reason(path: String, flags: Int, kind: Kind) =
+        DeletePolicy.blockReason(path, false, false, "/storage/emulated/0", flags, kind)
 
-    /** Есть новее (pending) при дереве из кэша: ни файлы, ни каталоги не удаляются. */
-    @Test fun cacheWithNewerTreeBlocksEverything() {
-        assertEquals(DeletePolicy.NEWER, reason("/storage/emulated/0/a.bin", 0, Kind.CACHE, true))
-        assertEquals(DeletePolicy.NEWER, reason("/storage/emulated/0/DCIM", F_DIR, Kind.CACHE, true))
-        assertEquals("есть новее — обновите", DeletePolicy.NEWER)
-        // без pending — прежние правила кэша
-        assertNull(reason("/storage/emulated/0/a.bin", 0, Kind.CACHE, false))
-        assertEquals(DeletePolicy.STALE_CACHE, reason("/storage/emulated/0/DCIM", F_DIR, Kind.CACHE, false))
-        // живой скан с pending — удалять можно (pending станет «грязным» и пересканируется)
-        assertNull(reason("/storage/emulated/0/a.bin", 0, Kind.SCAN, true))
-        assertNull(reason("/storage/emulated/0/DCIM", F_DIR, Kind.SCAN, true))
+    /** Одна причина для кэша и индекса; файлы и свежие деревья не задерживаются. */
+    @Test fun oneReasonForCacheAndIndexDirs() {
+        val d = "/storage/emulated/0/DCIM"
+        assertEquals("дерево не обновилось — каталог не удалить", DeletePolicy.REFRESH_FAILED)
+        for (k in listOf(Kind.CACHE, Kind.INDEX)) {
+            assertEquals("$k", DeletePolicy.REFRESH_FAILED, reason(d, F_DIR, k))
+            assertNull("$k file", reason("$d/a.jpg", 0, k))
+        }
+        for (k in listOf(Kind.SCAN, Kind.ROOT)) {
+            assertNull("$k", reason(d, F_DIR, k))
+            assertNull("$k file", reason("$d/a.jpg", 0, k))
+        }
         // системные запреты сильнее
-        assertEquals(DeletePolicy.ANDROID_DIR, reason("/storage/emulated/0/Android", F_DIR, Kind.CACHE, true))
-    }
-}
-
-class DeleteTierTest {
-    @Test fun pauseTier() {
-        val gib = 1L shl 30
-        assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib - 1))
-        assertTrue(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib))
-        assertFalse(DeletePolicy.needsPause(viaRoot = true, owned = false, disk = 10))
-        assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = true, disk = 10))
-        assertTrue(DeletePolicy.needsPause(viaRoot = true, owned = true, disk = 10))
+        assertEquals(DeletePolicy.ANDROID_DIR, reason("/storage/emulated/0/Android", F_DIR, Kind.CACHE))
+        assertEquals(DeletePolicy.OTHER_FS, reason("$d/x", F_DIR or F_OTHERFS, Kind.INDEX))
     }
 }

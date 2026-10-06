@@ -44,6 +44,19 @@ object DeleteProgress {
 
     fun freed(disk: Long): String = "освобождено ${Fmt.size(disk)}"
 
-    fun stopped(done: Long, total: Long): String =
-        "Удаление остановлено — удалено ${Fmt.count(clamp(done, total))} из ${Fmt.count(total)}. Пересканируйте."
+    /** Подвал, пока экран сам обновляет дерево. */
+    const val REFRESHING = "обновляю дерево…"
+    /** Хвост «освобождено …»: узел после обновления ещё на диске (удалён не весь). */
+    const val LEFT = " · остаток в списке"
+
+    /** Узла запроса нет в обновлённом дереве. */
+    fun gone(name: String): String = "“$name” уже нет на диске"
+
+    /**
+     * Итог удаления [r] требует обновить дерево сканом: ядро записало в дерево не всё (частично,
+     * остановлено после начала, ошибка). 0 — дерево уже точное (csr_remove). Ничего не удалено —
+     * обновлять нечего: su отказал через root (-EPERM), симлинк в пути (-ELOOP), «Стоп» до начала.
+     */
+    fun refreshAfter(r: Int, viaRoot: Boolean, done: Long): Boolean =
+        r != 0 && r != -ELOOP && !DeletePolicy.nothingDeleted(r, viaRoot) && !isCancelled(r, done)
 }

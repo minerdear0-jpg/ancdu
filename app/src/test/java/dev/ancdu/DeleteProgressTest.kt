@@ -1,6 +1,8 @@
 package dev.ancdu
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeleteProgressTest {
@@ -42,9 +44,31 @@ class DeleteProgressTest {
         assertEquals(1L, DeleteProgress.total(0))
         assertEquals(69_370L, DeleteProgress.total(69_370))
         assertEquals("Удаление «DCIM»", DeleteProgress.title("DCIM"))
-        assertEquals("Удаление остановлено — удалено 1 200 из 3 000. Пересканируйте.",
-            DeleteProgress.stopped(1_200, 3_000))
-        assertEquals("Удаление остановлено — удалено 3 000 из 3 000. Пересканируйте.",
-            DeleteProgress.stopped(3_100, 3_000))
+        assertEquals("обновляю дерево…", DeleteProgress.REFRESHING)
+        assertEquals("освобождено 1.5 MiB · остаток в списке", DeleteProgress.freed(3L shl 19) + DeleteProgress.LEFT)
+        assertEquals("“DCIM” уже нет на диске", DeleteProgress.gone("DCIM"))
+    }
+
+    /** Итог удаления → обновить дерево; «ничего не удалено» — нечего обновлять. */
+    @Test fun refreshAfterDelete() {
+        val eperm = -1; val eio = -5; val eacces = -13
+        val eintr = -DeleteProgress.EINTR; val eloop = -DeleteProgress.ELOOP
+        // полный успех: csr_remove уже обновил дерево
+        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = false, done = 10))
+        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = true, done = 10))
+        // остановлено после начала, частично, ошибка — обновить
+        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 1))
+        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = true, done = 500))
+        for (r in listOf(eio, eacces)) {
+            assertTrue("$r", DeleteProgress.refreshAfter(r, viaRoot = false, done = 0))
+            assertTrue("$r root", DeleteProgress.refreshAfter(r, viaRoot = true, done = 0))
+        }
+        // без root -EPERM даёт сам rm_tree — часть могла удалиться
+        assertTrue(DeleteProgress.refreshAfter(eperm, viaRoot = false, done = 0))
+        // ничего не удалено: su отказал, симлинк в пути, «Стоп» до начала
+        assertFalse(DeleteProgress.refreshAfter(eperm, viaRoot = true, done = 0))
+        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = true, done = 0))
+        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = false, done = 0))
+        assertFalse(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 0))
     }
 }

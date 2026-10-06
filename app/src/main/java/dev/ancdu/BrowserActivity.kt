@@ -105,6 +105,10 @@ class BrowserActivity : Activity() {
     private var promoting = false
     /** Фоновый скан мог положить дерево в Holder.offer (тот слушателей не зовёт). */
     private val onBg: () -> Unit = { refreshPending() }
+    /** «Обновить сам, сохранив путь»: ждёт обновлённое дерево после удаления или перед листом. */
+    private val auto = AutoPromote()
+    /** Обычная подсказка подвала текущего уровня (load). */
+    private var hint = ""
 
     /**
      * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
@@ -131,33 +135,36 @@ class BrowserActivity : Activity() {
         } else {
             list.source = src
             load(node, keepScroll)
-            if (r == 0) showFreed(Holder.delDisk)
+            if (r == 0) note(DeleteProgress.freed(Holder.delDisk))
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
                 when {
                     DeleteProgress.isCancelled(r, doneN) -> report("Удаление отменено", DeleteProgress.CANCELLED)
-                    r == -DeleteProgress.EINTR -> report("Удаление остановлено",
-                        DeleteProgress.stopped(doneN, Holder.delTotal))
                     r == -DeleteProgress.ELOOP -> report("Не удалось удалить",
                         "Путь проходит через символическую ссылку — ничего не удалено.")
                     DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report("Не удалось удалить",
-                        "Не удалось получить root — ничего не удалено (код $r).")
-                    else -> report("Не удалось удалить полностью",
-                        "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+                        "Не удалось получить root — ничего не удалено.")
+                    // Удалено не всё (остановлено, частично): дерево обновляется само
+                    // (BgScan.deleteFinished — до слушателей), путь сохраняется.
+                    BgScan.active -> {
+                        auto.afterDelete(Holder.delNames, Holder.delName, Holder.delDisk)
+                        footer.text = DeleteProgress.REFRESHING
+                    }
                 }
+                Log.i("ancdu", "delete r=$r done=$doneN refresh=${auto.request != null}")
             }
         }
     }
 
-    /** Полный успех: «освобождено …» в подвале на 4 с, затем обычная подсказка. */
-    private fun showFreed(disk: Long) {
-        val normal = footer.text
-        val freed = DeleteProgress.freed(disk)
-        footer.text = freed
+    /** Подвал: [text] на 4 с, затем обычная подсказка. */
+    private fun note(text: String) {
+        footer.text = text
         ui.removeCallbacks(restoreFooter)
-        restoreFooter = Runnable { if (footer.text.toString() == freed) footer.text = normal }
+        restoreFooter = Runnable { if (footer.text.toString() == text) footer.text = idleFooter() }
         ui.postDelayed(restoreFooter, 4000)
     }
+
+    private fun idleFooter(): String = if (auto.request != null) DeleteProgress.REFRESHING else hint
 
     private var restoreFooter = Runnable {}
 
@@ -299,10 +306,55 @@ class BrowserActivity : Activity() {
     private fun hasNewer(): Boolean =
         Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, Holder.root, Holder.viaRoot)
 
-    /** Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт. */
+    private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true
+
+    /**
+     * Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт.
+     * Взведён [auto] — ждущее дерево подставляется само (никогда при удалении или открытом листе);
+     * обновить не вышло — флаг снимается.
+     */
     fun refreshPending() {
         if (!::newer.isInitialized) return
+        if (h != 0L && !isFinishing && !isDestroyed) {
+            val nw = hasNewer()
+            if (auto.ready(nw, busy, sheetOpen())) { landed(auto.take()!!); return }
+            if (!busy && auto.failed(nw, BgScan.active)) refreshFailed(auto.take()!!)
+        }
         newer.visibility = if (hasNewer() && h != 0L) View.VISIBLE else View.GONE
+    }
+
+    /** Обновлённое дерево готово: подставить (путь сохраняется) и показать итог запроса [r]. */
+    private fun landed(r: AutoPromote.Request) {
+        promotePending()
+        if (h == 0L) return
+        val hit = resolveNode(r.names)
+        val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
+        when (val o = AutoPromote.outcome(r, hit.exact, disk)) {
+            is AutoPromote.Outcome.Footer -> note(o.text)
+            AutoPromote.Outcome.Sheet -> openSheet(hit.node)
+        }
+    }
+
+    /** Скан не удался (или su отказал): дерево остаётся прежним; ждущий лист — с REFRESH_FAILED. */
+    private fun refreshFailed(r: AutoPromote.Request) {
+        Log.i("ancdu", "tree refresh failed: ${BgScan.failure}")
+        footer.text = hint
+        if (r.delDisk != null) return
+        val hit = resolveNode(r.names)
+        if (hit.exact) openSheet(hit.node)
+    }
+
+    /** Узел по байтам имён от корня в дереве [h] (файл или каталог). */
+    private fun resolveNode(names: List<ByteArray>): PathWalk.Hit =
+        PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = false) }
+
+    /** Байты имён пути узла [nd] дерева [handle] от корня (без самого корня). */
+    private fun pathNames(handle: Long, nd: Int): List<ByteArray> {
+        val chain = ArrayList<ByteArray>()
+        var c = nd
+        while (c > 0) { chain += Native.name(handle, c); c = Native.parent(handle, c) }
+        chain.reverse()
+        return chain
     }
 
     /**
@@ -314,7 +366,7 @@ class BrowserActivity : Activity() {
     fun promotePending() {
         if (busy || h == 0L || !hasNewer()) return
         // Байты имён, не строки: невалидный UTF-8 декодируется неоднозначно.
-        val names = crumbNodes.drop(1).map { Native.name(h, it) }
+        val names = pathNames(h, node)
         val keep = list.scroll
         list.source = null
         promoting = true
@@ -323,19 +375,19 @@ class BrowserActivity : Activity() {
         scrollAt.clear()
         if (h == 0L) { finish(); return }
         list.source = src
-        val hit = PathWalk.resolve(names) { nd, nm -> childDir(nd, nm) }
+        val hit = PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = true) }
         load(hit.node, if (hit.exact) keep else 0)
         refreshPending()
     }
 
-    /** Ребёнок-каталог [nd] с именем ровно [nm] (байты) в дереве [h] или null. */
-    private fun childDir(nd: Int, nm: ByteArray): Int? {
+    /** Ребёнок [nd] с именем ровно [nm] (байты) в дереве [h] — каталог, если [dirOnly], — или null. */
+    private fun child(nd: Int, nm: ByteArray, dirOnly: Boolean): Int? {
         val c = IntArray(Native.childCount(h, nd))
         val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
         if (k == 0) return null
         val inf = LongArray(4 * k).also { Native.nodeInfo(h, c, k, it) }
         for (i in 0 until k)
-            if (inf[4 * i + 3].toInt() and F_DIR != 0 && Native.name(h, c[i]).contentEquals(nm)) return c[i]
+            if ((!dirOnly || inf[4 * i + 3].toInt() and F_DIR != 0) && Native.name(h, c[i]).contentEquals(nm)) return c[i]
         return null
     }
 
@@ -378,6 +430,8 @@ class BrowserActivity : Activity() {
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
 
     private fun load(target: Int, restore: Int) {
+        // Любая навигация отменяет ждущий лист (подстановка дерева при этом всё равно будет).
+        auto.cancelSheet()
         loads++
         node = target
         // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
@@ -398,7 +452,8 @@ class BrowserActivity : Activity() {
         val full = p[0] == ST_FULL.toLong()
         badge.text = Holder.label + if (full) " · неполный" else ""
         badge.setTextColor(if (full) C.WARN else C.ACCENT)
-        footer.text = "тап — открыть · долгий — подробнее, удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
+        hint = "тап — открыть · долгий — подробнее, удалить" + if (p[3] > 0) "   ⚠ ${Fmt.count(p[3])} ошибок" else ""
+        footer.text = idleFooter()
         renderChips()
         refreshPending()
         list.refresh()
@@ -459,16 +514,43 @@ class BrowserActivity : Activity() {
         }
     }
 
+    private fun askDelete(i: Int) = ask(kids[i])
+
     /**
-     * Лист удаления для строки [i]. Главный поток, чтения дерева — с закреплённым [h]; пара
-     * (дескриптор, узел) фиксируется здесь, подтверждение удаляет ровно её.
+     * Лист удаления узла [target]. Главный поток. Удаляется только из свежего дерева: ждёт более
+     * новое — подставляется сразу (без скана), узел ищется в нём по байтам имён; каталог кэша или
+     * индекса — экран сам пересканирует корень в том же режиме su, лист откроет [refreshPending].
      */
-    private fun askDelete(i: Int) {
-        val handle = h
-        val target = kids[i]
+    private fun ask(target: Int) {
         sheet?.dismiss()
-        sheet = DeleteSheet(this, preview(handle, target, nameAt(i))) { fast -> startDelete(handle, target, fast) }
-            .also { it.show() }
+        auto.cancelSheet()
+        var t = target
+        if (hasNewer()) {
+            val names = pathNames(h, t)
+            val name = nameOf(t)
+            promotePending()
+            if (h == 0L) return
+            val hit = resolveNode(names)
+            if (!hit.exact) { note(DeleteProgress.gone(name)); return }
+            t = hit.node
+        }
+        if (blockReason(h, t, Native.str(Native.path(h, t))) == DeletePolicy.REFRESH_FAILED) {
+            auto.beforeDelete(pathNames(h, t), nameOf(t))
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { footer.text = DeleteProgress.REFRESHING; return }
+            auto.take()
+            Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
+        }
+        openSheet(t)
+    }
+
+    /** Лист узла [target] дерева [h]; пара (дескриптор, узел) фиксируется здесь, подтверждение удаляет ровно её. */
+    private fun openSheet(target: Int) {
+        val handle = h
+        sheet?.dismiss()
+        // Закрыт лист — подставить дерево, если оно пришло, пока лист был открыт.
+        sheet = DeleteSheet(this, preview(handle, target, nameOf(target)), onClose = { refreshPending() }) { fast ->
+            startDelete(handle, target, fast)
+        }.also { it.show() }
     }
 
     private fun preview(handle: Long, target: Int, name: String): DeletePreview {
@@ -503,7 +585,7 @@ class BrowserActivity : Activity() {
     private fun blockReason(handle: Long, target: Int, path: String): String? {
         val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
         return DeletePolicy.blockReason(path, target == 0, Native.parent(handle, target) == 0,
-            Holder.root, inf[3].toInt(), Holder.kind, pending = hasNewer())
+            Holder.root, inf[3].toInt(), Holder.kind)
     }
 
     /**
@@ -611,7 +693,7 @@ class BrowserActivity : Activity() {
         val cr = app.contentResolver
         val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
         val rootFlags = inf[3].toInt()
-        Holder.delete(handle, target, helper, done, name, items, disk, media = fast,
+        Holder.delete(handle, target, helper, done, name, items, disk, names = pathNames(handle, target), media = fast,
             bulk = bulkPath?.let { p -> { stopped, add ->
                 // На io, под правилами delete: чтение дерева [handle] (экран его сейчас не читает).
                 // MediaProvider канонизирует путь перед unlink — ссылка в поддереве увела бы
@@ -627,7 +709,7 @@ class BrowserActivity : Activity() {
             } },
             afterIo = if (!fast) null else { r ->
                 // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки:
-                // путь исчез — пачками в фоне (MediaClean); частично — пересканирование, как раньше
+                // путь исчез — пачками в фоне (MediaClean); частично — scanFile, как раньше
                 // (удаление строк через MediaProvider удалило бы и оставшиеся файлы).
                 if (r == 0 && cleanPath != null) MediaClean.enqueue(app, cleanPath, dir)
                 else {

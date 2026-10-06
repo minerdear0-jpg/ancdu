@@ -114,7 +114,7 @@ class BrowserTest {
     /**
      * Диалог удаления: заголовок с именем, счётчик «N / M эл.», «Стоп» → «Останавливаю…».
      * Удаление стоит на io за заслонкой, стоп нажат до его начала: ядро не вызывается, итог -EINTR,
-     * всё на месте, сообщение «Удаление остановлено — удалено 0 из 4».
+     * всё на месте, сообщение «Удаление отменено» (ничего не удалено — дерево не обновляется).
      */
     @Test fun deleteDialogShowsProgressAndStops() {
         val ctx = ins.targetContext
@@ -151,7 +151,7 @@ class BrowserTest {
         assertTrue(waitFor { !act.busy && act.list.source != null })
         ins.runOnMainSync {
             assertNull(act.waitBar)
-            // ещё не начиналось — «отменено», без «Пересканируйте»
+            // ещё не начиналось — «отменено»; обновлять нечего
             assertEquals("Удаление отменено", act.lastAlert?.first)
             assertEquals("Удаление отменено — ничего не удалено.", act.lastAlert?.second)
         }
@@ -249,7 +249,7 @@ class BrowserTest {
         dir.deleteRecursively()
     }
 
-    /** Кэш: каталог удалить нельзя (содержимое могло измениться после скана), файл — можно. */
+    /** Кэш: каталог мимо листа не удаляется (сначала обновление дерева), файл — можно. */
     @Test fun cacheRefusesDirDelete() {
         val ctx = ins.targetContext
         val dir = File(ctx.cacheDir, "br4").apply { deleteRecursively(); mkdirs() }
@@ -349,11 +349,15 @@ class BrowserTest {
         }
     }
 
-    /** Кэш + ждущее более новое дерево: не удаляются ни каталоги, ни файлы. */
-    @Test fun cacheWithPendingRefusesFileDelete() {
+    /**
+     * Кэш + ждущее более новое дерево: долгий тап сразу подставляет новое (без скана) и открывает
+     * лист того же файла уже в нём; файла в новом дереве нет — листа нет, подвал «“X” уже нет на диске».
+     */
+    @Test fun newerLongPressPromotesThenSheet() {
         val ctx = ins.targetContext
         val dir = tmpDir("pendc")
         File(dir, "f.txt").writeBytes(ByteArray(10))
+        File(dir, "g.txt").writeBytes(ByteArray(20))
         val h = scanned(dir)
         val h2 = scanned(dir)
         ins.runOnMainSync {
@@ -363,9 +367,44 @@ class BrowserTest {
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
+        val row = Row()
+        fun index(name: String): Int {
+            var k = -1
+            ins.runOnMainSync {
+                val src = act.list.source!!
+                k = (0 until src.count).first { row.reset(); src.bind(it, row); row.name == name }
+            }
+            return k
+        }
         try {
             ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
-            assertEquals(Int.MIN_VALUE, act.deleteBlocking(0))   // отказ: удаление не запускалось
+            val fi = index("f.txt")
+            ins.runOnMainSync { act.list.source!!.longClick(fi) }
+            assertTrue(waitFor { act.sheet?.dialog?.isShowing == true })
+            ins.runOnMainSync {
+                assertEquals(h2, Holder.h)                 // подставлено мгновенно
+                assertEquals(Kind.SCAN, Holder.kind)
+                assertEquals(View.GONE, act.newer.visibility)
+                val s = act.sheet!!
+                assertEquals(File(dir, "f.txt").path, s.p.path)
+                assertNotNull(s.deleteButton)
+                s.dismiss()
+            }
+
+            // Файл пропал с диска: новое дерево его не знает — листа нет, подвал говорит об этом.
+            File(dir, "g.txt").delete()
+            val h3 = scanned(dir)
+            ins.runOnMainSync { Holder.offer(h3, Kind.SCAN, dir.path, "скан", false); act.refreshPending() }
+            ins.runOnMainSync { assertEquals(h2, Holder.h) }   // лист закрыт, но флага нет — ждёт чип
+            val gi = index("g.txt")
+            var before: DeleteSheet? = null
+            ins.runOnMainSync { before = act.sheet; act.list.source!!.longClick(gi) }
+            ins.waitForIdleSync()
+            ins.runOnMainSync {
+                assertEquals(h3, Holder.h)
+                assertTrue(act.sheet === before && act.sheet?.dialog?.isShowing != true)
+                assertEquals("“g.txt” уже нет на диске", act.footerText.toString())
+            }
             assertTrue(File(dir, "f.txt").exists())
         } finally {
             ins.runOnMainSync { Holder.dropPending(); act.finish() }

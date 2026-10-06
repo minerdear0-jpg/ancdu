@@ -39,13 +39,13 @@ class DeleteStepsTest {
         assertTrue(!ran)
     }
 
-    @Test fun stoppedResultReadsAsStoppedOrCancelled() {
-        // Стоп во время массового шага: удалено N строк — «остановлено», 0 — «отменено».
+    @Test fun stoppedResultRefreshesOrCancels() {
+        // Стоп во время массового шага: удалено N строк — дерево обновляется само, 0 — «отменено».
         val r = -DeleteProgress.EINTR
         assertTrue(DeleteProgress.isCancelled(r, DeleteSteps.done(0, 0)))
         assertTrue(!DeleteProgress.isCancelled(r, DeleteSteps.done(1500, 0)))
-        assertEquals("Удаление остановлено — удалено 1 500 из 5 001. Пересканируйте.",
-            DeleteProgress.stopped(DeleteSteps.done(1500, 0), 5001))
+        assertTrue(DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(1500, 0)))
+        assertTrue(!DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(0, 0)))
     }
 
     @Test fun progressSumsRowsAndNativeClamped() {

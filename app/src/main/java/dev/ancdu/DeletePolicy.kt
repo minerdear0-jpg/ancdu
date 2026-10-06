@@ -4,13 +4,15 @@ package dev.ancdu
 object DeletePolicy {
     const val SYSTEM = "системный путь — удаление отключено"
     const val OTHER_FS = "другая файловая система — удаление отключено"
-    const val INDEX_DIR = "в индексе видны не все файлы — сделайте скан"
     const val ALL_APP_DATA = "удаляет данные всех приложений — удаление отключено"
     const val USER_STORAGE = "всё хранилище пользователя — удаление отключено"
     const val SYSTEM_DIR = "системный каталог — удаление отключено"
     const val ANDROID_DIR = "служебная папка Android — удаление отключено"
-    const val STALE_CACHE = "кэш мог устареть — пересканируйте, чтобы удалить каталог"
-    const val NEWER = "есть новее — обновите"
+    /**
+     * Каталог устаревшего дерева (кэш, индекс): экран сначала сам обновляет дерево; эту причину
+     * лист показывает, только если обновить не вышло (скан не удался, su отказал).
+     */
+    const val REFRESH_FAILED = "дерево не обновилось — каталог не удалить"
 
     private val PROTECTED = listOf("/data/system", "/data/adb", "/data/app", "/data/misc",
         "/system", "/vendor", "/apex", "/proc", "/sys", "/dev")
@@ -66,21 +68,18 @@ object DeletePolicy {
 
     /**
      * Причина запрета или null — можно удалять. [scanRoot] — сам корень скана; [parentIsRoot] — прямой
-     * потомок корня скана ([sessionRoot] — путь корня). [pending] — в Holder ждёт более новое
-     * дерево: из кэша тогда не удаляется ничего, ни файлы, ни каталоги.
+     * потомок корня скана ([sessionRoot] — путь корня).
      */
     fun blockReason(path: String, scanRoot: Boolean, parentIsRoot: Boolean, sessionRoot: String,
-                    flags: Int, kind: Kind, pending: Boolean = false): String? = when {
+                    flags: Int, kind: Kind): String? = when {
         flags and F_OTHERFS != 0 -> OTHER_FS
         scanRoot -> SYSTEM
         parentIsRoot && sessionRoot.trimEnd('/').isEmpty() -> SYSTEM
         isSystemPath(path) -> SYSTEM
         else -> exactBlockReason(path) ?: dataBlockReason(path) ?: when {
-            kind == Kind.CACHE && pending -> NEWER
             flags and F_DIR == 0 -> null
-            kind == Kind.INDEX -> INDEX_DIR
-            // Каталог в кэше — содержимое на диске могло измениться после скана.
-            kind == Kind.CACHE -> STALE_CACHE
+            // Каталог в кэше — содержимое на диске могло измениться после скана; индекс видит не все файлы.
+            kind == Kind.CACHE || kind == Kind.INDEX -> REFRESH_FAILED
             else -> null
         }
     }

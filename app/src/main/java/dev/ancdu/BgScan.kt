@@ -218,8 +218,23 @@ object BgScan {
         }
     }
 
-    /** Holder.delete завершилось (главный поток): отложенное пересканирование. */
-    fun deleteFinished() {
+    /**
+     * Holder.delete завершилось с кодом [r] (главный поток, до слушателей удаления): отложенное
+     * пересканирование. Удалено не всё ([DeleteProgress.refreshAfter]) — показанное дерево
+     * обновляется само, даже если скана не было.
+     */
+    fun deleteFinished(r: Int) {
+        if (DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress()) && ownsHolder()) rescan = true
         if (rescan && !running) restart()
+    }
+
+    /**
+     * Браузер: обновить показанное дерево [root] (режим [su]) перед удалением каталога из
+     * устаревшего дерева. Итог — как у любого фонового скана: Holder.offer и [changed]. Идёт скан
+     * той же цели — его итог и есть обновление. false — обновить нельзя или скан не запущен.
+     */
+    fun refresh(ctx: Context, root: String, su: Boolean): Boolean {
+        if (root != ROOT || su) return false
+        return running || start(ctx)
     }
 }

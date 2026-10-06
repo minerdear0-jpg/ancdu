@@ -48,8 +48,9 @@ class DeletePreview(
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
-/** [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен). */
-class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onDelete: (Boolean) -> Unit) {
+/** [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен); [onClose] — лист закрыт любым путём. */
+class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onClose: () -> Unit = {},
+                  private val onDelete: (Boolean) -> Unit) {
     private val ui = Handler(Looper.getMainLooper())
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
     /** null — удаление запрещено ([blockText] вместо кнопки). */
@@ -100,7 +101,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             setLayout(MATCH_PARENT, WRAP_CONTENT)
             setGravity(Gravity.BOTTOM)
         }
-        dialog.setOnDismissListener { ui.removeCallbacks(tick) }
+        dialog.setOnDismissListener { ui.removeCallbacks(tick); onClose() }
     }
 
     fun show() {

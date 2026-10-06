@@ -128,6 +128,8 @@ object Holder {
     var delRoot = false; private set
     /** Размер узла на диске на момент подтверждения — для «освобождено …». Только главный поток. */
     var delDisk = 0L; private set
+    /** Путь узла (байты имён от корня) — найти его в обновлённом дереве. Только главный поток. */
+    var delNames: List<ByteArray> = emptyList(); private set
 
     /*
      * Удаление в полёте. Под [delLock]: [delHandle] != 0 только пока на io идёт шаг ядра —
@@ -185,7 +187,7 @@ object Holder {
     /**
      * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
-     * [name] и [total] — для диалога прогресса.
+     * [name] и [total] — для диалога прогресса; [names] — путь узла (байты имён от корня).
      * [bulk] — необязательный массовый шаг MediaStore на io ДО ядра (дескриптор он не трогает):
      * получает «нажат ли Стоп» и счётчик удалённых строк. Затем ВСЕГДА Native.delete/deleteMedia
      * на том же узле — кроме «Стопа» до этого момента (в том числе пока удаление ждало в
@@ -196,7 +198,8 @@ object Holder {
      * (например, очистка строк MediaStore).
      */
     fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
-               name: String = "", total: Long = 1L, disk: Long = 0L, media: Boolean = false,
+               name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList(),
+               media: Boolean = false,
                bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null,
                afterIo: ((Int) -> Unit)? = null) {
         checkMain("Holder.delete")
@@ -204,7 +207,7 @@ object Holder {
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
-        delDisk = disk
+        delDisk = disk; delNames = names
         synchronized(delLock) { delHandle = 0L; delStopAsked = false; delRows = 0L; delNative = 0L; delDone = 0L }
         lastBulkRows = 0L
         // Идущий фоновый скан и непоказанное дерево могли увидеть удаляемое — пересканировать.
@@ -245,9 +248,10 @@ object Holder {
                 // И при исключении: deleting не должен остаться true навсегда.
                 main.post {
                     deleting = false
+                    // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.
+                    BgScan.deleteFinished(r)
                     for (l in deleteListeners.toList()) l(r)
                     done(r)
-                    BgScan.deleteFinished()
                 }
             }
         }
