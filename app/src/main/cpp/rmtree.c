@@ -38,7 +38,17 @@ static int rm_at(int dfd, const char *name, dev_t dev, int depth) {
   while ((e = readdir(d))) {
     const char *n = e->d_name;
     if (n[0] == '.' && (n[1] == 0 || (n[1] == '.' && n[2] == 0))) continue;
-    int r = rm_at(fd, n, dev, depth + 1);
+    int r;
+    switch (e->d_type) {
+      /* Не каталог по d_type: сразу unlinkat, без fstatat. Bind-файл с другой ФС —
+       * точка монтирования, unlinkat даёт EBUSY: пропуск как чужой ФС (-EXDEV).
+       * Подмена на каталог между readdir и unlinkat — EISDIR, ошибка без спуска. */
+      case DT_REG: case DT_LNK: case DT_FIFO: case DT_SOCK: case DT_CHR: case DT_BLK:
+        r = unlinkat(fd, n, 0) ? (errno == EBUSY ? -EXDEV : -errno) : 0;
+        break;
+      default: /* DT_DIR, DT_UNKNOWN — полные проверки */
+        r = rm_at(fd, n, dev, depth + 1);
+    }
     if (r && !err) err = r;
   }
   closedir(d);

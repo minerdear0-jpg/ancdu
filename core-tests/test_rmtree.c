@@ -128,9 +128,14 @@ int main(void) {
   mk_dir(pj(t, "victim/deep"));
   write_file(pj(t, "victim/deep/f"), 100);
   CHECK(symlink(pj(t, "keep"), pj(t, "victim/link_to_keep")) == 0);
+  /* быстрый путь по d_type: ссылка на файл и FIFO удаляются как записи, без перехода */
+  CHECK(symlink(pj(t, "keep/important"), pj(t, "victim/deep/link_to_file")) == 0);
+  CHECK(mkfifo(pj(t, "victim/deep/fifo"), 0644) == 0);
   CHECK(rm_tree(pj(t, "victim")) == 0);
   CHECK(access(pj(t, "victim"), F_OK) != 0);
   CHECK(access(pj(t, "keep/important"), F_OK) == 0);
+  struct stat kst;
+  CHECK(stat(pj(t, "keep/important"), &kst) == 0 && kst.st_size == 10);
 
   /* симлинк как корень удаления */
   CHECK(symlink(pj(t, "keep"), pj(t, "lnk")) == 0);
