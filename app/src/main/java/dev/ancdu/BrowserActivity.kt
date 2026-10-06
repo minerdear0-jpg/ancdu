@@ -196,7 +196,8 @@ class BrowserActivity : Activity() {
                 append(nm); append(", "); append(row.size)
                 if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
                 if (dir) append(", каталог")
-                if (flags and F_ERR != 0) append(", нет доступа")
+                // F_ERR — и нет доступа, и незаконченное удаление: данные узла неполные.
+                if (flags and F_ERR != 0) append(", неполные данные")
             }.also { descs[index] = it }
         }
         override fun click(index: Int) {
@@ -391,11 +392,7 @@ class BrowserActivity : Activity() {
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
         renderHeader()
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
-        empty.text = when {
-            self[3].toInt() and F_ERR == 0 -> "пусто"
-            Holder.viaRoot -> "⚠ нет доступа"
-            else -> "⚠ нет доступа — сканируйте как root"
-        }
+        empty.text = if (self[3].toInt() and F_ERR == 0) "пусто" else "⚠ нет доступа"
         summary.text = "${Fmt.size(parentV)} · ${Fmt.count(self[2])} эл."
         val p = progress()
         val full = p[0] == ST_FULL.toLong()

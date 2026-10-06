@@ -77,7 +77,7 @@ class UxTest {
             clickName(a, "locked/")
             ins.runOnMainSync {
                 assertEquals(View.VISIBLE, a.empty.visibility)
-                assertEquals("⚠ нет доступа — сканируйте как root", a.empty.text.toString())
+                assertEquals("⚠ нет доступа", a.empty.text.toString())
                 a.finish()
             }
         } finally {
