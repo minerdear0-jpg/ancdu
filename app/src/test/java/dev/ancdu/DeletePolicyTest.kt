@@ -30,6 +30,36 @@ class DeletePolicyTest {
         assertFalse(DeletePolicy.isSystemPath(""))
     }
 
+    @Test fun exactBlockedRoots() {
+        val appData = listOf("/data/data", "/data/user", "/data/user/0", "/data/user/10",
+            "/data/user_de", "/data/user_de/0", "/data/user_de/150")
+        val storage = listOf("/data/media", "/data/media/0", "/data/media/11",
+            "/storage/emulated", "/storage/emulated/0", "/storage/emulated/10")
+        for (p in appData) for (v in listOf(p, "$p/", "$p//")) {
+            assertEquals(v, DeletePolicy.ALL_APP_DATA, DeletePolicy.exactBlockReason(v))
+            assertEquals(v, DeletePolicy.ALL_APP_DATA,
+                reason(v, sessionRoot = "/data", flags = F_DIR, kind = Kind.ROOT))
+        }
+        for (p in storage) for (v in listOf(p, "$p/", "$p//")) {
+            assertEquals(v, DeletePolicy.USER_STORAGE, DeletePolicy.exactBlockReason(v))
+            assertEquals(v, DeletePolicy.USER_STORAGE,
+                reason(v, sessionRoot = "/", flags = F_DIR, kind = Kind.ROOT))
+        }
+        // раньше индексного запрета
+        assertEquals(DeletePolicy.USER_STORAGE,
+            reason("/storage/emulated/0/", sessionRoot = "/storage", flags = F_DIR, kind = Kind.INDEX))
+        // потомки и соседи с общим префиксом — удалять можно
+        for (p in listOf("/data/data/com.example", "/data/data/com.example/", "/data/data/123",
+                "/data/user/0/com.example", "/data/user/0/com.example/cache", "/data/user_de/0/com.a/",
+                "/data/media/0/DCIM", "/data/media/0/DCIM/", "/data/media/obb",
+                "/storage/emulated/0/Download", "/storage/emulated/0/DCIM/", "/storage/emulated/obb",
+                "/data/user/x", "/data/user/0x", "/data/database", "/data/users", "/data/media0",
+                "/storage/emulated0", "/storage/self", "/mnt/media_rw")) {
+            assertNull(p, DeletePolicy.exactBlockReason(p))
+            assertNull(p, reason(p, sessionRoot = "/", flags = F_DIR, kind = Kind.ROOT))
+        }
+    }
+
     private fun reason(path: String, scanRoot: Boolean = false, parentIsRoot: Boolean = false,
                        sessionRoot: String = "/storage/emulated/0", flags: Int = 0, kind: Kind = Kind.SCAN) =
         DeletePolicy.blockReason(path, scanRoot, parentIsRoot, sessionRoot, flags, kind)
