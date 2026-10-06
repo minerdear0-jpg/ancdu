@@ -96,6 +96,9 @@ class BrowserActivity : Activity() {
         private set
     private val onClean: () -> Unit = { renderGallery() }
     private lateinit var chips: LinearLayout
+    /** Шапка целиком: её высота не зависит от папки, сортировки, режима размера и чипа «новее». */
+    lateinit var header: LinearLayout
+        private set
     /** Амберный чип «новее · обновить»: в Holder ждёт более новое дерево того же корня. */
     lateinit var newer: TextView
         private set
@@ -229,7 +232,7 @@ class BrowserActivity : Activity() {
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
-        val top = vbox(12).apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
+        val top = vbox(12).also { header = it }.apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
         title = label("", 20f, C.TEXT, bold = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
         }
@@ -245,8 +248,12 @@ class BrowserActivity : Activity() {
                 addView(crumbScroll, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
-        summary = label("", 13f, C.MUTED, mono = true)
-        badge = label(Holder.label, 12f, C.ACCENT, mono = true)
+        summary = label("", 13f, C.MUTED, mono = true).apply {
+            setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
+        }
+        badge = label(Holder.label, 12f, C.ACCENT, mono = true).apply {
+            setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
+        }
         newer = label("новее · обновить", 12f, ON_ACCENT, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44)
@@ -258,14 +265,17 @@ class BrowserActivity : Activity() {
             visibility = View.GONE
         }
         chips = hbox(6)
-        top.addView(hbox(8).apply {
+        top.addView(vbox().apply {
             setPadding(dp(8), 0, 0, 0)
-            addView(vbox().apply {
-                addView(summary)
-                addView(hbox(8).apply { addView(badge); addView(newer) })
-            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(chips)
+            addView(summary, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            // Строка плашки всегда высотой с чип «новее» (44dp): его появление не двигает список.
+            addView(hbox(8).apply {
+                minimumHeight = dp(44)
+                addView(badge, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(newer)
+            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
+        top.addView(chips, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         list = NcduListView(this).apply { longClickLabel = "Удалить или подробнее" }
         empty = label("", 15f, C.MUTED).apply {
             gravity = Gravity.CENTER
@@ -441,9 +451,14 @@ class BrowserActivity : Activity() {
 
     private fun renderChips() {
         chips.removeAllViews()
-        chips.addView(chip("размер", sort == SORT_SIZE) { setSort(SORT_SIZE) })
-        chips.addView(chip("имя", sort == SORT_NAME) { setSort(SORT_NAME) })
-        chips.addView(chip(if (apparent) "apparent" else "disk", false) { setApparent(!apparent) })
+        // Равные веса: ширина чипов не зависит от текста. Зазор — SHOW_DIVIDER_MIDDLE у hbox(6).
+        val lp = { LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f) }
+        chips.addView(chip("размер", sort == SORT_SIZE) { setSort(SORT_SIZE) }.apply { setSingleLine(true) }, lp())
+        chips.addView(chip("имя", sort == SORT_NAME) { setSort(SORT_NAME) }.apply { setSingleLine(true) }, lp())
+        chips.addView(chip(if (apparent) "видимый" else "на диске", false) { setApparent(!apparent) }.apply {
+            setSingleLine(true)
+            contentDescription = if (apparent) "Размер: видимый; нажмите — на диске" else "Размер: на диске; нажмите — видимый"
+        }, lp())
     }
 
     fun setSort(k: Int) { if (busy) return; sort = k; load(node, 0) }

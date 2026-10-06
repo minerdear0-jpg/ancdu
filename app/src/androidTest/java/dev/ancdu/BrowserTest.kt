@@ -283,6 +283,46 @@ class BrowserTest {
     private fun tmpDir(prefix: String): File =
         java.nio.file.Files.createTempDirectory(ins.targetContext.cacheDir.toPath(), prefix).toFile()
 
+    /** Высота шапки не зависит от папки, сортировки, режима размера («на диске»/«видимый») и чипа «новее». */
+    @Test fun headerHeightIsStable() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("hdr")
+        File(dir, "sub/deep").mkdirs()
+        File(dir, "sub/deep/a.bin").writeBytes(ByteArray(3_000_000))
+        File(dir, "z.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        fun height(): Int { ins.waitForIdleSync(); var v = 0; ins.runOnMainSync { v = act.header.height }; return v }
+        try {
+            val h0 = height()
+            assertTrue("шапка не измерена", h0 > 0)
+            ins.runOnMainSync { act.setApparent(true) }
+            assertEquals("видимый", h0, height())
+            ins.runOnMainSync { act.setSort(SORT_NAME) }
+            assertEquals("сортировка по имени", h0, height())
+            ins.runOnMainSync { act.setApparent(false) }
+            assertEquals("на диске", h0, height())
+            ins.runOnMainSync { act.list.source!!.click(0) }   // sub/ (по имени: sub < z.bin)
+            assertNotEquals(0, act.node)
+            assertEquals("вложенная папка", h0, height())
+            ins.runOnMainSync { act.setApparent(true) }
+            assertEquals("вложенная папка, видимый", h0, height())
+
+            val h2 = scanned(dir)
+            ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, "скан · новее", false); act.refreshPending() }
+            ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
+            assertEquals("с чипом «новее»", h0, height())
+            ins.runOnMainSync { act.onBackPressed() }
+            assertEquals("корень с чипом «новее»", h0, height())
+        } finally {
+            ins.runOnMainSync { Holder.dropPending(); act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
+
     /**
      * Ждущее дерево: offer не трогает экран, чип «новее · обновить» виден; тап подставляет его и
      * открывает тот же путь по именам; пропавший путь — ближайший существующий предок.
