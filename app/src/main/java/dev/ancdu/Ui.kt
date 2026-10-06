@@ -96,11 +96,12 @@ fun Activity.darkBars() {
     window.navigationBarColor = C.BG
 }
 
+/** [onDismiss] — после закрытия любым путём (кнопка, «назад», тап вне диалога). */
 fun Activity.alert(title: String, msg: String, ok: String = "OK", cancel: String? = null,
-                   onOk: () -> Unit = {}) {
+                   onDismiss: (() -> Unit)? = null, onOk: () -> Unit = {}): AlertDialog =
     AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
         .setTitle(title).setMessage(msg)
         .setPositiveButton(ok) { _, _ -> onOk() }
         .apply { if (cancel != null) setNegativeButton(cancel, null) }
+        .apply { if (onDismiss != null) setOnDismissListener { onDismiss() } }
         .show()
-}

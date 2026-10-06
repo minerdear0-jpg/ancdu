@@ -23,16 +23,33 @@ object Holder {
         Thread(r, "ancdu-io").apply { isDaemon = true }
     }
 
-    /** Поля меняются сразу; прежняя сессия освобождается на [io] (free может ждать Magisk). */
-    @Synchronized
-    fun set(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean) {
-        val old = h
-        h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot
-        if (old != 0L && old != handle) io.execute { Native.free(old) }
-    }
-
     private val main = Handler(Looper.getMainLooper())
     private val deleteListeners = ArrayList<(Int) -> Unit>()
+    private val sessionListeners = ArrayList<() -> Unit>()
+
+    private fun checkMain(what: String) =
+        check(Looper.myLooper() == Looper.getMainLooper()) { "$what не с главного потока" }
+
+    /**
+     * Только главный поток. Поля меняются сразу; затем, если дескриптор сменился, слушатели сессии
+     * вызываются СИНХРОННО — живые экраны отцепляются от старого дескриптора — и только после этого
+     * прежняя сессия освобождается на [io] (free может ждать Magisk).
+     */
+    fun set(handle: Long, kind: Kind, root: String, label: String, viaRoot: Boolean) {
+        checkMain("Holder.set")
+        val old = h
+        h = handle; this.kind = kind; this.root = root; this.label = label; this.viaRoot = viaRoot
+        if (old == handle) return
+        for (l in sessionListeners.toList()) l()
+        if (old != 0L) io.execute { Native.free(old) }
+    }
+
+    /** Только главный поток. Сессии больше нет; прежняя освобождается на [io]. */
+    fun clear() = set(0L, Kind.SCAN, "", "", false)
+
+    /** Только главный поток. Слушатель вызывается внутри [set] при смене дескриптора, до free(old). */
+    fun addSessionListener(l: () -> Unit) { sessionListeners += l }
+    fun removeSessionListener(l: () -> Unit) { sessionListeners -= l }
 
     /** Идёт удаление (на любом дескрипторе). Только главный поток. Пока true — никаких чтений дерева. */
     var deleting = false; private set
@@ -46,15 +63,20 @@ object Holder {
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
      */
     fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {}) {
-        check(Looper.myLooper() == Looper.getMainLooper()) { "Holder.delete не с главного потока" }
+        checkMain("Holder.delete")
         check(!deleting) { "удаление уже идёт" }
         deleting = true
         io.execute {
-            val r = Native.delete(handle, node, helper)
-            main.post {
-                deleting = false
-                for (l in deleteListeners.toList()) l(r)
-                done(r)
+            var r = -1
+            try {
+                r = Native.delete(handle, node, helper)
+            } finally {
+                // И при исключении: deleting не должен остаться true навсегда.
+                main.post {
+                    deleting = false
+                    for (l in deleteListeners.toList()) l(r)
+                    done(r)
+                }
             }
         }
     }

@@ -45,9 +45,22 @@ class BrowserActivity : Activity() {
     private lateinit var footer: TextView
     private lateinit var chips: LinearLayout
 
+    /**
+     * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
+     * перестаёт трогать старый дескриптор: отцепляет список и забывает h (JNI игнорирует 0).
+     * Если идёт удаление, пересоздание сделает onDeleted (delete стоит на io раньше free).
+     */
+    private val onSession: () -> Unit = {
+        if (Holder.h != h) {
+            list.source = null
+            h = 0L
+            if (!busy) { if (Holder.h == 0L) finish() else recreate() }
+        }
+    }
+
     private val onDeleted: (Int) -> Unit = { r ->
         wait?.dismiss(); wait = null
-        if (Holder.h != h) {
+        if (h == 0L || Holder.h != h) {
             list.source = null
             recreate()
         } else {
@@ -126,6 +139,7 @@ class BrowserActivity : Activity() {
             addView(footer)
         })
         Holder.addDeleteListener(onDeleted)
+        Holder.addSessionListener(onSession)
         if (busy) {
             // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
             showWait()
@@ -143,6 +157,7 @@ class BrowserActivity : Activity() {
 
     override fun onDestroy() {
         Holder.removeDeleteListener(onDeleted)
+        Holder.removeSessionListener(onSession)
         wait?.dismiss(); wait = null
         super.onDestroy()
     }

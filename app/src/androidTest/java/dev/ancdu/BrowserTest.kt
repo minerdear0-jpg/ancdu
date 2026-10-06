@@ -34,6 +34,12 @@ class BrowserTest {
     }
 
     private fun scan(dir: File) {
+        val h = scanned(dir)
+        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, "скан", false) }   // Holder.set — только главный поток
+    }
+
+    /** Готовое дерево [dir], ещё не в Holder. */
+    private fun scanned(dir: File): Long {
         val h = Native.scanStart(dir.path, true, 2, IntArray(1))
         val p = LongArray(6)
         val deadline = System.currentTimeMillis() + 10_000
@@ -43,7 +49,7 @@ class BrowserTest {
             Thread.sleep(25)
         }
         assertEquals(ST_DONE.toLong(), p[0])
-        Holder.set(h, Kind.SCAN, dir.path, "скан", false)
+        return h
     }
 
     /** Только с главного потока. */
@@ -100,6 +106,48 @@ class BrowserTest {
 
         ins.runOnMainSync { act2.finish() }
         dir.deleteRecursively()
+    }
+
+    /**
+     * Смена сессии при открытом браузере: Holder.set синхронно отцепляет его от старого дескриптора
+     * (до того как free(old) уходит на io), затем экран пересоздаётся на новом дереве.
+     */
+    @Test fun setWhileBrowserResumedDetachesSynchronously() {
+        val ctx = ins.targetContext
+        val a = File(ctx.cacheDir, "br3a").apply { deleteRecursively(); mkdirs() }
+        val b = File(ctx.cacheDir, "br3b").apply { deleteRecursively(); mkdirs() }
+        File(a, "one.bin").writeBytes(ByteArray(10))
+        File(a, "two.bin").writeBytes(ByteArray(20))
+        File(b, "only.bin").writeBytes(ByteArray(30))
+        scan(a)
+        val act1 = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        var count = 0
+        ins.runOnMainSync { count = act1.list.source!!.count }
+        assertEquals(2, count)
+
+        val hb = scanned(b)
+        // Заслонка на io: free(old) не выполнится, пока не откроем, — отцепление не может «успеть» за счёт io.
+        val gate = CountDownLatch(1)
+        Holder.io.execute { gate.await(30, TimeUnit.SECONDS) }
+        ins.runOnMainSync {
+            Holder.set(hb, Kind.SCAN, b.path, "скан", false)
+            assertNull(act1.list.source)   // отцеплен синхронно, внутри set
+        }
+        gate.countDown()
+
+        assertTrue(waitFor { resumedBrowser().let { it != null && it !== act1 } })
+        lateinit var act2: BrowserActivity
+        ins.runOnMainSync { act2 = resumedBrowser()!! }
+        ins.runOnMainSync {
+            val src = act2.list.source!!
+            assertEquals(1, src.count)
+            val row = Row().also { src.bind(0, it) }
+            assertEquals("only.bin", row.name)
+        }
+        ins.runOnMainSync { act2.finish() }
+        a.deleteRecursively(); b.deleteRecursively()
     }
 
     @Test fun navigateSortDelete() {
