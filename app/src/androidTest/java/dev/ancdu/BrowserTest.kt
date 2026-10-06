@@ -191,4 +191,34 @@ class BrowserTest {
         ins.runOnMainSync { act.finish() }
         dir.deleteRecursively()
     }
+
+    /** Кэш: каталог удалить нельзя (содержимое могло измениться после скана), файл — можно. */
+    @Test fun cacheRefusesDirDelete() {
+        val ctx = ins.targetContext
+        val dir = File(ctx.cacheDir, "br4").apply { deleteRecursively(); mkdirs() }
+        File(dir, "sub").mkdirs()
+        File(dir, "sub/big.bin").writeBytes(ByteArray(300_000))
+        File(dir, "f.txt").writeBytes(ByteArray(10))
+        val h = scanned(dir)
+        ins.runOnMainSync { Holder.set(h, Kind.CACHE, dir.path, "кэш от 01.01 00:00", false) }
+
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        val row = Row()
+        fun name(i: Int): String {
+            var s = ""
+            ins.runOnMainSync { row.reset(); act.list.source!!.bind(i, row); s = row.name }
+            return s
+        }
+        assertEquals("sub/", name(0))
+        assertEquals(Int.MIN_VALUE, act.deleteBlocking(0))   // отказ: удаление не запускалось
+        assertTrue(File(dir, "sub/big.bin").exists())
+        assertEquals("f.txt", name(1))
+        assertEquals(0, act.deleteBlocking(1))
+        assertFalse(File(dir, "f.txt").exists())
+
+        ins.runOnMainSync { act.finish() }
+        dir.deleteRecursively()
+    }
 }
