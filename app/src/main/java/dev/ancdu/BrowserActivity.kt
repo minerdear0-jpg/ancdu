@@ -96,6 +96,8 @@ class BrowserActivity : Activity() {
     private var pinned = false
     /** Идёт [promotePending]: смену сессии экран обрабатывает сам, без recreate. */
     private var promoting = false
+    /** Фоновый скан мог положить дерево в Holder.offer (тот слушателей не зовёт). */
+    private val onBg: () -> Unit = { refreshPending() }
 
     /**
      * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
@@ -257,6 +259,7 @@ class BrowserActivity : Activity() {
         })
         Holder.addDeleteListener(onDeleted)
         Holder.addSessionListener(onSession)
+        BgScan.addListener(onBg)
         if (busy) {
             // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
             showWait()
@@ -318,6 +321,7 @@ class BrowserActivity : Activity() {
     override fun onDestroy() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
+        BgScan.removeListener(onBg)
         if (pinned) { Holder.unpinBrowser(); pinned = false }
         dismissWait()
         ui.removeCallbacks(restoreFooter)

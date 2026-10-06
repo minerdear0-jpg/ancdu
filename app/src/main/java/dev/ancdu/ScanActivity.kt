@@ -2,7 +2,6 @@ package dev.ancdu
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -20,6 +19,8 @@ import android.widget.Toast
 
 const val EXTRA_ROOT = "root"
 const val EXTRA_SU = "su"
+/** Не запускать свой скан, а ждать идущий фоновый ([BgScan]) — никогда не второй скан. */
+const val EXTRA_ATTACH = "attach"
 
 class ScanActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
@@ -43,7 +44,12 @@ class ScanActivity : Activity() {
     var built = false
         private set
     /** Для тестов: число файлов, показанное последним обновлением. */
-    val files: Long get() = p[1]
+    val files: Long get() = if (attach) BgScan.p[1] else p[1]
+    /** Режим attach: прогресс — из BgScan (его дескриптор приватен), Native этот экран не зовёт. */
+    var attach = false
+        private set
+    private var attachedReg = false
+    private val onBg: () -> Unit = { attachedTick() }
 
     private val liveSrc = object : RowSource {
         override val count get() = liveN
@@ -71,6 +77,15 @@ class ScanActivity : Activity() {
         darkBars()
         root = intent.getStringExtra(EXTRA_ROOT) ?: "/storage/emulated/0"
         su = intent.getBooleanExtra(EXTRA_SU, false)
+        attach = intent.getBooleanExtra(EXTRA_ATTACH, false)
+        if (attach) {
+            root = BgScan.ROOT; su = false
+            setContentView(View(this).apply { setBackgroundColor(C.BG) })
+            BgScan.attached++; attachedReg = true
+            BgScan.addListener(onBg)
+            attachedTick()
+            return
+        }
         val started = savedInstanceState != null
         val saved = savedInstanceState?.getLong("h") ?: 0L
         val resumed = started && saved != 0L && Holder.h == saved &&
@@ -132,7 +147,8 @@ class ScanActivity : Activity() {
         }
         cur = label("", 13f, mono = true).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.START }
         live = NcduListView(this).apply { source = liveSrc }
-        val cancel = action("Отмена", null, false) { abort(true) }
+        val cancel = if (attach) action("Закрыть", "скан продолжится в фоне", false) { finished = true; finish() }
+                     else action("Отмена", null, false) { abort(true) }
         setContentView(vbox(16).apply {
             setBackgroundColor(C.BG)
             setPadding(pad, dp(28), pad, dp(24))
@@ -144,7 +160,7 @@ class ScanActivity : Activity() {
                 background = rounded(C.SURFACE, dp(14).toFloat())
                 addView(label("Сейчас", 13f, C.MUTED)); addView(cur)
             })
-            addView(label("Крупнейшие пока", 13f, C.MUTED))
+            if (!attach) addView(label("Крупнейшие пока", 13f, C.MUTED))
             addView(live, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(cancel, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
@@ -172,13 +188,38 @@ class ScanActivity : Activity() {
         }
     }
 
-    private fun render(h: Long, path: ByteArray) {
+    private fun renderTiles(p: LongArray, path: String) {
         val secs = maxOf(p[4], 1) / 1000.0
         tiles[0].text = Fmt.count(p[1])
         tiles[1].text = Fmt.size(p[2])
         tiles[2].text = Fmt.count((p[1] / secs).toLong()) + "/с"
         tiles[3].text = String.format(java.util.Locale.ROOT, "%02d:%04.1f", p[4] / 60000, (p[4] % 60000) / 1000.0)
-        cur.text = Native.str(path)
+        cur.text = path
+    }
+
+    /**
+     * Режим attach: каждый тик BgScan. Скан идёт — плитки из его копии progress; закончился —
+     * дерево (подставленное или ждущее — тогда promote) открывается в браузере, иначе ошибка.
+     */
+    private fun attachedTick() {
+        if (finished) return
+        if (BgScan.active) {
+            if (!built && BgScan.p[4] >= SHOW_AFTER_MS) buildUi()
+            if (built) renderTiles(BgScan.p, BgScan.path)
+            return
+        }
+        finished = true
+        if (Holder.pending != 0L && Holder.pendingRoot == BgScan.ROOT && !Holder.deleting) Holder.promote()
+        if (Holder.h != 0L && Holder.root == BgScan.ROOT) {
+            startActivity(Intent(this, BrowserActivity::class.java))
+            finish()
+        } else {
+            failure = alert("Скан не удался", BgScan.failure ?: "неизвестная ошибка", onDismiss = ::leave)
+        }
+    }
+
+    private fun render(h: Long, path: ByteArray) {
+        renderTiles(p, Native.str(path))
         liveN = Native.liveTop(h, liveNodes, liveDisk)
         sortLive()
         live.refresh()
@@ -226,19 +267,11 @@ class ScanActivity : Activity() {
     private fun done(h: Long) {
         finished = true
         log()
-        if (su) Root.rememberMemfd(this, p[5] == 1L)
-        val app: Context = applicationContext
-        val file = Holder.cacheFile(app, root, su)
-        val meta = "$root|$su|${p[1]}|${p[4]}|${System.currentTimeMillis()}"
+        if (su) { Root.rememberMemfd(this, p[5] == 1L); Root.granted(this) }
+        // Кэш и запись «caches» — на io (FIFO с delete и free этого же дескриптора), см. Scans.finish.
+        val d = Scans.finish(this, h, root, su, p)
         // Итог скана — в плашку браузера: «скан · 69 312 эл. · 0,2 с». Тот же дескриптор: только поля.
-        val items = LongArray(4).also { Native.nodeInfo(h, intArrayOf(0), 1, it) }[2]
-        Holder.set(h, Holder.kind, root, Holder.label + " · ${Fmt.count(items)} эл. · " +
-            String.format(java.util.Locale.forLanguageTag("ru"), "%.1f с", p[4] / 1000.0), su)
-        // На io: FIFO с delete и free этого же дескриптора (контракт Native).
-        Holder.io.execute {
-            if (Native.saveCache(h, file.path) == 0)
-                app.getSharedPreferences("caches", Context.MODE_PRIVATE).edit().putString(file.name, meta).apply()
-        }
+        Holder.set(h, Holder.kind, root, Holder.label + d.suffix, su)
         startActivity(Intent(this, BrowserActivity::class.java))
         finish()
     }
@@ -249,12 +282,19 @@ class ScanActivity : Activity() {
 
     @Deprecated("Activity API")
     override fun onBackPressed() {
-        if (finished) finish() else abort(true)
+        if (finished || attach) { finished = true; finish() } else abort(true)
     }
 
     override fun onDestroy() {
         ui.removeCallbacks(tick)
         failure?.dismiss()
+        if (attachedReg) {
+            // Фоновый скан не наш: не отменяется, просто перестаём ждать.
+            attachedReg = false
+            BgScan.attached--
+            BgScan.removeListener(onBg)
+            finished = true
+        }
         // Закрыли иначе (например, смахнули задачу) посреди скана — не оставляем его и su висеть.
         if (isFinishing && !finished) abort(false)
         super.onDestroy()

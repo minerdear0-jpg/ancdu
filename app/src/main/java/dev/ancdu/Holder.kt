@@ -181,6 +181,8 @@ object Holder {
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
         delDisk = disk
         synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
+        // Идущий фоновый скан и непоказанное дерево могли увидеть удаляемое — пересканировать.
+        BgScan.deleteStarted()
         io.execute {
             var r = -1
             try {
@@ -198,6 +200,7 @@ object Holder {
                     deleting = false
                     for (l in deleteListeners.toList()) l(r)
                     done(r)
+                    BgScan.deleteFinished()
                 }
             }
         }

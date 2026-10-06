@@ -34,6 +34,10 @@ object Scans {
             String.format(java.util.Locale.forLanguageTag("ru"), "%.1f с", ms / 1000.0)
     }
 
+    /** Итог последнего скана общего хранилища без root в этом процессе (любым путём). Главный
+     *  поток; тесты сбрасывают в null. */
+    var lastStorage: Done? = null
+
     fun meta(ctx: Context, root: String, su: Boolean): CacheMeta? =
         CacheMeta.parse(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(Holder.cacheFile(ctx, root, su).name, null))
@@ -49,6 +53,7 @@ object Scans {
         val prev = meta(app, root, su)?.disk
         val inf = LongArray(4).also { Native.nodeInfo(h, intArrayOf(0), 1, it) }
         val done = Done(inf[0], inf[2], System.currentTimeMillis(), p[4], prev)
+        if (root == STORAGE && !su) lastStorage = done
         val meta = CacheMeta(root, su, p[1], p[4], done.time, done.disk, done.items).format()
         Holder.io.execute {
             if (Native.saveCache(h, file.path) == 0)
