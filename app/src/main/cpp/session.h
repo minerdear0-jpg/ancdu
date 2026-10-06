@@ -57,4 +57,9 @@ int media_path(const char *in, char *out, size_t cap);
  * зовёт stop только пока его удаление не вернулось). */
 uint64_t sess_delete_progress(session *s);
 void sess_delete_stop(session *s);
+/* Помечает узел F_ERR (удалён частично мимо sess_delete — массовым шагом MediaStore).
+ * Трогает только flags узла; вызывать по тем же правилам, что sess_delete (не параллельно
+ * с другими вызовами на сессии, кроме progress/stop). 0 или -EINVAL (нет арены, node 0 или
+ * вне дерева). */
+int sess_mark_err(session *s, uint32_t node);
 void sess_free(session *s);

@@ -52,6 +52,18 @@ int main(void) {
   CHECK(sess_live_name(s, 99, &nl) == NULL);
   uint64_t total = a->disk[0];
 
+  /* sess_mark_err: только флаг узла, границы проверяются */
+  CHECK(sess_mark_err(s, 0) == -EINVAL);
+  CHECK(sess_mark_err(s, (uint32_t)atomic_load(&a->h->count)) == -EINVAL);
+  CHECK(sess_mark_err(s, UINT32_MAX) == -EINVAL);
+  CHECK((a->flags[1] & F_ERR) == 0);
+  uint64_t d1 = a->disk[1];
+  CHECK(sess_mark_err(s, 1) == 0);
+  CHECK(a->flags[1] & F_ERR);
+  CHECK_EQ_U(a->disk[1], d1);
+  CHECK_EQ_U(a->disk[0], total);
+  CHECK(sess_mark_err(s, 1) == 0); /* повторно — то же */
+
   /* кэш */
   const char *cp = pj(C, "last.ancdu");
   CHECK(sess_save_cache(s, cp) == 0);
@@ -80,6 +92,7 @@ int main(void) {
   CHECK(x != NULL && err == 0);
   CHECK(sess_index_add(x, "DCIM/", "a.jpg", 5000) == 0);
   CHECK(sess_arena(x) == NULL); /* ещё строится */
+  CHECK(sess_mark_err(x, 1) == -EINVAL);
   CHECK(sess_index_finish(x) == 0);
   CHECK(sess_arena(x) != NULL);
   CHECK_EQ_U(sess_arena(x)->apparent[0], 5000);

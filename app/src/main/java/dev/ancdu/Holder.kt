@@ -189,7 +189,8 @@ object Holder {
      * [bulk] — необязательный массовый шаг MediaStore на io ДО ядра (дескриптор он не трогает):
      * получает «нажат ли Стоп» и счётчик удалённых строк. Затем ВСЕГДА Native.delete/deleteMedia
      * на том же узле — кроме «Стопа» до этого момента (в том числе пока удаление ждало в
-     * очереди io): тогда ядро не вызывается, итог -EINTR (DeleteSteps).
+     * очереди io): тогда ядро не вызывается, итог -EINTR (DeleteSteps); если массовый шаг уже
+     * что-то удалил — узел помечается F_ERR (Native.markErr), дерево не выдаёт его за целый.
      * [media] — Native.deleteMedia (нужен [helper]): узел удаляется через /data/media в обход FUSE.
      * [afterIo] — на io сразу после шага ядра с его кодом, если удаление не отменено
      * (например, очистка строк MediaStore).
@@ -227,7 +228,10 @@ object Holder {
                         if (media && helper != null) Native.deleteMedia(handle, node, helper)
                         else Native.delete(handle, node, helper)
                     },
-                    onBulkError = { Log.w("ancdu", "bulk delete failed, rm_tree continues", it) })
+                    onBulkError = { Log.w("ancdu", "bulk delete failed, rm_tree continues", it) },
+                    bulkRows = { synchronized(delLock) { delRows } },
+                    // На io, ядро не вызывалось и deleteProgress/deleteStop ядро не трогают (delHandle 0).
+                    markPartial = { runCatching { Native.markErr(handle, node) } })
             } finally {
                 synchronized(delLock) {
                     // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.

@@ -58,4 +58,27 @@ class DeleteStepsTest {
         assertEquals(1000, DeleteProgress.permille(DeleteSteps.done(6000, 10), 5001))
         assertEquals("5 001 / 5 001 эл. · 0:06", DeleteProgress.line(DeleteSteps.done(6000, 10), 5001, 6200))
     }
+
+    @Test fun stopAfterBulkRowsMarksNodePartial() {
+        var marked = 0
+        val r = DeleteSteps.run(bulk = {}, arm = { false }, native = { throw AssertionError("ядро") },
+            bulkRows = { 42 }, markPartial = { marked++ })
+        assertEquals(-DeleteProgress.EINTR, r)
+        assertEquals(1, marked)
+    }
+
+    @Test fun stopWithNothingDeletedDoesNotMark() {
+        var marked = 0
+        DeleteSteps.run(bulk = {}, arm = { false }, native = { 0 }, bulkRows = { 0 }, markPartial = { marked++ })
+        DeleteSteps.run(bulk = null, arm = { false }, native = { 0 }, markPartial = { marked++ })
+        assertEquals(0, marked)
+    }
+
+    @Test fun nativeStepDoesNotMark() {
+        var marked = 0
+        // Ядро вызвано — оно само решает: целиком удалено или F_ERR.
+        assertEquals(-5, DeleteSteps.run(bulk = {}, arm = { true }, native = { -5 }, bulkRows = { 9 },
+            markPartial = { marked++ }))
+        assertEquals(0, marked)
+    }
 }

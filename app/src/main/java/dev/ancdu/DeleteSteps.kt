@@ -6,14 +6,20 @@ package dev.ancdu
  * 2. [arm] под замком вызывающего: false — «Стоп» уже нажат, ядро не зовётся, итог -EINTR
  *    (удалённое массовым шагом остаётся удалённым); true — дескриптор открыт для deleteStop.
  * 3. [native] — Native.delete/deleteMedia: всегда, если не было «Стопа», — источник истины дерева.
+ * «Стоп» после того, как массовый шаг что-то удалил ([bulkRows] > 0): ядро не вызывается, но
+ * дерево уже не совпадает с диском — [markPartial] помечает узел F_ERR (как частичное удаление).
  */
 object DeleteSteps {
     fun run(bulk: (() -> Unit)?, arm: () -> Boolean, native: () -> Int,
-            onBulkError: (Throwable) -> Unit = {}): Int {
+            onBulkError: (Throwable) -> Unit = {}, bulkRows: () -> Long = { 0L },
+            markPartial: () -> Unit = {}): Int {
         if (bulk != null) {
             try { bulk() } catch (e: Exception) { onBulkError(e) }
         }
-        if (!arm()) return -DeleteProgress.EINTR
+        if (!arm()) {
+            if (bulkRows() > 0) markPartial()
+            return -DeleteProgress.EINTR
+        }
         return native()
     }
 

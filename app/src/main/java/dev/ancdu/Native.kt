@@ -53,6 +53,8 @@ object Native {
     @JvmStatic external fun deleteProgress(h: Long): Long
     /** Просит остановить идущий delete (он вернёт -EINTR). Параллельно с delete — можно. */
     @JvmStatic external fun deleteStop(h: Long)
+    /** Узел — F_ERR (массовый шаг MediaStore удалил часть, ядро не вызывалось). На io, как delete. */
+    @JvmStatic external fun markErr(h: Long, node: Int): Int
     @JvmStatic external fun statfs(path: String, out: LongArray): Int
     @JvmStatic external fun free(h: Long)
 

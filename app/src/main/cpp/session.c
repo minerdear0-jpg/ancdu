@@ -189,6 +189,13 @@ void sess_delete_stop(session *s) {
   pthread_mutex_unlock(&s->mu);
 }
 
+int sess_mark_err(session *s, uint32_t node) {
+  arena *a = sess_arena(s);
+  if (!a || node == 0 || node >= atomic_load(&a->h->count)) return -EINVAL;
+  a->flags[node] |= F_ERR;
+  return 0;
+}
+
 int sess_wait(session *s) {
   if (s->have_thread) {
     pthread_join(s->th, NULL);

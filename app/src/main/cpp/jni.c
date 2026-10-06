@@ -266,6 +266,14 @@ FN(void, deleteStop)(JNIEnv *e, jclass c, jlong h) {
   if (h) sess_delete_stop(SESS(h));
 }
 
+/* Массовый шаг MediaStore удалил часть узла, а шаг ядра не запускался («Стоп»): узел — F_ERR.
+ * На Holder.io по правилам delete. */
+FN(jint, markErr)(JNIEnv *e, jclass c, jlong h, jint node) {
+  (void)e; (void)c;
+  if (!h || node <= 0) return -EINVAL;
+  return sess_mark_err(SESS(h), (uint32_t)node);
+}
+
 /* Удаление в обход FUSE: узел /storage/emulated/<n>/X удаляется как /data/media/<n>/X под su. */
 FN(jint, deleteMedia)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
   (void)c;
