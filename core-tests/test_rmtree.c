@@ -60,6 +60,29 @@ static int cross_fs_child(const char *t) {
   CHECK(access(pj(t, "x/bf"), F_OK) == 0);
   CHECK(access(pj(t, "other/src"), F_OK) == 0);
 
+  /* то же параллельно (4 рабочих): bind-файл по быстрому пути d_type, tmpfs-каталог */
+  mk_dir(pj(t, "y"));
+  for (int i = 0; i < 300; i++) {
+    char fn[32];
+    snprintf(fn, sizeof fn, "y/f%d", i);
+    write_file(pj(t, fn), 1);
+  }
+  mk_dir(pj(t, "y/mnt"));
+  if (mount("none", pj(t, "y/mnt"), "tmpfs", 0, NULL) != 0) return 1;
+  write_file(pj(t, "y/mnt/inside"), 10);
+  write_file(pj(t, "y/bf"), 1);
+  if (mount(pj(t, "other/src"), pj(t, "y/bf"), NULL, MS_BIND, NULL) != 0) return 1;
+  _Atomic uint64_t done = 0;
+  CHECK(rm_tree_ex(pj(t, "y"), 4, &done, NULL) == -EXDEV);
+  CHECK_EQ_U(atomic_load(&done), 300);
+  CHECK(access(pj(t, "y/f0"), F_OK) != 0);
+  CHECK(access(pj(t, "y/mnt/inside"), F_OK) == 0);
+  CHECK(access(pj(t, "y/bf"), F_OK) == 0);
+  CHECK(access(pj(t, "other/src"), F_OK) == 0);
+  CHECK(umount(pj(t, "y/bf")) == 0);
+  CHECK(umount(pj(t, "y/mnt")) == 0);
+  CHECK(rm_tree(pj(t, "y")) == 0);
+
   CHECK(umount(pj(t, "x/bf")) == 0);
   CHECK(umount(pj(t, "x/mnt")) == 0);
   CHECK(umount(pj(t, "other")) == 0);
