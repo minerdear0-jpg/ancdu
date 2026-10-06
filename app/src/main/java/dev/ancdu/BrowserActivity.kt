@@ -89,6 +89,10 @@ class BrowserActivity : Activity() {
     lateinit var badge: TextView
         private set
     private lateinit var footer: TextView
+    /** «галерея: очистка N…», пока идёт MediaClean; иначе скрыта. */
+    lateinit var gallery: TextView
+        private set
+    private val onClean: () -> Unit = { renderGallery() }
     private lateinit var chips: LinearLayout
     /** Амберный чип «новее · обновить»: в Holder ждёт более новое дерево того же корня. */
     lateinit var newer: TextView
@@ -253,6 +257,10 @@ class BrowserActivity : Activity() {
             visibility = View.GONE
         }
         footer = label("", 12f, C.MUTED, mono = true).apply { setPadding(dp(16), dp(10), dp(16), dp(10)) }
+        gallery = label("", 12f, C.MUTED, mono = true).apply {
+            setPadding(dp(16), 0, dp(16), dp(10))
+            visibility = View.GONE
+        }
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(top)
@@ -261,8 +269,11 @@ class BrowserActivity : Activity() {
                 addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(footer)
+            addView(gallery)
         })
         Holder.addDeleteListener(onDeleted)
+        MediaClean.addListener(onClean)
+        renderGallery()
         Holder.addSessionListener(onSession)
         BgScan.addListener(onBg)
         if (busy) {
@@ -336,6 +347,7 @@ class BrowserActivity : Activity() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
         BgScan.removeListener(onBg)
+        MediaClean.removeListener(onClean)
         unpin()
         dismissWait()
         ui.removeCallbacks(restoreFooter)
@@ -344,6 +356,12 @@ class BrowserActivity : Activity() {
     }
 
     private fun progress(): LongArray = LongArray(6).also { Native.progress(h, it) }
+
+    private fun renderGallery() {
+        if (!::gallery.isInitialized) return
+        gallery.visibility = if (MediaClean.running) View.VISIBLE else View.GONE
+        gallery.text = "галерея: очистка ${Fmt.count(MediaClean.cleaned)}…"
+    }
 
     private fun renderChips() {
         chips.removeAllViews()
@@ -586,14 +604,18 @@ class BrowserActivity : Activity() {
         // Без root в общем хранилище: сначала пачками через MediaProvider, затем ядро — как всегда.
         val bulkPath = MediaBulk.target(pathBytes, viaRoot = Holder.viaRoot, fast = fast)
         val cr = app.contentResolver
+        val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
         Holder.delete(handle, target, helper, done, name, items, disk, media = fast,
             bulk = bulkPath?.let { p -> { stopped, add ->
                 val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
                 out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
             } },
-            afterIo = if (!fast) null else { _ ->
-                // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки.
-                MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
+            afterIo = if (!fast) null else { r ->
+                // MediaProvider не видел удаления в обход FUSE — убираем устаревшие строки:
+                // путь исчез — пачками в фоне (MediaClean); частично — пересканирование, как раньше
+                // (удаление строк через MediaProvider удалило бы и оставшиеся файлы).
+                if (r == 0 && cleanPath != null) MediaClean.enqueue(app, cleanPath, dir)
+                else MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
             })
         showWait()
         return true

@@ -147,9 +147,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(buttons())
     }
 
-    /** «быстро через root»: удаление через /data/media/<n>/ под su, затем пересканирование галереи. */
+    /** «быстро через root»: удаление через /data/media/<n>/ под su, затем очистка галереи в фоне (MediaClean). */
     private fun fastRow(): View = act.vbox(2).apply {
-        val note = act.label("галерея обновится через несколько секунд", 12f, C.MUTED)
+        val note = act.label("место освобождается сразу; галерея обновится в фоне", 12f, C.MUTED)
         val box = CheckBox(act).apply {
             text = "быстро через root (в обход FUSE)"
             textSize = 14f
