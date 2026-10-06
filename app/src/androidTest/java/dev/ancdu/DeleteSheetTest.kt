@@ -222,15 +222,16 @@ class DeleteSheetTest {
     }
 
     /** Галочка «быстро через root»: только при доступном быстром пути, по умолчанию от 1000 эл.
+     *  и только при выданном root (неизвестно/отказ — выключена).
      *  Лист строится из синтетического превью; «Удалить» не нажимается — ничего не удаляется. */
     @Test fun fastRootCheckbox() {
         val dir = fixture("ds-fast")
         File(dir, "a.bin").writeBytes(ByteArray(10))
         val a = browse(dir.path)
-        fun pv(fast: Boolean, items: Long) = DeletePreview(
+        fun pv(fast: Boolean, items: Long, root: RootState = RootState.GRANTED) = DeletePreview(
             name = "DCIM", path = "/storage/emulated/0/DCIM", dir = true, disk = 1000, apparent = 1000,
             items = items, flags = F_DIR, top = emptyList(), more = 0, owner = null, viaRoot = false,
-            block = null, kind = Kind.SCAN, cacheTime = null, fast = fast)
+            block = null, kind = Kind.SCAN, cacheTime = null, fast = fast, root = root)
         ins.runOnMainSync {
             var chosen: Boolean? = null
             val big = DeleteSheet(a, pv(true, 1500)) { chosen = it }.also { it.show() }
@@ -238,6 +239,12 @@ class DeleteSheetTest {
             assertTrue(big.fastBox!!.isChecked)
             assertEquals("быстро через root (в обход FUSE)", big.fastBox!!.text.toString())
             big.dismiss()
+            for (st in listOf(RootState.UNKNOWN, RootState.DENIED)) {
+                val unsure = DeleteSheet(a, pv(true, 1500, st)) { chosen = it }.also { it.show() }
+                assertNotNull(unsure.fastBox)
+                assertFalse("$st", unsure.fastBox!!.isChecked)
+                unsure.dismiss()
+            }
             val small = DeleteSheet(a, pv(true, 10)) { chosen = it }.also { it.show() }
             assertFalse(small.fastBox!!.isChecked)
             small.dismiss()

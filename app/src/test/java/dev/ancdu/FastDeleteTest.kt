@@ -37,8 +37,11 @@ class FastDeleteTest {
         assertEquals(DeletePolicy.ANDROID_DIR, DeletePolicy.exactBlockReason("/data/media/0/Android"))
     }
 
-    @Test fun defaultsOnFromThousandItems() {
-        assertFalse(DeletePolicy.fastByDefault(999))
-        assertTrue(DeletePolicy.fastByDefault(1000))
+    @Test fun defaultsOnFromThousandItemsOnlyWhenRootGranted() {
+        assertFalse(DeletePolicy.fastByDefault(999, RootState.GRANTED))
+        assertTrue(DeletePolicy.fastByDefault(1000, RootState.GRANTED))
+        // root не подтверждён или отклонён — по умолчанию выключено
+        for (s in listOf(RootState.UNKNOWN, RootState.ASKING, RootState.DENIED))
+            assertFalse("$s", DeletePolicy.fastByDefault(100_000, s))
     }
 }

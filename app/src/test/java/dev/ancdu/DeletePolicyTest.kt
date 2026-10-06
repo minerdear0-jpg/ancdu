@@ -178,6 +178,26 @@ class DeletePolicyTest {
     }
 }
 
+class PendingTreeTest {
+    private fun reason(path: String, flags: Int, kind: Kind, pending: Boolean) =
+        DeletePolicy.blockReason(path, false, false, "/storage/emulated/0", flags, kind, pending)
+
+    /** Есть новее (pending) при дереве из кэша: ни файлы, ни каталоги не удаляются. */
+    @Test fun cacheWithNewerTreeBlocksEverything() {
+        assertEquals(DeletePolicy.NEWER, reason("/storage/emulated/0/a.bin", 0, Kind.CACHE, true))
+        assertEquals(DeletePolicy.NEWER, reason("/storage/emulated/0/DCIM", F_DIR, Kind.CACHE, true))
+        assertEquals("есть новее — обновите", DeletePolicy.NEWER)
+        // без pending — прежние правила кэша
+        assertNull(reason("/storage/emulated/0/a.bin", 0, Kind.CACHE, false))
+        assertEquals(DeletePolicy.STALE_CACHE, reason("/storage/emulated/0/DCIM", F_DIR, Kind.CACHE, false))
+        // живой скан с pending — удалять можно (pending станет «грязным» и пересканируется)
+        assertNull(reason("/storage/emulated/0/a.bin", 0, Kind.SCAN, true))
+        assertNull(reason("/storage/emulated/0/DCIM", F_DIR, Kind.SCAN, true))
+        // системные запреты сильнее
+        assertEquals(DeletePolicy.ANDROID_DIR, reason("/storage/emulated/0/Android", F_DIR, Kind.CACHE, true))
+    }
+}
+
 class DeleteTierTest {
     @Test fun pauseTier() {
         val gib = 1L shl 30

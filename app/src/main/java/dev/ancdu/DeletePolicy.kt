@@ -10,6 +10,7 @@ object DeletePolicy {
     const val SYSTEM_DIR = "системный каталог — удаление отключено"
     const val ANDROID_DIR = "служебная папка Android — удаление отключено"
     const val STALE_CACHE = "кэш мог устареть — пересканируйте, чтобы удалить каталог"
+    const val NEWER = "есть новее — обновите"
 
     private val PROTECTED = listOf("/data/system", "/data/adb", "/data/app", "/data/misc",
         "/system", "/vendor", "/apex", "/proc", "/sys", "/dev")
@@ -65,15 +66,17 @@ object DeletePolicy {
 
     /**
      * Причина запрета или null — можно удалять. [scanRoot] — сам корень скана; [parentIsRoot] — прямой
-     * потомок корня скана ([sessionRoot] — путь корня).
+     * потомок корня скана ([sessionRoot] — путь корня). [pending] — в Holder ждёт более новое
+     * дерево: из кэша тогда не удаляется ничего, ни файлы, ни каталоги.
      */
     fun blockReason(path: String, scanRoot: Boolean, parentIsRoot: Boolean, sessionRoot: String,
-                    flags: Int, kind: Kind): String? = when {
+                    flags: Int, kind: Kind, pending: Boolean = false): String? = when {
         flags and F_OTHERFS != 0 -> OTHER_FS
         scanRoot -> SYSTEM
         parentIsRoot && sessionRoot.trimEnd('/').isEmpty() -> SYSTEM
         isSystemPath(path) -> SYSTEM
         else -> exactBlockReason(path) ?: dataBlockReason(path) ?: when {
+            kind == Kind.CACHE && pending -> NEWER
             flags and F_DIR == 0 -> null
             kind == Kind.INDEX -> INDEX_DIR
             // Каталог в кэше — содержимое на диске могло измениться после скана.
@@ -112,8 +115,11 @@ object DeletePolicy {
         return if (isSystemPath(m)) SYSTEM else exactBlockReason(m) ?: dataBlockReason(m)
     }
 
-    /** Галочка «быстро через root» включена по умолчанию от 1000 элементов. */
-    fun fastByDefault(items: Long): Boolean = items >= 1000
+    /**
+     * Галочка «быстро через root» включена по умолчанию от 1000 элементов — и только если root
+     * уже выдан ([RootState.GRANTED]); неизвестно или отказ (-EPERM) — выключена.
+     */
+    fun fastByDefault(items: Long, root: RootState): Boolean = root == RootState.GRANTED && items >= 1000
 
     private const val EPERM = 1
 

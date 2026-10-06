@@ -43,6 +43,8 @@ class DeletePreview(
     val cacheTime: String?,
     /** Доступен быстрый путь root в обход FUSE (/storage/emulated/<n>/X через /data/media). */
     val fast: Boolean = false,
+    /** Известное о root (Root.state): галочка быстрого пути по умолчанию — только при GRANTED. */
+    val root: RootState = RootState.UNKNOWN,
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -153,7 +155,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             textSize = 14f
             setTextColor(C.TEXT)
             minHeight = act.dp(44)
-            isChecked = DeletePolicy.fastByDefault(p.items)
+            isChecked = DeletePolicy.fastByDefault(p.items, p.root)
             setOnCheckedChangeListener { _, on -> note.visibility = if (on) View.VISIBLE else View.GONE }
         }
         note.visibility = if (box.isChecked) View.VISIBLE else View.GONE
