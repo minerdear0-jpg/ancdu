@@ -2,16 +2,18 @@ package dev.ancdu
 
 /** Окружение канарейки MediaClean: в приложении — MediaStore и файлы, в JVM-тестах — подделка. */
 interface CanaryEnv {
-    /** Создаёт файл-канарейку в своём новом каталоге; абсолютный путь или null. */
-    fun create(): String?
+    /** Создаёт свой новый (mkdtemp) каталог канарейки; абсолютный путь или null. */
+    fun makeDir(): String?
+    /** Пишет файл-канарейку в [dir]; его абсолютный путь. */
+    fun writeFile(dir: String): String
     /** Ждёт (ограниченно) строку MediaStore ровно этого пути; её _id или null. */
     fun awaitRow(path: String): Long?
     /** Удаляет строку [id] пути [path] режимом «только строки» (deletedata=false); число удалённых. */
     fun deleteRowOnly(id: Long, path: String): Int
     fun fileExists(path: String): Boolean
     fun rowExists(path: String): Boolean
-    /** Убирает файл и каталог канарейки по абсолютному пути. */
-    fun cleanup(path: String)
+    /** Убирает каталог канарейки [dir] (и её файл, если он есть) по абсолютному пути. */
+    fun cleanup(dir: String)
 }
 
 /**
@@ -22,15 +24,17 @@ interface CanaryEnv {
 object CleanCanary {
     /** Канарейка: true — режим «только строки» работает именно так. Любой сбой — false. */
     fun rowsOnlyWorks(env: CanaryEnv): Boolean {
-        val path = try { env.create() } catch (e: Exception) { null } ?: return false
+        val dir = try { env.makeDir() } catch (e: Exception) { null } ?: return false
+        // Всё после создания каталога — под finally: каталог убирается при любом исходе.
         try {
+            val path = env.writeFile(dir)
             val id = env.awaitRow(path) ?: return false
             val n = env.deleteRowOnly(id, path)
             return n == 1 && env.fileExists(path) && !env.rowExists(path)
         } catch (e: Exception) {
             return false
         } finally {
-            try { env.cleanup(path) } catch (e: Exception) { /* уборка — по возможности */ }
+            try { env.cleanup(dir) } catch (e: Exception) { /* уборка — по возможности */ }
         }
     }
 
@@ -44,6 +48,10 @@ object CleanCanary {
     fun mode(rowsOnlyOk: Boolean, pathExists: Boolean): Mode =
         if (rowsOnlyOk && !pathExists) Mode.ROWS_ONLY else Mode.SCAN
 
-    /** После очистки «только строк»: прервана или сбой — досверить сканером. */
-    fun needsScanAfter(out: MediaBulk.Outcome): Boolean = out.stopped || out.error != null
+    /**
+     * После очистки «только строк» досверить сканером, если строки могли остаться: прервана,
+     * сбой (в т.ч. страница без продвижения), ничего не удалено или удалено меньше найденного.
+     */
+    fun needsScanAfter(out: MediaBulk.Outcome): Boolean =
+        out.stopped || out.error != null || out.deleted <= 0 || out.deleted < out.matched
 }

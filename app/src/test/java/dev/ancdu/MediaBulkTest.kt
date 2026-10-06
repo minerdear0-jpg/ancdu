@@ -364,14 +364,47 @@ class MediaBulkTest {
     @Test fun symlinkAnywhereInSubtreeIsFound() {
         val t = tree(Triple(1, 2, F_DIR), Triple(1, 3, 0), Triple(2, 4, F_DIR), Triple(4, 5, F_SYMLINK),
             Triple(9, 10, F_SYMLINK))
-        assertTrue(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, t))
-        assertTrue(MediaBulk.subtreeHas(4, F_DIR, F_SYMLINK, t))
-        assertFalse(MediaBulk.subtreeHas(2 + 1, 0, F_SYMLINK, t)) // файл
+        assertTrue(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, kids = t))
+        assertTrue(MediaBulk.subtreeHas(4, F_DIR, F_SYMLINK, kids = t))
+        assertFalse(MediaBulk.subtreeHas(2 + 1, 0, F_SYMLINK, kids = t)) // файл
         val clean = tree(Triple(1, 2, F_DIR), Triple(2, 3, 0), Triple(1, 4, F_HLDUP))
-        assertFalse(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, clean))
+        assertFalse(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, kids = clean))
         // сам узел — ссылка
-        assertTrue(MediaBulk.subtreeHas(7, F_SYMLINK, F_SYMLINK, tree()))
+        assertTrue(MediaBulk.subtreeHas(7, F_SYMLINK, F_SYMLINK, kids = tree()))
         // у файла детей не спрашивают
         assertFalse(MediaBulk.subtreeHas(8, 0, F_SYMLINK) { throw AssertionError("kids() у файла") })
+    }
+
+    @Test fun walkFailsClosed() {
+        // Ошибка children() — не «детей нет»: исключение выходит наружу (дальше — rm_tree).
+        assertEquals(3, MediaBulk.checkedCount(3))
+        assertEquals(0, MediaBulk.checkedCount(0))
+        assertTrue(runCatching { MediaBulk.checkedCount(-1) }.exceptionOrNull() is IllegalStateException)
+        val boom = runCatching {
+            MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK) { nd ->
+                if (nd == 2) MediaBulk.checkedCount(-1)
+                if (nd == 1) intArrayOf(2) to intArrayOf(F_DIR) else IntArray(0) to IntArray(0)
+            }
+        }.exceptionOrNull()
+        assertTrue(boom is IllegalStateException)
+    }
+
+    @Test fun walkChecksStopPerDirectory() {
+        val t = tree(Triple(1, 2, F_DIR), Triple(2, 3, F_DIR), Triple(3, 4, 0))
+        var asked = 0
+        var visited = 0
+        val r = MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, stopped = { ++asked > 2 }) { nd -> visited++; t(nd) }
+        assertTrue(r)          // стоп — массового шага не будет
+        assertEquals(2, visited)
+        assertEquals(3, asked)
+        assertFalse(MediaBulk.subtreeHas(1, F_DIR, F_SYMLINK, stopped = { false }, kids = t))
+    }
+
+    @Test fun matchedCountsVerifiedRowsIncludingSelf() {
+        val d = "$base/m"
+        val out = MediaBulk.run(FakeRows(listOf(d, "$d/a", "$d/b", "$base/m2/x", "$base/M/y")), d, true,
+            stopped = ::noStop) {}
+        assertEquals(3L, out.matched)
+        assertEquals(3L, out.deleted)
     }
 }

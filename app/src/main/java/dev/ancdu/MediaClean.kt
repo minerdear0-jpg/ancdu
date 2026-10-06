@@ -97,17 +97,17 @@ object MediaClean {
         private val rows = ResolverRows(cr)
         private var base: File? = null
 
-        override fun create(): String? {
+        override fun makeDir(): String? {
             @Suppress("DEPRECATION")
             val b = ctx.externalMediaDirs.firstOrNull { it != null && it.path.startsWith("/storage/emulated/") }
                 ?: return null
             if (!b.isDirectory && !b.mkdirs()) return null
             base = b
-            val dir = Files.createTempDirectory(b.toPath(), "canary-").toFile()
-            val f = File(dir, "canary.txt")
-            f.writeText("ancdu")
-            return f.absolutePath
+            return Files.createTempDirectory(b.toPath(), "canary-").toFile().absolutePath
         }
+
+        override fun writeFile(dir: String): String =
+            File(dir, FILE).apply { writeText("ancdu") }.absolutePath
 
         private fun find(path: String): Long? {
             val q = MediaBulk.pageSelection(MediaBulk.selection(path, dir = false), Long.MIN_VALUE)
@@ -131,14 +131,15 @@ object MediaClean {
         override fun fileExists(path: String) = Files.exists(Paths.get(path), LinkOption.NOFOLLOW_LINKS)
         override fun rowExists(path: String) = find(path) != null
 
-        override fun cleanup(path: String) {
+        override fun cleanup(dir: String) {
             val b = base ?: return
-            val f = File(path)
-            val dir = f.parentFile ?: return
+            val d = File(dir)
             // Только свой mkdtemp-каталог внутри Android/media/<пакет>.
-            if (dir.parentFile?.absolutePath != b.absolutePath || !dir.name.startsWith("canary-")) return
-            f.delete()
-            dir.delete()
+            if (d.parentFile?.absolutePath != b.absolutePath || !d.name.startsWith("canary-")) return
+            File(d, FILE).delete()
+            d.delete()
         }
+
+        private companion object { const val FILE = "canary.txt" }
     }
 }

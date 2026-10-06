@@ -617,9 +617,9 @@ class BrowserActivity : Activity() {
                 // На io, под правилами delete: чтение дерева [handle] (экран его сейчас не читает).
                 // MediaProvider канонизирует путь перед unlink — ссылка в поддереве увела бы
                 // удаление за пределы узла.
-                if (MediaBulk.subtreeHas(target, rootFlags, F_SYMLINK) { nd -> kidsWithFlags(handle, nd) } ||
+                if (MediaBulk.subtreeHas(target, rootFlags, F_SYMLINK, stopped) { nd -> kidsWithFlags(handle, nd) } ||
                     Files.isSymbolicLink(Paths.get(p))) {
-                    Log.i("ancdu", "bulk delete skipped: symlink in subtree")
+                    Log.i("ancdu", "bulk delete skipped: symlink in subtree, or stopped")
                 } else {
                     val out = MediaBulk.run(ResolverRows(cr), p, dir, stopped = stopped, onDeleted = add)
                     out.error?.let { Log.w("ancdu", "bulk delete fell back to rm_tree after ${out.deleted} rows", it) }
@@ -654,10 +654,11 @@ class BrowserActivity : Activity() {
 }
 
 /** Живые дети [nd] дерева [handle] и их флаги. Вызывается на io из массового шага удаления
- * (вне экрана: лямбда удаления не держит Activity). */
+ * (вне экрана: лямбда удаления не держит Activity). Ошибка children() — исключение (отказ
+ * закрытый: массовый шаг прерывается, удаляет rm_tree). SORT_SIZE по disk — готовый порядок без сортировки. */
 private fun kidsWithFlags(handle: Long, nd: Int): Pair<IntArray, IntArray> {
     val c = IntArray(Native.childCount(handle, nd))
-    val k = maxOf(0, Native.children(handle, nd, SORT_NAME, false, c))
+    val k = MediaBulk.checkedCount(Native.children(handle, nd, SORT_SIZE, false, c))
     if (k == 0) return IntArray(0) to IntArray(0)
     val inf = LongArray(4 * k).also { Native.nodeInfo(handle, c, k, it) }
     return c.copyOf(k) to IntArray(k) { inf[4 * it + 3].toInt() }

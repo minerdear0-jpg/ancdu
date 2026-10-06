@@ -89,12 +89,17 @@ object MediaBulk {
     /**
      * Есть ли в поддереве узла [root] (включая сам узел с флагами [rootFlags]) узел с [flag].
      * [kids] — живые дети узла: их id и флаги (parallel-массивы); вызывается только для каталогов.
+     * Отказ закрытый: исключение из [kids] не глотается (вызывающий откатывается на rm_tree);
+     * [stopped] проверяется перед каждым каталогом — «Стоп» во время обхода даёт true
+     * (массового шага не будет).
      */
-    fun subtreeHas(root: Int, rootFlags: Int, flag: Int, kids: (Int) -> Pair<IntArray, IntArray>): Boolean {
+    fun subtreeHas(root: Int, rootFlags: Int, flag: Int, stopped: () -> Boolean = { false },
+                   kids: (Int) -> Pair<IntArray, IntArray>): Boolean {
         if (rootFlags and flag != 0) return true
         if (rootFlags and F_DIR == 0) return false
         val stack = ArrayDeque<Int>().apply { addLast(root) }
         while (stack.isNotEmpty()) {
+            if (stopped()) return true
             val (ids, flags) = kids(stack.removeLast())
             for (i in ids.indices) {
                 if (flags[i] and flag != 0) return true
@@ -104,8 +109,17 @@ object MediaBulk {
         return false
     }
 
-    /** Итог [run]: [deleted] строк удалено, [stopped] — прерван «Стопом», [error] — сбой (шаг прерван). */
-    class Outcome(val deleted: Long, val stopped: Boolean, val error: Throwable?)
+    /** Число детей от Native.children: < 0 — ошибка (массив мал и т. п.), не «детей нет». */
+    fun checkedCount(k: Int): Int {
+        check(k >= 0) { "children() = $k" }
+        return k
+    }
+
+    /**
+     * Итог [run]: [deleted] строк удалено, [stopped] — прерван «Стопом», [error] — сбой (шаг
+     * прерван), [matched] — строк прошло проверку [inside] и ушло на удаление.
+     */
+    class Outcome(val deleted: Long, val stopped: Boolean, val error: Throwable?, val matched: Long = deleted)
 
     /**
      * Удаляет строки узла [path] пачками по [chunk]: страница _id по возрастанию → проверка
@@ -117,6 +131,7 @@ object MediaBulk {
     fun run(rows: MediaRows, path: String, dir: Boolean, chunk: Int = CHUNK,
             stopped: () -> Boolean, onDeleted: (Long) -> Unit): Outcome {
         var deleted = 0L
+        var matched = 0L
         try {
             require(chunk > 0) { "chunk $chunk" }
             require(path.startsWith("/") && path.length > 1 && !path.endsWith("/")) { "путь «$path»" }
@@ -124,7 +139,7 @@ object MediaBulk {
             var after = Long.MIN_VALUE
             var self: Long? = null
             while (true) {
-                if (stopped()) return Outcome(deleted, true, null)
+                if (stopped()) return Outcome(deleted, true, null, matched)
                 val q = pageSelection(sel, after)
                 val page = rows.page(q.where, q.args, chunk)
                 if (page.isEmpty()) break
@@ -137,6 +152,7 @@ object MediaBulk {
                     if (dir && r.data == path) self = r.id else ids += r.id
                 }
                 if (ids.isNotEmpty()) {
+                    matched += ids.size
                     val n = maxOf(rows.delete(ids.toLongArray(), sel.where, sel.args), 0).toLong()
                     deleted += n
                     onDeleted(n)
@@ -144,14 +160,15 @@ object MediaBulk {
                 if (page.size < chunk) break
             }
             if (self != null) {
-                if (stopped()) return Outcome(deleted, true, null)
+                if (stopped()) return Outcome(deleted, true, null, matched)
+                matched++
                 val n = maxOf(rows.delete(longArrayOf(self), sel.where, sel.args), 0).toLong()
                 deleted += n
                 onDeleted(n)
             }
-            return Outcome(deleted, false, null)
+            return Outcome(deleted, false, null, matched)
         } catch (e: Exception) {
-            return Outcome(deleted, false, e)
+            return Outcome(deleted, false, e, matched)
         }
     }
 }
