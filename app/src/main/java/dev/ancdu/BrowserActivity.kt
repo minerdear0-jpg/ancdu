@@ -3,7 +3,9 @@ package dev.ancdu
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -11,7 +13,9 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -42,6 +46,26 @@ class BrowserActivity : Activity() {
     private var h = 0L
     private var keepScroll = 0
     private var wait: AlertDialog? = null
+    /** Для тестов: полоса, счётчик и кнопка «Стоп» диалога удаления (null — диалога нет). */
+    var waitBar: ProgressBar? = null
+        private set
+    var waitText: TextView? = null
+        private set
+    var waitStop: Button? = null
+        private set
+    /** Для тестов: последнее сообщение по итогам удаления (заголовок и текст). */
+    var lastAlert: Pair<String, String>? = null
+        private set
+    private val ui = Handler(Looper.getMainLooper())
+    private var lastDecile = -1
+    /** Опрос прогресса удаления каждые 100 мс, только Holder.deleteProgress (атомики ядра). */
+    private val poll = object : Runnable {
+        override fun run() {
+            if (!Holder.deleting || wait == null) return
+            renderWait()
+            ui.postDelayed(this, 100)
+        }
+    }
     /** Для тестов: открытый лист удаления. */
     var sheet: DeleteSheet? = null
         private set
@@ -79,7 +103,7 @@ class BrowserActivity : Activity() {
     }
 
     private val onDeleted: (Int) -> Unit = { r ->
-        wait?.dismiss(); wait = null
+        dismissWait()
         if (h == 0L || Holder.h != h) {
             list.source = null
             recreate()
@@ -87,12 +111,21 @@ class BrowserActivity : Activity() {
             list.source = src
             load(node, keepScroll)
             if (r != 0 && !isFinishing) {
-                if (DeletePolicy.nothingDeleted(r, Holder.viaRoot)) alert("Не удалось удалить",
-                    "Не удалось получить root — ничего не удалено (код $r).")
-                else alert("Не удалось удалить полностью",
-                    "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+                when {
+                    r == -DeleteProgress.EINTR -> report("Удаление остановлено",
+                        DeleteProgress.stopped(Holder.deleteProgress(), Holder.delTotal))
+                    DeletePolicy.nothingDeleted(r, Holder.viaRoot) -> report("Не удалось удалить",
+                        "Не удалось получить root — ничего не удалено (код $r).")
+                    else -> report("Не удалось удалить полностью",
+                        "Часть файлов осталась (код $r). Удалено частично — пересканируйте.")
+                }
             }
         }
+    }
+
+    private fun report(title: String, msg: String) {
+        lastAlert = title to msg
+        alert(title, msg)
     }
 
     private fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
@@ -199,7 +232,7 @@ class BrowserActivity : Activity() {
     override fun onDestroy() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
-        wait?.dismiss(); wait = null
+        dismissWait()
         sheet?.dismiss(); sheet = null
         super.onDestroy()
     }
@@ -347,11 +380,69 @@ class BrowserActivity : Activity() {
             Holder.root, inf[3].toInt(), Holder.kind)
     }
 
+    /**
+     * Неотменяемый диалог удаления: полоса (max 1000 — промилле от items узла на момент
+     * подтверждения), «N / M эл. · м:сс» и «Стоп». Данные — из Holder, поэтому новый экземпляр
+     * после пересоздания показывает тот же диалог и продолжает опрос.
+     */
     private fun showWait() {
         list.source = null
         footer.text = "Удаление…"
+        dismissWait()
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = false
+            max = 1000
+            contentDescription = "Прогресс удаления"
+        }
+        val text = label("", 13f, C.MUTED, mono = true)
+        val stop = Button(this).apply {
+            minHeight = dp(44)
+            setOnClickListener { stopDelete() }
+        }
+        val body = vbox(10).apply {
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+            addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(text)
+            addView(stop, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                gravity = Gravity.END
+            })
+        }
+        waitBar = bar; waitText = text; waitStop = stop
+        lastDecile = -1
         wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setMessage("Удаление…").setCancelable(false).show()
+            .setTitle(DeleteProgress.title(Holder.delName)).setView(body).setCancelable(false).show()
+        renderWait()
+        ui.postDelayed(poll, 100)
+    }
+
+    private fun renderWait() {
+        val bar = waitBar ?: return
+        val done = Holder.deleteProgress()
+        val total = Holder.delTotal
+        bar.progress = DeleteProgress.permille(done, total)
+        waitText?.text = DeleteProgress.line(done, total, SystemClock.elapsedRealtime() - Holder.delStartMs)
+        waitStop?.apply {
+            text = if (Holder.delStopping) "Останавливаю…" else "Стоп"
+            isEnabled = !Holder.delStopping
+        }
+        val dec = DeleteProgress.decile(done, total)
+        if (dec != lastDecile) {
+            if (lastDecile >= 0) bar.announceForAccessibility(DeleteProgress.announce(done, total))
+            lastDecile = dec
+        }
+    }
+
+    /** «Стоп» диалога: ядро прекращает обход, удалённое остаётся удалённым. */
+    fun stopDelete() {
+        if (!busy) return
+        Holder.deleteStop()
+        renderWait()
+    }
+
+    private fun dismissWait() {
+        ui.removeCallbacks(poll)
+        wait?.dismiss(); wait = null
+        waitBar = null; waitText = null; waitStop = null
     }
 
     /**
@@ -369,9 +460,11 @@ class BrowserActivity : Activity() {
         // Повторная проверка запретов: путь мимо диалога (тесты) тоже не удалит системное.
         if (blockReason(handle, target, Native.str(Native.path(handle, target))) != null) return false
         val helper = if (Holder.viaRoot) Root.helper(this) else null
+        val items = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }[2]
+        val name = Native.str(Native.name(handle, target))
         keepScroll = list.scroll
+        Holder.delete(handle, target, helper, done, name, items)
         showWait()
-        Holder.delete(handle, target, helper, done)
         return true
     }
 

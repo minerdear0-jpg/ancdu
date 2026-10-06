@@ -8,6 +8,7 @@ import androidx.test.runner.lifecycle.Stage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -105,6 +106,55 @@ class BrowserTest {
         assertTrue(File(dir, "keep.bin").exists())
 
         ins.runOnMainSync { act2.finish() }
+        dir.deleteRecursively()
+    }
+
+    /**
+     * Диалог удаления: заголовок с именем, счётчик «N / M эл.», «Стоп» → «Останавливаю…».
+     * Удаление стоит на io за заслонкой, стоп нажат до его начала: ядро не вызывается, итог -EINTR,
+     * всё на месте, сообщение «Удаление остановлено — удалено 0 из 4».
+     */
+    @Test fun deleteDialogShowsProgressAndStops() {
+        val ctx = ins.targetContext
+        val dir = File(ctx.cacheDir, "br5").apply { deleteRecursively(); mkdirs() }
+        val sub = File(dir, "sub").apply { mkdirs() }
+        for (i in 0 until 3) File(sub, "f$i.bin").writeBytes(ByteArray(50_000))
+        File(dir, "keep.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+
+        val gate = CountDownLatch(1)
+        Holder.io.execute { gate.await(30, TimeUnit.SECONDS) }
+        var r = Int.MIN_VALUE
+        val deleter = Thread { r = act.deleteBlocking(0) }.apply { start() } // по размеру: 0 — sub/
+        assertTrue(waitFor { act.waitBar != null })
+        ins.runOnMainSync {
+            assertEquals("sub", Holder.delName)
+            assertEquals(4L, Holder.delTotal) // sub + 3 файла
+            assertTrue(act.waitText!!.text.startsWith("0 / 4 эл."))
+            assertEquals("Стоп", act.waitStop!!.text.toString())
+            assertEquals(1000, act.waitBar!!.max)
+            assertNotNull(act.waitBar!!.contentDescription)
+            act.stopDelete()
+            assertEquals("Останавливаю…", act.waitStop!!.text.toString())
+            assertFalse(act.waitStop!!.isEnabled)
+        }
+
+        gate.countDown()
+        deleter.join(30_000)
+        assertFalse(deleter.isAlive)
+        assertEquals(-DeleteProgress.EINTR, r)
+        assertTrue(waitFor { !act.busy && act.list.source != null })
+        ins.runOnMainSync {
+            assertNull(act.waitBar)
+            assertEquals("Удаление остановлено", act.lastAlert?.first)
+            assertEquals("Удаление остановлено — удалено 0 из 4. Пересканируйте.", act.lastAlert?.second)
+        }
+        for (i in 0 until 3) assertTrue(File(sub, "f$i.bin").exists())
+
+        ins.runOnMainSync { act.finish() }
         dir.deleteRecursively()
     }
 

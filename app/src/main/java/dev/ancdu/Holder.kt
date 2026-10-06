@@ -3,6 +3,7 @@ package dev.ancdu
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -54,6 +55,53 @@ object Holder {
     /** Идёт удаление (на любом дескрипторе). Только главный поток. Пока true — никаких чтений дерева. */
     var deleting = false; private set
 
+    /**
+     * Что показывает диалог удаления; переживает пересоздание экрана. Только главный поток.
+     * [delName] — имя узла, [delTotal] — его items на момент подтверждения, [delStartMs] —
+     * SystemClock.elapsedRealtime() старта, [delStopping] — «Стоп» уже нажат.
+     */
+    var delName = ""; private set
+    var delTotal = 1L; private set
+    var delStartMs = 0L; private set
+    var delStopping = false; private set
+
+    /*
+     * Удаление в полёте. Под [delLock]: [delHandle] != 0 только с вызова [delete] до возврата
+     * Native.delete на io (сбрасывается до того, как io перейдёт к следующей задаче, в том числе
+     * к free этого дескриптора) — поэтому Native.deleteProgress/deleteStop под замком никогда не
+     * видят освобождённую сессию. [delStopAsked] — «Стоп» нажат; [delDone] — последний прогресс.
+     */
+    private val delLock = Any()
+    private var delHandle = 0L
+    private var delStopAsked = false
+    private var delDone = 0L
+
+    /**
+     * Любой поток (всё под замком; экран зовёт с главного). Сколько записей удалено идущим
+     * (или последним) удалением.
+     * Единственный вызов Native на дескрипторе во время delete наряду с [deleteStop].
+     * Пока стоп запрошен, повторяет deleteStop: ядро сбрасывает флаг стопа в начале delete,
+     * и стоп, нажатый ровно в этот миг, не теряется.
+     */
+    fun deleteProgress(): Long = synchronized(delLock) {
+        if (delHandle != 0L) {
+            if (delStopAsked) Native.deleteStop(delHandle)
+            delDone = Native.deleteProgress(delHandle)
+        }
+        delDone
+    }
+
+    /** Только главный поток. Просит остановить идущее удаление; оно вернёт -EINTR. */
+    fun deleteStop() {
+        checkMain("Holder.deleteStop")
+        if (!deleting) return
+        delStopping = true
+        synchronized(delLock) {
+            delStopAsked = true
+            if (delHandle != 0L) Native.deleteStop(delHandle)
+        }
+    }
+
     /** Только главный поток. Слушатели — живые экраны; получают код завершения удаления. */
     fun addDeleteListener(l: (Int) -> Unit) { deleteListeners += l }
     fun removeDeleteListener(l: (Int) -> Unit) { deleteListeners -= l }
@@ -61,16 +109,33 @@ object Holder {
     /**
      * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
      * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
+     * [name] и [total] — для диалога прогресса. Стоп до начала (io ещё занят другим) — удаление
+     * не запускается, результат -EINTR, ничего не удалено.
      */
-    fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {}) {
+    fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
+               name: String = "", total: Long = 1L) {
         checkMain("Holder.delete")
         check(!deleting) { "удаление уже идёт" }
         deleting = true
+        delName = name; delTotal = DeleteProgress.total(total)
+        delStartMs = SystemClock.elapsedRealtime(); delStopping = false
+        synchronized(delLock) { delHandle = handle; delStopAsked = false; delDone = 0L }
         io.execute {
             var r = -1
+            var ran = false
             try {
-                r = Native.delete(handle, node, helper)
+                if (synchronized(delLock) { delStopAsked }) {
+                    r = -DeleteProgress.EINTR
+                } else {
+                    ran = true
+                    r = Native.delete(handle, node, helper)
+                }
             } finally {
+                synchronized(delLock) {
+                    // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.
+                    if (ran) delDone = runCatching { Native.deleteProgress(handle) }.getOrDefault(delDone)
+                    delHandle = 0L
+                }
                 // И при исключении: deleting не должен остаться true навсегда.
                 main.post {
                     deleting = false
