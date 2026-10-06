@@ -293,7 +293,8 @@ class BrowserActivity : Activity() {
      */
     fun promotePending() {
         if (busy || h == 0L || !hasNewer()) return
-        val names = crumbNodes.drop(1).map { nameOf(it) }
+        // Байты имён, не строки: невалидный UTF-8 декодируется неоднозначно.
+        val names = crumbNodes.drop(1).map { Native.name(h, it) }
         val keep = list.scroll
         list.source = null
         promoting = true
@@ -307,14 +308,14 @@ class BrowserActivity : Activity() {
         refreshPending()
     }
 
-    /** Ребёнок-каталог [nd] с именем [nm] в дереве [h] или null. */
-    private fun childDir(nd: Int, nm: String): Int? {
+    /** Ребёнок-каталог [nd] с именем ровно [nm] (байты) в дереве [h] или null. */
+    private fun childDir(nd: Int, nm: ByteArray): Int? {
         val c = IntArray(Native.childCount(h, nd))
         val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
         if (k == 0) return null
         val inf = LongArray(4 * k).also { Native.nodeInfo(h, c, k, it) }
         for (i in 0 until k)
-            if (inf[4 * i + 3].toInt() and F_DIR != 0 && nameOf(c[i]) == nm) return c[i]
+            if (inf[4 * i + 3].toInt() and F_DIR != 0 && Native.name(h, c[i]).contentEquals(nm)) return c[i]
         return null
     }
 

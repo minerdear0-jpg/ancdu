@@ -75,23 +75,36 @@ class FreshnessTest {
 }
 
 class PathWalkTest {
-    /** Дерево имён: узел → (имя → ребёнок). 0 — корень. */
-    private val tree = mapOf(
-        0 to mapOf("DCIM" to 1, "Download" to 2),
-        1 to mapOf("Camera" to 3),
-        3 to mapOf("IMG_1.jpg" to 4),
-        2 to emptyMap())
-    private fun walk(vararg names: String) = PathWalk.resolve(names.toList()) { n, s -> tree[n]?.get(s) }
+    private fun b(s: String) = s.toByteArray(Charsets.UTF_8)
+    private fun raw(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+
+    /** Дерево имён (байты): узел → [(имя, ребёнок)]. 0 — корень. */
+    private val tree: Map<Int, List<Pair<ByteArray, Int>>> = mapOf(
+        0 to listOf(b("DCIM") to 1, b("Download") to 2, raw(0xff) to 5, raw(0xfe) to 6),
+        1 to listOf(b("Camera") to 3),
+        3 to listOf(b("IMG_1.jpg") to 4),
+        2 to emptyList(), 5 to emptyList(), 6 to emptyList())
+    private fun walk(vararg names: ByteArray) = PathWalk.resolve(names.toList()) { n, s ->
+        tree[n]?.firstOrNull { it.first.contentEquals(s) }?.second
+    }
 
     @Test fun exactPath() {
-        assertEquals(PathWalk.Hit(3, true), walk("DCIM", "Camera"))
+        assertEquals(PathWalk.Hit(3, true), walk(b("DCIM"), b("Camera")))
         assertEquals(PathWalk.Hit(0, true), walk())
     }
 
     @Test fun deepestExistingAncestor() {
-        assertEquals(PathWalk.Hit(1, false), walk("DCIM", "Screenshots", "x"))
-        assertEquals(PathWalk.Hit(0, false), walk("gone"))
-        assertEquals(PathWalk.Hit(2, false), walk("Download", "a"))
+        assertEquals(PathWalk.Hit(1, false), walk(b("DCIM"), b("Screenshots"), b("x")))
+        assertEquals(PathWalk.Hit(0, false), walk(b("gone")))
+        assertEquals(PathWalk.Hit(2, false), walk(b("Download"), b("a")))
+    }
+
+    /** Невалидный UTF-8: оба имени декодируются в «\uFFFD», но это разные папки. */
+    @Test fun invalidUtf8NamesStayDistinct() {
+        assertEquals(String(raw(0xff), Charsets.UTF_8), String(raw(0xfe), Charsets.UTF_8))
+        assertEquals(PathWalk.Hit(5, true), walk(raw(0xff)))
+        assertEquals(PathWalk.Hit(6, true), walk(raw(0xfe)))
+        assertEquals(PathWalk.Hit(0, false), walk(b("\uFFFD")))
     }
 }
 
