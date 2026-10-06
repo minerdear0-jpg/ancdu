@@ -20,6 +20,13 @@ static int rm_at(int dfd, const char *name, dev_t dev, int depth) {
   if (depth > RM_MAX_DEPTH) return -ELOOP;
   int fd = openat(dfd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
   if (fd < 0) return -errno;
+  /* Между fstatat и openat имя могли подменить: открыт должен быть тот же каталог,
+   * иначе он пропускается, как чужая ФС (частичное удаление). */
+  struct stat ost;
+  if (fstat(fd, &ost) != 0 || ost.st_dev != st.st_dev || ost.st_ino != st.st_ino) {
+    close(fd);
+    return -EXDEV;
+  }
   DIR *d = fdopendir(fd);
   if (!d) {
     int e = -errno;
@@ -48,11 +55,16 @@ int rm_tree(const char *path) {
   if (n >= sizeof buf) return -ENAMETOOLONG;
   memcpy(buf, path, n);
   buf[n] = 0;
+  /* Последний компонент «.» или «..» обходит проверку точки монтирования ниже:
+   * у «/mnt/point/.» родитель — сама «/mnt/point», устройство то же. Отказ до любых
+   * lstat/open/unlink. */
+  const char *slash = strrchr(buf, '/');
+  const char *last = slash ? slash + 1 : buf;
+  if (strcmp(last, ".") == 0 || strcmp(last, "..") == 0) return -EINVAL;
   struct stat st, pst;
   if (lstat(buf, &st) != 0) return -errno;
   /* Вершина — точка монтирования (или bind-файл): её устройство отличается от родителя. */
   char parent[PATH_MAX];
-  const char *slash = strrchr(buf, '/');
   if (!slash) {
     strcpy(parent, ".");
   } else if (slash == buf) {

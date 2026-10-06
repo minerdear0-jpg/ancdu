@@ -22,6 +22,11 @@ ancdu_test(test_scan)
 ancdu_test(test_dump)
 ancdu_test(test_index)
 ancdu_test(test_rmtree)
+# rmtree.c включается в сам тест (перехват openat), ancdu_core не нужен
+add_executable(test_rmtree_race test_rmtree_race.c)
+target_include_directories(test_rmtree_race PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../app/src/main/cpp)
+target_compile_definitions(test_rmtree_race PRIVATE _GNU_SOURCE)
+add_test(NAME test_rmtree_race COMMAND test_rmtree_race)
 ancdu_test(test_session)
 
 ancdu_test(test_memfd)

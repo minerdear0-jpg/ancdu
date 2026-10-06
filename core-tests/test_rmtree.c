@@ -133,6 +133,31 @@ int main(void) {
     chmod(pj(t, "mix/locked"), 0755);
   }
 
+  /* последний компонент «.» / «..» — отказ -EINVAL, ничего не тронуто.
+   * Только абсолютные пути внутри своего mkdtemp: «..» здесь — это t/outer, не t. */
+  if (t[0] == '/') {
+    mk_dir(pj(t, "outer"));
+    mk_dir(pj(t, "outer/dots"));
+    write_file(pj(t, "outer/dots/sentinel"), 10);
+    write_file(pj(t, "outer/sibling"), 10);
+    const char *tails[] = {"outer/dots/.",   "outer/dots/..",          "outer/dots/./",
+                           "outer/dots/..//", "outer/dots/sentinel/..", "outer/."};
+    for (size_t i = 0; i < sizeof tails / sizeof *tails; i++) {
+      char dp[4200];
+      snprintf(dp, sizeof dp, "%s/%s", t, tails[i]);
+      int r = rm_tree(dp);
+      if (r != -EINVAL) {
+        fprintf(stderr, "dot path not refused (%d): %s\n", r, dp);
+        t_fail++;
+      }
+      CHECK(access(pj(t, "outer/dots/sentinel"), F_OK) == 0);
+      CHECK(access(pj(t, "outer/sibling"), F_OK) == 0);
+    }
+    CHECK(rm_tree(pj(t, "outer")) == 0);
+  } else {
+    CHECK(!"mk_tmp returned a relative path; dot-path cases not run");
+  }
+
   /* другая ФС: реальные tmpfs в собственном mount namespace */
   cross_fs(t);
 
