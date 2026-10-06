@@ -54,21 +54,24 @@ class DeleteProgressTest {
         val eperm = -1; val eio = -5; val eacces = -13
         val eintr = -DeleteProgress.EINTR; val eloop = -DeleteProgress.ELOOP
         // полный успех: csr_remove уже обновил дерево
-        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = false, done = 10))
-        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = true, done = 10))
+        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = false, done = 10, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(0, viaRoot = true, done = 10, dir = true))
         // остановлено после начала, частично, ошибка — обновить
-        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 1))
-        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = true, done = 500))
+        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 1, dir = true))
+        assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = true, done = 500, dir = true))
         for (r in listOf(eio, eacces)) {
-            assertTrue("$r", DeleteProgress.refreshAfter(r, viaRoot = false, done = 0))
-            assertTrue("$r root", DeleteProgress.refreshAfter(r, viaRoot = true, done = 0))
+            assertTrue("$r", DeleteProgress.refreshAfter(r, viaRoot = false, done = 0, dir = true))
+            assertTrue("$r root", DeleteProgress.refreshAfter(r, viaRoot = true, done = 0, dir = true))
         }
         // без root -EPERM даёт сам rm_tree — часть могла удалиться
-        assertTrue(DeleteProgress.refreshAfter(eperm, viaRoot = false, done = 0))
+        assertTrue(DeleteProgress.refreshAfter(eperm, viaRoot = false, done = 0, dir = true))
         // ничего не удалено: su отказал, симлинк в пути, «Стоп» до начала
-        assertFalse(DeleteProgress.refreshAfter(eperm, viaRoot = true, done = 0))
-        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = true, done = 0))
-        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = false, done = 0))
-        assertFalse(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 0))
+        assertFalse(DeleteProgress.refreshAfter(eperm, viaRoot = true, done = 0, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = true, done = 0, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = false, done = 0, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 0, dir = true))
+        // файл: удалён или нет — сканировать нечего
+        for (r in listOf(eio, eacces, eperm, eintr))
+            assertFalse("$r file", DeleteProgress.refreshAfter(r, viaRoot = false, done = 1, dir = false))
     }
 }

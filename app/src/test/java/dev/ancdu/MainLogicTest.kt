@@ -188,6 +188,17 @@ class SwapTest {
         assertFalse(Swap.newer(7L, s, true, s, false))
     }
 
+    /** Root-скан сам (без действия пользователя) — только после root-удаления или если root выдан. */
+    @Test fun autoRootNeedsAFreshGrant() {
+        for (st in RootState.values()) {
+            assertTrue("без su — всегда", Swap.autoRoot(su = false, delRoot = false, state = st))
+            assertTrue("после root-удаления", Swap.autoRoot(su = true, delRoot = true, state = st))
+        }
+        assertTrue(Swap.autoRoot(su = true, delRoot = false, state = RootState.GRANTED))
+        for (st in listOf(RootState.UNKNOWN, RootState.ASKING, RootState.DENIED))
+            assertFalse("$st", Swap.autoRoot(su = true, delRoot = false, state = st))
+    }
+
     @Test fun promoteOnReturnNeedsAStoragePending() {
         assertTrue(Swap.promoteOnMain(pendingStorage = true, mainResumed = true, browsers = 0, deleting = false, owns = true))
         assertFalse(Swap.promoteOnMain(pendingStorage = false, mainResumed = true, browsers = 0, deleting = false, owns = true))

@@ -34,7 +34,11 @@ object BgScan {
     private var app: Context? = null
     /** Удаление шло, пока скан шёл, — итог мог увидеть полуудалённое: выбросить и пересканировать. */
     private var dirty = false
-    /** Пересканировать [next]: после идущего удаления или следом за идущим сканом другой цели. */
+    /**
+     * Пересканировать [next]: после идущего удаления или следом за идущим сканом другой цели.
+     * Слот ОДИН: каждая постановка в очередь заменяет прежнюю цель (последняя побеждает) — новее
+     * всегда то, что нужно сейчас; вытесненная цель повторится при следующем поводе.
+     */
     private var rescan = false
     private var indexing = false
 
@@ -48,6 +52,8 @@ object BgScan {
     val running: Boolean get() = h != 0L
     /** Идёт скан именно общего хранилища без root (карточка главного экрана). */
     val storageRunning: Boolean get() = running && cur == STORAGE
+    /** Скан общего хранилища идёт или ждёт в очереди — только он важен карточке и экрану attach. */
+    val storageActive: Boolean get() = storageRunning || (rescan && next == STORAGE)
     /** Идёт скан или ждёт пересканирование после удаления. */
     val active: Boolean get() = h != 0L || rescan
 
@@ -71,7 +77,7 @@ object BgScan {
     fun gate(ctx: Context): Gate {
         val pm = ctx.getSystemService(PowerManager::class.java)
         return ScanGate.decide(Perms.files(), cacheAge(ctx), pm?.isPowerSaveMode == true,
-            pm?.currentThermalStatus ?: 0, running)
+            pm?.currentThermalStatus ?: 0, storageActive)
     }
 
     /** onResume главного экрана: запускает скан, если [gate] разрешает. Возвращает решение. */
@@ -84,8 +90,19 @@ object BgScan {
     /** Контекст приложения для сканов, которые запускает не экран ([deleteFinished]). Главный поток. */
     fun bind(ctx: Context) { app = ctx.applicationContext }
 
-    /** Ручной или автоматический запуск скана общего хранилища. false — не запущен (уже идёт, удаление, нет доступа, ошибка). */
-    fun start(ctx: Context): Boolean = start(ctx, STORAGE)
+    /**
+     * Ручной или автоматический запуск скана общего хранилища. Идёт скан другого корня — этот
+     * встаёт в очередь следом. false — не запущен (удаление, нет доступа, ошибка).
+     */
+    fun start(ctx: Context): Boolean {
+        if (running && cur != STORAGE && !Holder.deleting && Perms.files()) {
+            app = ctx.applicationContext
+            next = STORAGE; rescan = true
+            changed()
+            return true
+        }
+        return start(ctx, STORAGE)
+    }
 
     private fun start(ctx: Context, t: Target): Boolean {
         if (running || Holder.deleting || (!t.su && !Perms.files())) return false
@@ -128,8 +145,8 @@ object BgScan {
     private fun done(handle: Long) {
         h = 0L
         log("done")
-        if (dirty) { discard(handle); return }
-        val ctx = app ?: return discard(handle)
+        if (dirty) { Holder.io.execute { Native.free(handle) }; discard(); return }
+        val ctx = app ?: run { Holder.io.execute { Native.free(handle) }; return discard() }
         val t = cur
         if (t.su) { Root.rememberMemfd(ctx, p[5] == 1L); Root.granted(ctx) }
         val d = Scans.finish(ctx, handle, t.root, t.su, p)
@@ -145,21 +162,18 @@ object BgScan {
         // Скан закончился — владелец читает текст ошибки, затем дескриптор уходит на io.
         failure = Native.str(Native.error(handle)).ifEmpty { "неизвестная ошибка" }
         Holder.io.execute { Native.free(handle) }
-        if (dirty) { rescanSoon(); return }
+        if (dirty) { discard(); return }
         if (cur == STORAGE && noTree()) startIndex()
         if (rescan && !Holder.deleting) restart()
         changed()
     }
 
-    /** «Грязный» итог: освобождается, скан повторяется (после удаления, если оно ещё идёт). */
-    private fun discard(handle: Long) {
-        Holder.io.execute { Native.free(handle) }
-        rescanSoon()
-    }
-
-    private fun rescanSoon() {
-        rescan = true
-        if (!Holder.deleting) restart()
+    /**
+     * «Грязный» (или бесхозный) итог уже освобождён: скан повторяется, если стоит в очереди
+     * ([deleteStarted] ставит его, кроме su без выдачи), после удаления, если оно ещё идёт.
+     */
+    private fun discard() {
+        if (rescan && !Holder.deleting) restart()
         changed()
     }
 
@@ -236,11 +250,14 @@ object BgScan {
      * удаления (root — только если root выдан: сам фоновый скан Magisk не спрашивает).
      */
     fun deleteStarted() {
-        if (running) { dirty = true; next = cur }
+        if (running) {
+            dirty = true
+            if (Swap.autoRoot(cur.su, false, Root.state)) { next = cur; rescan = true }
+        }
         if (Holder.pending != 0L) {
             val t = Target(Holder.pendingRoot, Holder.pendingViaRoot)
             Holder.dropPending()
-            if (!t.su || Root.state == RootState.GRANTED) { next = t; rescan = true }
+            if (Swap.autoRoot(t.su, false, Root.state)) { next = t; rescan = true }
         }
     }
 
@@ -252,8 +269,8 @@ object BgScan {
      */
     fun deleteFinished(r: Int) {
         val t = Target(Holder.root, Holder.viaRoot)
-        if (Holder.h != 0L && DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress()) &&
-            (!t.su || Holder.delRoot || Root.state == RootState.GRANTED)) { next = t; rescan = true }
+        if (Holder.h != 0L && DeleteProgress.refreshAfter(r, Holder.delRoot, Holder.deleteProgress(), Holder.delDir) &&
+            Swap.autoRoot(t.su, Holder.delRoot, Root.state)) { next = t; rescan = true }
         if (rescan && !running) restart()
     }
 
@@ -271,5 +288,16 @@ object BgScan {
             return true
         }
         return start(ctx, t)
+    }
+
+    /**
+     * Браузер отменил запрос листа (навигация, «назад», экран закрыт): ещё не начатое su-обновление
+     * [root] снимается с очереди — запрос Magisk бывает только прямым итогом долгого тапа.
+     */
+    fun unqueue(root: String, su: Boolean) {
+        if (su && rescan && next == Target(root, su)) {
+            rescan = false
+            changed()
+        }
     }
 }

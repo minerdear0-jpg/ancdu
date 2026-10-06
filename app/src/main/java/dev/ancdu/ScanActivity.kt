@@ -203,9 +203,12 @@ class ScanActivity : Activity() {
      */
     private fun attachedTick() {
         if (finished) return
-        if (BgScan.active) {
-            if (!built && BgScan.p[4] >= SHOW_AFTER_MS) buildUi()
-            if (built) renderTiles(BgScan.p, BgScan.path)
+        // Ждём только скан общего хранилища (он может стоять в очереди за обновлением другого корня).
+        if (BgScan.storageActive) {
+            if (BgScan.storageRunning) {
+                if (!built && BgScan.p[4] >= SHOW_AFTER_MS) buildUi()
+                if (built) renderTiles(BgScan.p, BgScan.path)
+            }
             return
         }
         finished = true

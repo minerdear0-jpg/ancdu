@@ -13,7 +13,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -115,7 +114,7 @@ class BrowserTest {
     /**
      * Диалог удаления: заголовок с именем, счётчик «N / M эл.», «Стоп» → «Останавливаю…».
      * Удаление стоит на io за заслонкой, стоп нажат до его начала: ядро не вызывается, итог -EINTR,
-     * всё на месте, сообщение «Удаление отменено» (ничего не удалено — дерево не обновляется).
+     * всё на месте; без диалога — подвал «Удаление отменено — ничего не удалено.» (дерево не обновляется).
      */
     @Test fun deleteDialogShowsProgressAndStops() {
         val ctx = ins.targetContext
@@ -152,9 +151,9 @@ class BrowserTest {
         assertTrue(waitFor { !act.busy && act.list.source != null })
         ins.runOnMainSync {
             assertNull(act.waitBar)
-            // ещё не начиналось — «отменено»; обновлять нечего
-            assertEquals("Удаление отменено", act.lastAlert?.first)
-            assertEquals("Удаление отменено — ничего не удалено.", act.lastAlert?.second)
+            // ещё не начиналось — «отменено» в подвале, без диалога; обновлять нечего
+            assertNull(act.lastAlert)
+            assertEquals(DeleteProgress.CANCELLED, act.footerText.toString())
         }
         for (i in 0 until 3) assertTrue(File(sub, "f$i.bin").exists())
 
@@ -554,11 +553,13 @@ class BrowserTest {
             val i = index(act, "sub/")
             var r = Int.MIN_VALUE
             val deleter = Thread { r = act.deleteBlocking(i) }.apply { start() }
+            // Сначала удаление началось (busy), затем ядро что-то удалило — тогда «Стоп».
+            assertTrue("удаление не началось", waitFor(30_000) { act.busy })
             assertTrue(waitFor(30_000) { !act.busy || Holder.deleteProgress() > 0 })
             ins.runOnMainSync { act.stopDelete() }
             deleter.join(60_000)
             assertFalse(deleter.isAlive)
-            assumeTrue("удаление закончилось раньше «Стоп»", r != 0)
+            assertTrue("удаление закончилось раньше «Стоп» — увеличьте фикстуру", r != 0)
             assertEquals(-DeleteProgress.EINTR, r)
             assertTrue(waitFor(30_000) { act.footerText.startsWith("освобождено ") })
             ins.runOnMainSync {

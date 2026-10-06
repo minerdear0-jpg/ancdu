@@ -99,6 +99,13 @@ object Swap {
     fun newer(pending: Long, pendingRoot: String, pendingViaRoot: Boolean, root: String, viaRoot: Boolean): Boolean =
         pending != 0L && pendingRoot == root && pendingViaRoot == viaRoot
 
+    /**
+     * Root-скан без действия пользователя (Magisk не должен спрашивать сам): только сразу после
+     * root-удаления ([delRoot] — выдача только что использована) или если root выдан.
+     */
+    fun autoRoot(su: Boolean, delRoot: Boolean, state: RootState): Boolean =
+        !su || delRoot || state == RootState.GRANTED
+
     /** Счётчик закреплений браузерами; [onUnpin] — после каждого реального снятия. */
     class Pins(private val onUnpin: () -> Unit = {}) {
         var count = 0; private set

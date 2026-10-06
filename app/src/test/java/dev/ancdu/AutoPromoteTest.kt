@@ -62,12 +62,13 @@ class AutoPromoteTest {
     @Test fun navigationCancelsOnlyThePendingSheet() {
         val a = AutoPromote()
         a.beforeDelete(path, "Camera")
-        a.cancelSheet()
+        assertTrue("отменён ждущий лист", a.cancelSheet())
         assertNull(a.request)
+        assertFalse("нечего отменять", a.cancelSheet())
         assertFalse(a.ready(newer = true, busy = false, sheetOpen = false))
 
         a.afterDelete(path, "Camera", mib)
-        a.cancelSheet()
+        assertFalse(a.cancelSheet())
         assertTrue(a.ready(newer = true, busy = false, sheetOpen = false))
     }
 
@@ -87,5 +88,13 @@ class AutoPromoteTest {
         assertFalse(a.failed(newer = true, refreshing = false))
         assertFalse(a.failed(newer = false, refreshing = true))
         assertTrue(a.failed(newer = false, refreshing = false))
+    }
+
+    /** Обновить не вышло после удаления: подвал — нижняя граница по прежнему дереву, без «остатка». */
+    @Test fun failedRefreshAfterDeleteShowsLowerBound() {
+        val r = AutoPromote.Request(path, "Camera", 10 * mib)
+        assertEquals("освобождено 6.0 MiB", AutoPromote.unrefreshed(r, exact = true, disk = 4 * mib))
+        assertEquals("освобождено 0 B", AutoPromote.unrefreshed(r, exact = true, disk = 11 * mib))
+        assertEquals("освобождено 0 B", AutoPromote.unrefreshed(r, exact = false, disk = 0))
     }
 }

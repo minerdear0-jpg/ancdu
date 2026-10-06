@@ -44,8 +44,8 @@ class DeleteStepsTest {
         val r = -DeleteProgress.EINTR
         assertTrue(DeleteProgress.isCancelled(r, DeleteSteps.done(0, 0)))
         assertTrue(!DeleteProgress.isCancelled(r, DeleteSteps.done(1500, 0)))
-        assertTrue(DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(1500, 0)))
-        assertTrue(!DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(0, 0)))
+        assertTrue(DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(1500, 0), dir = true))
+        assertTrue(!DeleteProgress.refreshAfter(r, viaRoot = false, done = DeleteSteps.done(0, 0), dir = true))
     }
 
     @Test fun progressSumsRowsAndNativeClamped() {

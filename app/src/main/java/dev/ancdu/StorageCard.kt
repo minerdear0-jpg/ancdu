@@ -170,9 +170,10 @@ class StorageCard(private val a: MainActivity) {
             disk == null -> "${Fmt.count(items)} эл."
             else -> "${Fmt.size(disk)} · ${Fmt.count(items)} эл."
         }
-        val running = BgScan.storageRunning
+        // Только скан общего хранилища (идёт или в очереди за обновлением другого корня).
+        val running = BgScan.storageActive
         scanLine.visibility = if (running) View.VISIBLE else View.INVISIBLE
-        val line = Freshness.line(running, BgScan.p[1], time, scanned, gate == Gate.POWER, approx,
+        val line = Freshness.line(running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
             System.currentTimeMillis())
         freshTxt.visibility = View.VISIBLE
         freshTxt.text = line
@@ -194,7 +195,7 @@ class StorageCard(private val a: MainActivity) {
 
     /** «обновить ›»: скан вручную — энергосбережение и нагрев не мешают явной просьбе. */
     private fun refreshNow() {
-        if (BgScan.running) return
+        if (BgScan.storageActive) return
         if (BgScan.start(a)) gate = Gate.RUNNING
         else BgScan.failure?.let { a.showAlert("Скан не запущен", it) }
         render()
@@ -223,7 +224,7 @@ class StorageCard(private val a: MainActivity) {
             a.openCache(Holder.cacheFile(a, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time)
             return
         }
-        if (BgScan.active) { attach(); return }
+        if (BgScan.storageActive) { attach(); return }
         if (shown) { a.startActivity(Intent(a, BrowserActivity::class.java)); return }
         if (BgScan.start(a)) { gate = Gate.RUNNING; render(); attach() }
         else a.showAlert("Скан не запущен", BgScan.failure ?: "Нет доступа к общему хранилищу.")

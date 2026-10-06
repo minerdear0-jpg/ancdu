@@ -20,8 +20,16 @@ class AutoPromote {
     fun afterDelete(names: List<ByteArray>, name: String, delDisk: Long) { request = Request(names, name, delDisk) }
     fun beforeDelete(names: List<ByteArray>, name: String) { request = Request(names, name, null) }
 
-    /** Навигация, «назад» или новый долгий тап: ждущий лист больше не нужен; итог удаления остаётся. */
-    fun cancelSheet() { if (request?.delDisk == null) request = null }
+    /**
+     * Навигация, «назад» или новый долгий тап: ждущий лист больше не нужен; итог удаления остаётся.
+     * true — отменён запрос листа (его обновление, если оно ещё в очереди, тоже не нужно).
+     */
+    fun cancelSheet(): Boolean {
+        val r = request ?: return false
+        if (r.delDisk != null) return false
+        request = null
+        return true
+    }
 
     /** Подставить сейчас: флаг взведён, новое дерево ждёт, удаление не идёт, лист не открыт. */
     fun ready(newer: Boolean, busy: Boolean, sheetOpen: Boolean): Boolean =
@@ -48,5 +56,12 @@ class AutoPromote {
                 if (exact) DeleteProgress.freed(maxOf(0L, del - disk)) + DeleteProgress.LEFT
                 else DeleteProgress.freed(del))
         }
+
+        /**
+         * Удаление [r], обновить дерево не вышло: подвал — нижняя граница освобождённого по прежнему
+         * дереву ([exact] — узел в нём найден, [disk] — его размер сейчас), без «остатка».
+         */
+        fun unrefreshed(r: Request, exact: Boolean, disk: Long): String =
+            DeleteProgress.freed(if (exact) maxOf(0L, (r.delDisk ?: 0L) - disk) else 0L)
     }
 }
