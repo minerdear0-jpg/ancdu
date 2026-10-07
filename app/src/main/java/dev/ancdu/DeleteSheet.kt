@@ -123,6 +123,16 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     val childThumbs = ArrayList<FrameLayout?>()
     /** Для тестов: «контактные листы» строк-каталогов (строка без него — null). */
     val contactRows = ArrayList<LinearLayout?>()
+    /**
+     * Когда закрылась карточка поверх листа (uptime; 0 — не открывалась): «Удалить» молчит
+     * [CARD_GUARD_MS] после — второй тап по ✕ / кнопке карточки не удаляет.
+     */
+    private var cardClosedAt = 0L
+    /** Карточка открыта и её закрытие ещё не отмечено (слушатель закрытия Dialog приходит постом). */
+    private var cardOpen = false
+    /** Для тестов: сколько касаний «Удалить» отклонено защитой после карточки. */
+    var guardedTaps = 0
+        private set
 
     private val hardlink = group?.hardlink ?: (!p.dir && p.flags and F_HLDUP != 0)
     /** Данные другого приложения: своё (тест, свой кэш) «чужим» не считается. */
@@ -223,7 +233,26 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     fun openCard(info: QuickLookInfo) {
         if (!dialog.isShowing) return
         card?.dismiss()
-        card = QuickLook(act, info, onClose = { }, fromSheet = true) {}.also { it.show() }
+        cardOpen = true
+        var self: QuickLook? = null
+        // Отмечает закрытие только своя карточка (закрытие прежней приходит постом позже).
+        self = QuickLook(act, info, onClose = { if (card === self) cardClosed() }, fromSheet = true) {}
+        card = self.also { it.show() }
+    }
+
+    private fun cardClosed() {
+        if (!cardOpen) return
+        cardOpen = false
+        cardClosedAt = SystemClock.uptimeMillis()
+    }
+
+    /**
+     * «Удалить» сейчас молчит: карточка поверх листа закрылась меньше [CARD_GUARD_MS] назад (или
+     * закрывается — окно уже скрыто, слушатель ещё не пришёл).
+     */
+    private fun guarded(): Boolean {
+        if (cardOpen && card?.dialog?.isShowing != true) cardClosed()
+        return cardOpen || cardClosedAt > 0 && SystemClock.uptimeMillis() - cardClosedAt < CARD_GUARD_MS
     }
 
     /** Строка или квадрат открывает карточку [info]: касание — TAP, TalkBack — «Быстрый просмотр». */
@@ -462,6 +491,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (b != null) { addView(cancelButton, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)); return@apply }
         val del = button(readyLabel, C.DANGER_FILL, Color.WHITE, cue = null) {
             val b = deleteButton
+            if (guarded()) { guardedTaps++; return@button }
             if (b?.isEnabled == true) {
                 Feedback.cue(b, if (tier.root) Cue.COMMIT_ROOT else Cue.COMMIT)
                 dialog.dismiss(); onDelete(fastBox?.isChecked == true)
@@ -494,6 +524,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     companion object {
         /** Нажатая «Удалить»: темнее DANGER_FILL (белый текст на нём контрастнее). */
         private const val DANGER_PRESSED = 0xFF8C1D17.toInt()
+        /** «Удалить» не принимает касаний столько после закрытия карточки поверх листа. */
+        const val CARD_GUARD_MS = 500L
     }
 }
 

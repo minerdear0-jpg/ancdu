@@ -66,7 +66,7 @@ internal class FrameJob(private val path: String, private val px: Size, private 
                 val bmp = try {
                     r.getScaledFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, px.width, px.height)
                 } catch (e: Throwable) { null } ?: continue
-                sink.post { c -> if (c.video?.frame(i, bmp) != true) bmp.recycle() }
+                sink.post(bmp) { c -> c.video?.frame(i, bmp) == true }
             }
         } finally { r.release() }
     }
@@ -156,6 +156,11 @@ internal class VideoBox(private val act: Activity, private val path: String, pri
 
     fun failed() { if (!closed) sink.card?.videoFailed() }
 
+    /** Место кадра сменило размер (поворот, шрифт): видео вписывается заново. */
+    private val refit = View.OnLayoutChangeListener { _, l, top, r, bot, ol, ot, or, ob ->
+        if (r - l != or - ol || bot - top != ob - ot) player?.let { p -> main.post { p.refit() } }
+    }
+
     private fun play() {
         if (closed || shown < 0) return
         player?.let { it.toggle(); return }
@@ -164,6 +169,7 @@ internal class VideoBox(private val act: Activity, private val path: String, pri
         cantPlay?.let { main.removeView(it) }
         cantPlay = null
         main.addView(p.texture, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER))
+        main.addOnLayoutChangeListener(refit)
         strip.visibility = View.INVISIBLE
         bottom.addView(p.controls, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         p.start(sink)
@@ -184,6 +190,7 @@ internal class VideoBox(private val act: Activity, private val path: String, pri
     private fun stopPlayer() {
         val p = player ?: return
         player = null
+        main.removeOnLayoutChangeListener(refit)
         p.release()
         main.removeView(p.texture)
         bottom.removeView(p.controls)
@@ -229,6 +236,12 @@ internal class MiniPlayer(private val act: Activity, private val path: String, p
         private set
     var muted = true
         private set
+    /** Пауза по просьбе Activity (onPause): готовый плеер сам не стартует, только тап. */
+    var held = false
+        private set
+    /** Размер кадра видео (0 — ещё неизвестен): по нему [refit] при смене размера места. */
+    private var vw = 0
+    private var vh = 0
     val playing: Boolean get() = prepared && !released && try { mp.isPlaying } catch (e: IllegalStateException) { false }
 
     val texture = TextureView(act).apply {
@@ -290,14 +303,15 @@ internal class MiniPlayer(private val act: Activity, private val path: String, p
             prepared = true
             if (durMs <= 0) durMs = mp.duration.toLong().coerceAtLeast(0)
             seek.max = maxOf(1, durMs.toInt())
-            mp.setVolume(0f, 0f)
-            mp.start()
+            ui.removeCallbacks(stall)
+            mp.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
+            // Activity ушла на паузу, пока готовился: не стартует в фоне.
+            if (!held) { mp.start(); ui.post(tick) }
             label()
-            ui.post(tick)
         }
         mp.setOnCompletionListener { label() }
         // Кадр видео — целиком в месте превью, с его пропорциями.
-        mp.setOnVideoSizeChangedListener { _, w, h -> if (!released) fit(w, h) }
+        mp.setOnVideoSizeChangedListener { _, w, h -> if (!released) { vw = w; vh = h; refit() } }
         mp.setOnErrorListener { _, what, extra ->
             Log.i("ancdu", "mini player: error $what/$extra")
             if (!released) onError()
@@ -308,6 +322,8 @@ internal class MiniPlayer(private val act: Activity, private val path: String, p
     /** Источник — на [QuickLook.exec]: обычный файл, O_NOFOLLOW, fstat; затем prepareAsync на главном. */
     fun start(sink: Sink) {
         val p = path
+        // Источник и подготовка не уложились — снова раскадровка («воспроизведение недоступно»).
+        ui.postDelayed(stall, STALL_MS)
         synchronized(lock) { sourcing = true }
         QuickLook.exec.execute {
             val ok = try {
@@ -332,20 +348,28 @@ internal class MiniPlayer(private val act: Activity, private val path: String, p
         }
     }
 
-    private fun fit(w: Int, h: Int) {
+    private val stall = Runnable { if (!released && !prepared) { Log.i("ancdu", "mini player: prepare timed out"); onError() } }
+
+    /** Кадр видео — целиком в месте [texture.parent], с пропорциями видео; зовётся и при смене размера места. */
+    fun refit() {
         val box = texture.parent as? View ?: return
+        val w = vw; val h = vh
         if (w <= 0 || h <= 0 || box.width <= 0 || box.height <= 0) return
         val k = minOf(box.width.toFloat() / w, box.height.toFloat() / h)
-        texture.layoutParams = FrameLayout.LayoutParams((w * k).toInt(), (h * k).toInt(), Gravity.CENTER)
+        val lp = FrameLayout.LayoutParams((w * k).toInt(), (h * k).toInt(), Gravity.CENTER)
+        val old = texture.layoutParams as? FrameLayout.LayoutParams
+        if (old == null || old.width != lp.width || old.height != lp.height) texture.layoutParams = lp
     }
 
     fun toggle() {
+        held = false
         if (!prepared || released) return
         try { if (mp.isPlaying) mp.pause() else { mp.start(); ui.removeCallbacks(tick); ui.post(tick) } } catch (e: IllegalStateException) {}
         label()
     }
 
     fun pause() {
+        held = true
         if (!prepared || released) return
         try { if (mp.isPlaying) mp.pause() } catch (e: IllegalStateException) {}
         label()
@@ -373,9 +397,14 @@ internal class MiniPlayer(private val act: Activity, private val path: String, p
         if (now) mp.release()
         surface?.release(); surface = null
     }
+
+    private companion object {
+        /** Бюджет источника и подготовки. */
+        const val STALL_MS = 4000L
+    }
 }
 
-/** Значок кнопки плеера 44dp: ▶, ❚❚, динамик (перечёркнутый — без звука). Рисуется, не из шрифта. */
+/** Значок кнопки 44dp: ▶, ❚❚, динамик (перечёркнутый — без звука), ✕. Рисуется, не из шрифта. */
 internal class PlayerIcon(ctx: Context, mode: Int) : View(ctx) {
     var mode: Int = mode
         set(v) { field = v; invalidate() }
@@ -394,6 +423,12 @@ internal class PlayerIcon(ctx: Context, mode: Int) : View(ctx) {
         path.reset()
         paint.style = Paint.Style.FILL
         when (mode) {
+            CLOSE -> {
+                paint.style = Paint.Style.STROKE
+                val r = s * 0.45f
+                c.drawLine(cx - r, cy - r, cx + r, cy + r, paint)
+                c.drawLine(cx - r, cy + r, cx + r, cy - r, paint)
+            }
             PLAY -> { path.moveTo(cx - s * 0.4f, cy - s / 2); path.lineTo(cx + s * 0.5f, cy); path.lineTo(cx - s * 0.4f, cy + s / 2); path.close(); c.drawPath(path, paint) }
             PAUSE -> { val w = s * 0.28f; c.drawRect(cx - s * 0.4f, cy - s / 2, cx - s * 0.4f + w, cy + s / 2, paint); c.drawRect(cx + s * 0.4f - w, cy - s / 2, cx + s * 0.4f, cy + s / 2, paint) }
             else -> {
@@ -413,5 +448,6 @@ internal class PlayerIcon(ctx: Context, mode: Int) : View(ctx) {
         const val PAUSE = 1
         const val MUTED = 2
         const val SOUND = 3
+        const val CLOSE = 4
     }
 }

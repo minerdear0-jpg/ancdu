@@ -20,10 +20,11 @@ import java.util.Locale
 /**
  * Превью в листе удаления: квадраты строк [SheetPeek.THUMB_DP] и место [SheetPeek.BOX_DP] листа
  * одного файла. Загрузка — [PeekJob] (проверка обычного файла, O_NOFOLLOW + fstat, Throwable) на
- * [QuickLook.exec], по одной задаче за раз: второй поток остаётся карточке, открытой поверх листа.
- * У каждой задачи [Peek.TIMEOUT_MS]; не успела или не вышло — в квадрате остаётся знак вида
- * («IMG»/«VID»/«APK»), в месте — «превью недоступно». [close] (лист закрыт) отменяет всё и
- * освобождает битмапы. Фоновые задачи держат только [Link], не лист и не Activity.
+ * своих потоках [exec], не на пуле карточки: карточка поверх листа никогда не ждёт зависший декодер
+ * листа. У листа — одна задача за раз; следующая начинается, только когда предыдущая ВЕРНУЛАСЬ.
+ * [Peek.TIMEOUT_MS] — только для показа: не успела — в квадрате остаётся знак вида
+ * («IMG»/«VID»/«APK»), в месте — «превью недоступно», поздний итог отбрасывается. [close] (лист
+ * закрыт) отменяет всё и освобождает битмапы. Фоновые задачи держат только [Link].
  */
 internal class SheetThumbs(private val act: Activity) {
     private val t: Txt = act.tx
@@ -106,7 +107,7 @@ internal class SheetThumbs(private val act: Activity) {
         val job = PeekJob(s.info.path, s.kind, s.px, act.dp(SheetPeek.THUMB_DP), act.applicationContext.packageManager,
             t, signal)
         s.timeout = Runnable { settle(id, null) }.also { ui.postDelayed(it, Peek.TIMEOUT_MS) }
-        QuickLook.exec.execute {
+        exec.execute {
             val r = try { job.run() } catch (e: Throwable) {
                 Log.i("ancdu", "sheet thumb: no preview (${e.javaClass.simpleName})")
                 null
@@ -115,15 +116,21 @@ internal class SheetThumbs(private val act: Activity) {
         }
     }
 
-    /** Итог места [id] (null — нет превью или вышло время); поздний итог отбрасывается. */
-    internal fun settle(id: Int, r: Preview?) {
+    /** Задача места [id] вернулась ([r] — итог или null): место показывает его, если ещё ждёт; дальше — следующая. */
+    internal fun returned(id: Int, r: Preview?) {
+        if (closed) { recycle(r); return }
+        busy = false
+        settle(id, r)
+        pump()
+    }
+
+    /** Показ места [id] (null — нет превью или вышло время); уже показанное — поздний итог отбрасывается. */
+    private fun settle(id: Int, r: Preview?) {
         val s = slots.getOrNull(id)
         if (closed || s == null || s.done) { recycle(r); return }
         s.done = true
         s.timeout?.let { ui.removeCallbacks(it) }
         show(s, r)
-        busy = false
-        pump()
     }
 
     private fun show(s: Slot, r: Preview?) {
@@ -200,13 +207,21 @@ internal class SheetThumbs(private val act: Activity) {
 
     /** Связь фоновой задачи с листом: закрытие ([thumbs] = null) обрывает её; итог — на главном потоке. */
     internal class Link(@Volatile var thumbs: SheetThumbs?) {
-        fun post(id: Int, r: Preview?) { MAIN.post { val th = thumbs; if (th == null) recycle(r) else th.settle(id, r) } }
+        fun post(id: Int, r: Preview?) { MAIN.post { val th = thumbs; if (th == null) recycle(r) else th.returned(id, r) } }
     }
 
     companion object {
         /** Строк текста в месте 120dp. */
         private const val BOX_LINES = 7
         private val MAIN = Handler(Looper.getMainLooper())
+
+        /**
+         * Потоки превью листа — отдельно от [QuickLook.exec]. Лист грузит по одному; зависшая задача
+         * держит свой поток (и очередь своего листа), следующий лист получит новый поток.
+         */
+        val exec: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newCachedThreadPool { r ->
+            Thread(r, "ancdu-thumb").apply { isDaemon = true }
+        }
 
         private fun recycle(r: Preview?) {
             when (r) {

@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Drawable
+import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.os.CancellationSignal
 import android.os.Handler
@@ -85,8 +86,11 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         private set
     lateinit var deleteButton: TextView
         private set
-    /** «Закрыть» карточки над листом (null — обычная карточка). */
-    var closeButton: TextView? = null
+    /**
+     * ✕ карточки над листом — вверху справа, 44dp (null — обычная карточка): не там, где под
+     * карточкой «Удалить» листа.
+     */
+    var closeButton: View? = null
         private set
     /** Раскадровка и плеер видео (null — не видео или ещё не загружается). */
     internal var video: VideoBox? = null
@@ -145,12 +149,23 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         background = Brackets(act, C.PANEL, bottom = false)
         setPadding(act.dp(20), act.dp(20), act.dp(20), act.dp(16))
         addView(ScrollView(act).apply { addView(body()) }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
-        addView(actions(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = act.dp(16) })
+        // Над листом кнопок внизу нет (действие у листа; закрытие — ✕ вверху).
+        if (SheetPeek.cardActions(fromSheet))
+            addView(actions(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = act.dp(16) })
+        else actions()
     }
 
     private fun body(): View = act.vbox(10).apply {
         typeText = act.caps(Peek.typeLine(t, kind, ext, mime, text = false)).apply { isAllCaps = false }
-        addView(typeText)
+        if (SheetPeek.cardActions(fromSheet)) addView(typeText)
+        else addView(act.hbox(8).apply {
+            addView(typeText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            closeButton = PlayerIcon(act, PlayerIcon.CLOSE).apply {
+                contentDescription = t.s(R.string.close)
+                setOnClickListener { Feedback.cue(this, Cue.BACK); dialog.dismiss() }
+            }
+            addView(closeButton, LinearLayout.LayoutParams(act.dp(44), act.dp(44)))
+        })
         nameText = act.label(Bidi.visible(info.name), 16f, C.TEXT, mono = true, bold = true).apply { setTextIsSelectable(true) }
         addView(nameText)
         addView(act.label(Bidi.visible(info.parent), 12f, C.MUTED, mono = true).apply {
@@ -173,9 +188,6 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
 
     /** «ВЫБРАТЬ» и «УДАЛИТЬ…» — равными колонками; одна — во всю ширину. */
     private fun actions(): View = act.hbox(10).apply {
-        if (!SheetPeek.cardActions(fromSheet)) closeButton = button(t.s(R.string.close), C.TEXT, C.FRAME).apply {
-            setOnClickListener { Feedback.cue(this, Cue.BACK); dialog.dismiss() }
-        }.also { addView(it, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)) }
         selectButton = button(selectLabel ?: t.s(R.string.ql_select), C.TEXT, C.FRAME).apply {
             visibility = if (onSelect == null || fromSheet) View.GONE else View.VISIBLE
             setOnClickListener { dialog.dismiss(); onSelect?.invoke() }
@@ -234,15 +246,17 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
                 Log.i("ancdu", "quick look: no preview (${e.javaClass.simpleName})")
                 null
             }
-            sink.post { it.deliver(r) }
+            val bmp = when (r) { is Preview.Image -> r.bmp; is Preview.Apk -> r.icon; else -> null }
+            if (bmp == null) sink.post { it.deliver(r) } else sink.post(bmp) { it.deliver(r) }
         }
     }
 
-    internal fun deliver(r: Preview?) {
-        if (closed || settled) return
+    /** false — итог не нужен (закрыто, уже показано или отказано): его битмап освобождает вызвавший. */
+    internal fun deliver(r: Preview?): Boolean {
+        if (closed || settled) return false
         settled = true
         ui.removeCallbacks(timeout)
-        val b = box ?: return
+        val b = box ?: return false
         when (r) {
             null -> fail()
             is Preview.Image -> {
@@ -275,6 +289,7 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
+        return true
     }
 
     /** Сведения видео («0:42 · 1920×1080») — в строку сведений. */
@@ -323,6 +338,9 @@ internal sealed class Preview {
 internal class Sink(@Volatile var card: QuickLook?) {
     fun post(f: (QuickLook) -> Unit) { MAIN.post { card?.let(f) } }
 
+    /** Как [post] с битмапом [bmp]: карточки уже нет или [f] его не взяла (false) — освобождается. */
+    fun post(bmp: Bitmap, f: (QuickLook) -> Boolean) { MAIN.post { val c = card; if (c == null || !f(c)) bmp.recycle() } }
+
     private companion object { val MAIN = Handler(Looper.getMainLooper()) }
 }
 
@@ -340,12 +358,16 @@ internal class PeekJob(val path: String, val kind: PeekKind, val px: Size, val i
                 val dims = if (o.outWidth > 0 && o.outHeight > 0) Peek.dims(o.outWidth, o.outHeight) else null
                 Preview.Image(ThumbnailUtils.createImageThumbnail(File(real), px, signal), dims)
             }
-            // Карточка показывает видео раскадровкой ([FrameJob]); здесь — кадр для листа.
-            PeekKind.VIDEO -> {
-                withRegular(real) { true } ?: return null
-                if (signal.isCanceled) return null
-                Preview.Image(ThumbnailUtils.createVideoThumbnail(File(real), px, signal), null)
-            }
+            // Карточка показывает видео раскадровкой ([FrameJob]); здесь — кадр для листа, с того же
+            // проверенного дескриптора (не по пути).
+            PeekKind.VIDEO -> withRegular(real) { fd ->
+                val r = MediaMetadataRetriever()
+                try {
+                    r.setDataSource(fd)
+                    if (signal.isCanceled) null
+                    else r.getScaledFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, px.width, px.height)
+                } finally { r.release() }
+            }?.let { Preview.Image(it, null) }
             PeekKind.TEXT -> withRegular(real) { fd ->
                 val b = ByteArray(Peek.READ)
                 var n = 0

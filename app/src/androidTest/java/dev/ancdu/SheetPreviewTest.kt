@@ -179,6 +179,45 @@ class SheetPreviewTest {
         assertTrue(File(album, "a.jpg").exists())
     }
 
+    /**
+     * Двойной тап: ✕ карточки поверх листа закрыта — «Удалить» листа 500 мс не принимает касаний
+     * (файл цел, лист открыт); после — удаляет как обычно. Удаляется только файл в свежем каталоге
+     * (mkdtemp) под cacheDir, путь проверен.
+     */
+    @Test fun closingCardGuardsDelete() {
+        val d = fixture()
+        val f = File(d, "victim.jpg").also { TestMedia.jpeg(it) }
+        assertTrue(f.isAbsolute && f.canonicalPath.startsWith(ctx.cacheDir.canonicalPath + "/"))
+        val a = browse(d)
+        val s = sheetOf(a, "victim.jpg")
+        assertEquals(f.path, s.p.path)
+        assertTrue("отсчёт", waitFor { s.deleteButton?.isEnabled == true })
+        ins.runOnMainSync { assertTrue(s.selfBox!!.performClick()) }
+        assertTrue(waitFor { s.card?.dialog?.isShowing == true })
+        ins.runOnMainSync {
+            val q = s.card!!
+            // ✕ — вверху карточки, не над «Удалить» листа
+            val at = IntArray(2).also { q.closeButton!!.getLocationOnScreen(it) }
+            val del = IntArray(2).also { s.deleteButton!!.getLocationOnScreen(it) }
+            assertTrue("✕ ${at[1]} над «Удалить» ${del[1]}", at[1] + q.closeButton!!.height <= del[1])
+            assertTrue(q.closeButton!!.height >= a.dp(44))
+            q.closeButton!!.performClick()
+            assertFalse(q.dialog.isShowing)
+            // второй тап того же двойного — в «Удалить» листа
+            s.deleteButton!!.performClick()
+            assertEquals(1, s.guardedTaps)
+            assertTrue("лист открыт", s.dialog.isShowing)
+        }
+        assertTrue(f.exists())
+        Thread.sleep(DeleteSheet.CARD_GUARD_MS + 100)
+        ins.runOnMainSync {
+            s.deleteButton!!.performClick()
+            assertEquals(1, s.guardedTaps)
+            assertFalse("удаление пошло", s.dialog.isShowing)
+        }
+        assertTrue(waitFor { !f.exists() && !Holder.deleting })
+    }
+
     /** Один файл: место 120dp над предупреждением; из карточки («Удалить…») — без него. */
     @Test fun singleFileBoxOnlyNotFromCard() {
         val d = fixture()
