@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Звуки и вибрация интерфейса. Решение — [FeedbackPolicy]; здесь только обстановка (режим,
  * ringer, TalkBack, системные настройки), SoundPool и вибратор. Звуки синтезируются ([Synth])
- * при первом запуске в cacheDir/fx_v1_<имя>_<частота>.wav — на Holder.io, не на главном потоке.
+ * при первом запуске в cacheDir/fx_v2_<имя>_<частота>.wav — на Holder.io, не на главном потоке.
  * Всё, кроме генерации, — главный поток.
  */
 object Feedback {
@@ -85,7 +85,7 @@ object Feedback {
         val dir = dirOverride ?: a.cacheDir
         Holder.io.execute {
             for (name in Synth.NAMES) {
-                val f = File(dir, "fx_v1_${name}_$sr.wav")
+                val f = File(dir, "fx_v2_${name}_$sr.wav")
                 try {
                     if (!f.isFile) {
                         genThread = Thread.currentThread().name

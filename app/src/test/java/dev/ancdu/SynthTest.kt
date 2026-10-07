@@ -7,6 +7,7 @@ import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.log10
 
 class SynthTest {
@@ -29,7 +30,7 @@ class SynthTest {
         for ((name, e) in expect) {
             val b = Synth.render(name, sr)
             assertEquals(name, e.first, b.size)
-            assertEquals(name, e.second, peakDb(b), 0.1)
+            assertEquals(name, e.second + Synth.LEVEL_DB, peakDb(b), 0.1)
         }
     }
 
@@ -40,8 +41,8 @@ class SynthTest {
             if (name != "commit") assertEquals(name, 0f, b.first(), 1e-6f)
             assertEquals(name, 0f, b.last(), 1e-6f)
         }
-        // Щелчок commit — не громче своей нормировки −22 dBFS (с запасом на сумму с телом).
-        assertTrue(abs(Synth.render("commit", sr).first()) < 0.1f)
+        // Щелчок commit — не громче своей нормировки −22 dBFS + LEVEL_DB (с запасом на сумму с телом).
+        assertTrue(abs(Synth.render("commit", sr).first()) < 0.1f * 10.0.pow(Synth.LEVEL_DB / 20).toFloat())
     }
 
     @Test fun deterministic() {

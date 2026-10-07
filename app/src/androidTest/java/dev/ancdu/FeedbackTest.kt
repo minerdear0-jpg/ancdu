@@ -46,7 +46,7 @@ class FeedbackTest {
         val base = ctx.cacheDir.canonicalFile
         check(d.isAbsolute && d.canonicalFile.parentFile == base && d.name.startsWith("fxtest")) { "$d" }
         d.listFiles()?.forEach { f ->
-            check(f.isAbsolute && f.canonicalFile.parentFile == d.canonicalFile && f.name.startsWith("fx_v1_")) { "$f" }
+            check(f.isAbsolute && f.canonicalFile.parentFile == d.canonicalFile && f.name.startsWith("fx_v2_")) { "$f" }
             f.delete()
         }
         d.delete()
@@ -58,7 +58,7 @@ class FeedbackTest {
         Feedback.dirOverride = d
         ins.runOnMainSync { Feedback.reload(ctx) }
         val sr = Feedback.sampleRate(ctx)
-        val want = Synth.NAMES.map { File(d, "fx_v1_${it}_$sr.wav") }
+        val want = Synth.NAMES.map { File(d, "fx_v2_${it}_$sr.wav") }
         assertTrue(waitFor { want.all { it.isFile } && Feedback.ready })
         assertEquals("ancdu-io", Feedback.genThread)
         for (f in want) {

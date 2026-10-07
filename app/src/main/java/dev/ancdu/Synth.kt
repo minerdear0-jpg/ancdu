@@ -19,6 +19,14 @@ import kotlin.math.sin
 object Synth {
     val NAMES = listOf("tick", "arm", "count", "commit", "done", "refuse")
 
+    /**
+     * Общий подъём уровня к рецептам (дБ). Рецепты слушались на компьютере; на телефоне tick
+     * в −24 dBFS через поток системных звуков оказался на ~9 дБ тише системного щелчка Android
+     * (Effect_Tick: пик −14,9 dBFS, 91 мс), который он заменяет. +9 дБ — пик tick как у него;
+     * соотношения между звуками не меняются, commit остаётся самым громким (−7 dBFS).
+     */
+    const val LEVEL_DB = 9.0
+
     /** Зерно шума щелчка commit: звук одинаков при каждой генерации. */
     private const val SEED = 0x616E6364L
 
@@ -56,11 +64,11 @@ object Synth {
 
     private fun dbToLin(db: Double) = 10.0.pow(db / 20)
 
-    /** Пик — ровно [dbfs]. */
+    /** Пик — ровно [dbfs] рецепта плюс [LEVEL_DB]. */
     private fun norm(b: FloatArray, dbfs: Double): FloatArray {
         var p = 0f
         for (v in b) p = max(p, abs(v))
-        val g = if (p > 0) (dbToLin(dbfs) / p).toFloat() else 0f
+        val g = if (p > 0) (dbToLin(dbfs + LEVEL_DB) / p).toFloat() else 0f
         for (i in b.indices) b[i] *= g
         return b
     }
