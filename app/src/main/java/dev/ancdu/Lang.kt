@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.LocaleList
 import java.util.Locale
 
@@ -130,15 +132,30 @@ abstract class LangActivity : Activity() {
         }
     }
 
+    /** API 30–33: в этом же сообщении главного потока запущен другой экран ([startActivity]). */
+    private var justStarted = false
+    private val clearStarted = Runnable { justStarted = false }
+    private val starts = Handler(Looper.getMainLooper())
+
     /** API 30–33: переход открытия — сразу после запуска (на 34+ — overrideActivityTransition). */
     override fun startActivity(intent: Intent, options: Bundle?) {
         super.startActivity(intent, options)
-        if (Build.VERSION.SDK_INT < 34) pending(open = true)
+        if (Build.VERSION.SDK_INT < 34) {
+            pending(open = true)
+            justStarted = true
+            starts.removeCallbacks(clearStarted)
+            starts.post(clearStarted)
+        }
     }
 
+    /**
+     * API 30–33: переход закрытия. Сразу после [startActivity] (ScanActivity → Browser) последний
+     * overridePendingTransition задаёт общий переход — снова пара открытия, иначе браузер
+     * появился бы без анимации.
+     */
     override fun finish() {
         super.finish()
-        if (Build.VERSION.SDK_INT < 34) pending(open = false)
+        if (Build.VERSION.SDK_INT < 34) pending(open = justStarted)
     }
 
     @Suppress("DEPRECATION")
