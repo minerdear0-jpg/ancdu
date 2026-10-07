@@ -18,6 +18,7 @@
     <string name="fmt_time" translatable="false">HH:mm</string>
     <string name="fmt_day">MMM d</string>
     <string name="fmt_day_time">MMM d, HH:mm</string>
+    <string name="fmt_date_year">MMM d, yyyy, HH:mm</string>
 
     <plurals name="items">
         <item quantity="one">%1$s item</item>
@@ -137,7 +138,7 @@
     <string name="size_mode_desc">Size: %1$s</string>
     <string name="folder_empty">empty</string>
     <string name="folder_no_access">⚠ no access</string>
-    <string name="browser_hint">tap — open · long press — details, delete</string>
+    <string name="browser_hint">tap — open, quick look · long press — delete</string>
     <string name="crumb_go">go to %1$s</string>
     <string name="internal_storage">Internal storage</string>
     <string name="path_caps">Path</string>
@@ -197,6 +198,19 @@
     <string name="delete_in">Delete in %1$s…</string>
     <string name="delete_in_desc">Delete, available in %1$s</string>
     <string name="delete_ready">“Delete” is available</string>
+
+    <!-- Quick look card (QuickLook, Peek). -->
+    <string name="ql_image">IMAGE · %1$s</string>
+    <string name="ql_video">VIDEO · %1$s</string>
+    <string name="ql_text">TEXT · UTF-8</string>
+    <string name="ql_apk" translatable="false">APK</string>
+    <string name="ql_file">FILE</string>
+    <string name="ql_file_ext">FILE · .%1$s</string>
+    <string name="ql_no_preview">no preview</string>
+    <string name="ql_text_more">showing the first 2\u00A0KiB of %1$s</string>
+    <string name="ql_installed">installed %1$s</string>
+    <string name="ql_select">Select</string>
+    <string name="ql_delete">Delete…</string>
 
     <!-- Scan screen. -->
     <string name="scanning">Scanning · %1$s</string>

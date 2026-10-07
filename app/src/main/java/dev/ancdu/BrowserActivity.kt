@@ -79,6 +79,9 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: открытый лист удаления. */
     var sheet: DeleteSheet? = null
         private set
+    /** Для тестов: открытая карточка быстрого просмотра. */
+    var quickLook: QuickLook? = null
+        private set
     private val scrollAt = HashMap<Int, Int>()
     /** Заголовок: имя текущей папки (на корне — PathText.rootTitle). */
     lateinit var title: TextView
@@ -263,7 +266,8 @@ class BrowserActivity : LangActivity() {
         }
         override fun click(index: Int) {
             if (busy) return
-            if (info[4 * index + 3].toInt() and F_DIR == 0) { askDelete(index); return }
+            // Файл — карточка быстрого просмотра (не удаление); долгое нажатие — лист удаления.
+            if (info[4 * index + 3].toInt() and F_DIR == 0) { openQuickLook(kids[index], value(index)); return }
             scrollAt[node] = list.scroll
             load(kids[index], 0, dir = 1)
         }
@@ -413,7 +417,8 @@ class BrowserActivity : LangActivity() {
     private fun hasNewer(): Boolean =
         Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, Holder.root, Holder.viaRoot)
 
-    private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true
+    /** Открыт лист удаления или карточка: дерево не подставляется под ними. */
+    private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true || quickLook?.dialog?.isShowing == true
 
     /**
      * Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт.
@@ -590,6 +595,7 @@ class BrowserActivity : LangActivity() {
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
         pathPanel?.dismiss(); pathPanel = null
+        quickLook?.dismiss(); quickLook = null
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
     }
@@ -748,6 +754,25 @@ class BrowserActivity : LangActivity() {
     }
 
     private fun askDelete(i: Int) = ask(kids[i])
+
+    /**
+     * Карточка файла [target] дерева [h] ([size] — размер в показанном режиме). «Удалить…» открывает
+     * обычный лист удаления того же узла, если дерево за это время не сменилось.
+     */
+    private fun openQuickLook(target: Int, size: Long) {
+        sheet?.dismiss()
+        quickLook?.dismiss()
+        cancelAsk()
+        val handle = h
+        val path = Native.str(Native.path(handle, target))
+        val info = QuickLookInfo(name = nameOf(target), path = path,
+            parent = Native.str(Native.path(handle, Native.parent(handle, target))), size = size,
+            owner = Owner.packageOf(path), rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName))
+        // Закрыта карточка — подставить дерево, если оно пришло, пока она была открыта.
+        quickLook = QuickLook(this, info, onClose = { refreshPending() }) {
+            if (!busy && h == handle && !isFinishing) ask(target)
+        }.also { it.show() }
+    }
 
     /**
      * Лист удаления узла [target]. Главный поток. Удаляется только из свежего дерева: ждёт более

@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -12,12 +13,14 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -226,6 +229,29 @@ fun Context.navRow(head: String, body: CharSequence, desc: String, bodyColor: In
     isClickable = true; isFocusable = true
     contentDescription = desc
     feedbackClick { onClick() }
+}
+
+/**
+ * Владелец пути: значок 20dp и «<приложение> · данные приложения» (последний ребёнок — текст).
+ * Пакета нет (удалён, другой профиль) — только имя пакета, без значка.
+ */
+fun Context.ownerRow(pkg: String, t: Txt): LinearLayout = hbox(8).apply {
+    val pm = packageManager
+    var name = pkg
+    try {
+        val ai = pm.getApplicationInfo(pkg, 0)
+        name = ai.loadLabel(pm).toString()
+        addView(ImageView(context).apply {
+            setImageDrawable(ai.loadIcon(pm))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(20), dp(20)))
+    } catch (e: PackageManager.NameNotFoundException) {
+        // без значка
+    }
+    addView(label(t.s(R.string.owner, name), 14f, C.TEXT).apply {
+        maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+    }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+    contentDescription = t.s(R.string.owner_desc, name)
 }
 
 fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply {

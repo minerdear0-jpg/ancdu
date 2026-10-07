@@ -81,6 +81,7 @@ class DeleteSheetTest {
     @After fun tearDown() {
         ins.runOnMainSync {
             act?.sheet?.dismiss()
+            act?.quickLook?.dismiss()
             act?.finish()
             Holder.clear()
         }
@@ -118,17 +119,24 @@ class DeleteSheetTest {
         assertTrue(File(dir, "small.bin").exists())
     }
 
-    @Test fun fileTapOpensSheet() {
+    /** Тап по файлу — карточка, не лист; лист — долгим нажатием. */
+    @Test fun fileLongPressOpensSheet() {
         val dir = fixture("ds2")
         File(dir, "sub").mkdirs()
         File(dir, "one.bin").writeBytes(ByteArray(5000))
         val a = browse(dir.path)
         val i = indexOf(a, "one.bin")
         ins.runOnMainSync { a.list.source!!.click(i) }
+        assertTrue(waitFor { a.quickLook?.dialog?.isShowing == true })
+        ins.runOnMainSync {
+            assertTrue(a.sheet?.dialog?.isShowing != true)
+            a.quickLook!!.dismiss()
+            a.list.source!!.longClick(i)
+        }
         assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
         ins.runOnMainSync {
             val s = a.sheet!!
-            assertEquals(0, a.node)              // тап по файлу не навигирует
+            assertEquals(0, a.node)              // ни тап, ни долгое нажатие по файлу не навигируют
             assertTrue(s.childNames.isEmpty())
             assertNotNull(s.deleteButton)
             assertFalse(s.p.dir)

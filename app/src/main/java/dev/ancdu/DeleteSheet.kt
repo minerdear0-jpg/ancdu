@@ -3,7 +3,6 @@ package dev.ancdu
 import android.app.Activity
 import android.app.Dialog
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
@@ -24,7 +23,6 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
 import android.widget.CheckBox
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -170,7 +168,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
             contentDescription = t.s(R.string.path_desc, p.path)
         })
-        p.owner?.let { addView(ownerRow(it)) }
+        p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
         addView(sizeLine())
         if (p.dir && p.top.isNotEmpty()) addView(children())
         if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER))
@@ -197,26 +195,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         fastBox = box
         addView(box)
         addView(note)
-    }
-
-    private fun ownerRow(pkg: String): View = act.hbox(8).apply {
-        val pm = act.packageManager
-        var name = pkg
-        try {
-            val ai = pm.getApplicationInfo(pkg, 0)
-            name = ai.loadLabel(pm).toString()
-            addView(ImageView(act).apply {
-                setImageDrawable(ai.loadIcon(pm))
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
-        } catch (e: PackageManager.NameNotFoundException) {
-            // Пакета нет (удалён, другой профиль): только имя пакета, без значка.
-        }
-        ownerText = act.label(t.s(R.string.owner, name), 14f, C.TEXT).apply {
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-        }
-        addView(ownerText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        contentDescription = t.s(R.string.owner_desc, name)
     }
 
     /**

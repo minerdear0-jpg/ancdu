@@ -12,6 +12,7 @@
 
     <string name="fmt_day">dd.MM</string>
     <string name="fmt_day_time">dd.MM HH:mm</string>
+    <string name="fmt_date_year">dd.MM.yyyy HH:mm</string>
 
     <plurals name="items">
         <item quantity="one">%1$s эл.</item>
@@ -128,7 +129,7 @@
     <string name="size_mode_desc">Размер: %1$s</string>
     <string name="folder_empty">пусто</string>
     <string name="folder_no_access">⚠ нет доступа</string>
-    <string name="browser_hint">тап — открыть · долгий — подробнее, удалить</string>
+    <string name="browser_hint">тап — открыть, просмотр · долгий — удалить</string>
     <string name="crumb_go">перейти к %1$s</string>
     <string name="internal_storage">Внутренняя память</string>
     <string name="path_caps">Путь</string>
@@ -185,6 +186,17 @@
     <string name="delete_in">Удалить через %1$s…</string>
     <string name="delete_in_desc">Удалить, станет доступно через %1$s</string>
     <string name="delete_ready">Кнопка «Удалить» доступна</string>
+
+    <string name="ql_image">ИЗОБРАЖЕНИЕ · %1$s</string>
+    <string name="ql_video">ВИДЕО · %1$s</string>
+    <string name="ql_text">ТЕКСТ · UTF-8</string>
+    <string name="ql_file">ФАЙЛ</string>
+    <string name="ql_file_ext">ФАЙЛ · .%1$s</string>
+    <string name="ql_no_preview">превью недоступно</string>
+    <string name="ql_text_more">показаны первые 2\u00A0КиБ из %1$s</string>
+    <string name="ql_installed">установлена %1$s</string>
+    <string name="ql_select">Выбрать</string>
+    <string name="ql_delete">Удалить…</string>
 
     <string name="scanning">Сканирование · %1$s</string>
     <string name="no_root">без root</string>
