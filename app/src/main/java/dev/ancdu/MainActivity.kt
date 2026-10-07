@@ -99,9 +99,13 @@ class MainActivity : LangActivity() {
 
     fun showAlert(title: String, msg: String) { dialog = alert(title, msg) }
 
+    /** versionName из манифеста (не зашитая строка); пусто, если прочитать нельзя. */
+    private fun versionName(): String =
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+
     private fun header() = hbox(8).apply {
         addView(label("ANCDU", 20f, mono = true, bold = true).apply { letterSpacing = 0.18f })
-        addView(label("v0.1", 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(label("v" + versionName(), 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         langButton = label("${tx.s(R.string.lang_code)} ▾", 12f, C.TEXT, mono = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44); minWidth = dp(44)
