@@ -55,6 +55,12 @@ class DeletePreview(
     val tag: TagText? = null,
     /** Метки строк [top] по порядку (короче [top] — у остальных нет). */
     val topTags: List<TagText?> = emptyList(),
+    /** Файлы строк [top] — для квадрата превью и карточки (null — каталог; короче [top] — у остальных нет). */
+    val topPeek: List<QuickLookInfo?> = emptyList(),
+    /** Каталоги строк [top]: до 4 крупнейших картинок и видео внутри ([ContactSheet]). */
+    val topContact: List<List<QuickLookInfo>> = emptyList(),
+    /** Сам файл листа одного файла — место превью 120dp (null — каталог, группа). */
+    val selfPeek: QuickLookInfo? = null,
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -62,9 +68,12 @@ class DeletePreview(
  * [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен); [onClose] — лист закрыт любым путём.
  * [group] — лист ГРУППЫ ([p] — сводка, GroupSheet.preview): заголовок «Удалить 3 объекта?», путь папки,
  * крупнейшие пять, владельцы, ярус по сумме. null — один объект, ровно прежний лист.
+ * Превью: квадраты 40dp у строк-файлов, «контактный лист» у строк-каталогов, место 120dp у листа
+ * одного файла — если лист открыт не из карточки ([fromCard]). Тап по строке-файлу или квадрату —
+ * карточка ПОВЕРХ листа ([card]); «Назад» возвращает к листу, отсчёт идёт дальше.
  */
 class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onClose: () -> Unit = {},
-                  val group: GroupInfo? = null, private val onDelete: (Boolean) -> Unit) {
+                  val group: GroupInfo? = null, val fromCard: Boolean = false, private val onDelete: (Boolean) -> Unit) {
     private val ui = Handler(Looper.getMainLooper())
     private val t: Txt = act.tx
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
@@ -100,6 +109,20 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Для тестов: строка «N уже нет на диске» листа группы. */
     var goneText: TextView? = null
         private set
+
+    /** Превью листа; закрытие листа отменяет загрузку и освобождает битмапы. */
+    internal val thumbs = SheetThumbs(act)
+    /** Карточка, открытая поверх листа (null — нет). */
+    var card: QuickLook? = null
+        private set
+    /** Для тестов: место превью 120dp листа одного файла (null — нет). */
+    var selfBox: FrameLayout? = null
+        private set
+    /** Для тестов: строки детей по порядку и квадраты превью (строка без квадрата — null). */
+    val childRows = ArrayList<View>()
+    val childThumbs = ArrayList<FrameLayout?>()
+    /** Для тестов: «контактные листы» строк-каталогов (строка без него — null). */
+    val contactRows = ArrayList<LinearLayout?>()
 
     private val hardlink = group?.hardlink ?: (!p.dir && p.flags and F_HLDUP != 0)
     /** Данные другого приложения: своё (тест, свой кэш) «чужим» не считается. */
@@ -176,7 +199,12 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         dialog.setContentView(build())
         // Въезд снизу 160 мс, уход 120 мс; затемнение 60% — вместе с окном. Без анимаций — 0.
         dialog.bottomSheet()
-        dialog.setOnDismissListener { ui.removeCallbacks(tick); onClose() }
+        dialog.setOnDismissListener {
+            ui.removeCallbacks(tick)
+            card?.dismiss(); card = null
+            thumbs.close()
+            onClose()
+        }
     }
 
     fun show() {
@@ -187,6 +215,31 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     }
 
     fun dismiss() = dialog.dismiss()
+
+    /** Activity на паузе: плеер карточки поверх листа — на паузу. */
+    fun pause() { card?.pause() }
+
+    /** Карточка файла [info] поверх листа: без «УДАЛИТЬ…»/«ВЫБРАТЬ»; закрыта — лист как был. */
+    fun openCard(info: QuickLookInfo) {
+        if (!dialog.isShowing) return
+        card?.dismiss()
+        card = QuickLook(act, info, onClose = { }, fromSheet = true) {}.also { it.show() }
+    }
+
+    /** Строка или квадрат открывает карточку [info]: касание — TAP, TalkBack — «Быстрый просмотр». */
+    private fun View.peeks(info: QuickLookInfo) {
+        isClickable = true; isFocusable = true
+        isSoundEffectsEnabled = false
+        if (background == null) background = act.pressable(Color.TRANSPARENT)
+        setOnClickListener { Feedback.cue(this, Cue.TAP); openCard(info) }
+        accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, n: android.view.accessibility.AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, n)
+                n.addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(
+                    android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK, t.s(R.string.sheet_peek)))
+            }
+        }
+    }
 
     /**
      * Тело листа (заголовок … галочка) прокручивается; предупреждение и кнопки — под ним, всегда
@@ -235,6 +288,18 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())
+        // Один файл, лист не из карточки: превью 120dp — над предупреждением.
+        p.selfPeek?.let { info ->
+            val kind = thumbs.kindOf(info)
+            if (!SheetPeek.selfBox(fromCard, group != null, p.dir, kind)) return@let
+            thumbs.box(info, kind)?.let { b ->
+                selfBox = b
+                b.peeks(info)
+                b.contentDescription = Bidi.visible(info.name)
+                b.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                addView(b, LinearLayout.LayoutParams(MATCH_PARENT, act.dp(SheetPeek.BOX_DP)))
+            }
+        }
     }
 
     /** «быстро через root»: удаление через /data/media/<n>/ под su, затем очистка галереи в фоне (MediaClean). */
@@ -335,26 +400,50 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                         FrameLayout.LayoutParams(w, act.dp(8) - 2 * one).apply { setMargins(one, one, 0, 0) })
                 }
                 addView(frame, LinearLayout.LayoutParams(barMax, act.dp(8)))
+                // Файл: квадрат превью 40dp слева от имени (место — по расширению, без скачка).
+                val peek = p.topPeek.getOrNull(k)
+                val square = peek?.let { thumbs.square(it) }
+                childThumbs += square
+                square?.let { addView(it, LinearLayout.LayoutParams(act.dp(SheetPeek.THUMB_DP), act.dp(SheetPeek.THUMB_DP))) }
                 // До двух строк, дальше — многоточие посередине (конец имени и «/» видны).
                 val name = MiddleLines(act, nm, 2).apply {
                     textSize = 13f; setTextColor(C.TEXT); typeface = Fonts.get(act, mono = true, bold = false)
                 }
-                // Группа: у каталога — приглушённо «· 1 204 эл.» под именем.
+                // Группа: у каталога — приглушённо «· 1 204 эл.» под именем; у каталога с медиа —
+                // до 4 квадратов крупнейших картинок и видео внутри.
                 val n = group?.topItems?.getOrNull(k)?.takeIf { it >= 0 }
-                if (n == null) addView(name, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                else addView(act.vbox().apply {
+                val contact = p.topContact.getOrNull(k)?.let { contactRow(it) }
+                contactRows += contact
+                if (n == null && contact == null) addView(name, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                else addView(act.vbox(4).apply {
                     addView(name)
-                    addView(act.label("· " + t.items(n), 12f, C.MUTED, mono = true))
+                    if (n != null) addView(act.label("· " + t.items(n), 12f, C.MUTED, mono = true))
+                    contact?.let { addView(it) }
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 val tag = p.topTags.getOrNull(k)
                 tag?.let { addView(tagLabel(it)) }
                 addView(act.label(Fmt.size(size, t), 13f, C.MUTED, mono = true))
                 contentDescription = "$nm, ${Fmt.size(size, t)}" + (if (n != null) ", " + t.items(n) else "") + (tag?.desc ?: "")
+                peek?.let { peeks(it) }
+                childRows += this
             })
         }
         if (p.more > 0) addView(act.label(t.s(R.string.more_children, Fmt.count(p.more.toLong(), t.locale)), 12f, C.MUTED, mono = true).apply {
             gravity = Gravity.END
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+    }
+
+    /** До 4 квадратов медиа каталога в ряд; пусто — ряда нет. Квадрат открывает карточку файла. */
+    private fun contactRow(files: List<QuickLookInfo>): LinearLayout? {
+        val row = act.hbox(4)
+        for (f in files) {
+            val sq = thumbs.square(f) ?: continue
+            sq.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            sq.contentDescription = Bidi.visible(f.name)
+            sq.peeks(f)
+            row.addView(sq, LinearLayout.LayoutParams(act.dp(SheetPeek.THUMB_DP), act.dp(SheetPeek.THUMB_DP)))
+        }
+        return row.takeIf { it.childCount > 0 }
     }
 
     /**

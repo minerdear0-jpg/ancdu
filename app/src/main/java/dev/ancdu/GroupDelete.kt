@@ -13,6 +13,10 @@ class GroupItem(
     val fast: Boolean,
     /** Метка безопасности объекта (уже для показа) или null. */
     val tag: TagText? = null,
+    /** Файл — для квадрата превью и карточки поверх листа (null — каталог). */
+    val peek: QuickLookInfo? = null,
+    /** Узел в дереве (для «контактного листа» каталога); -1 — неизвестен. */
+    val node: Int = -1,
 )
 
 /**
@@ -77,10 +81,12 @@ object GroupSheet {
      * Сводный превью-объект листа и [GroupInfo]. Суммы disk/apparent/items, «· N эл.» — если есть
      * каталог, крупнейшие [TOP] по диску, быстрый путь — только если его проходят ВСЕ, запрет —
      * первый найденный. Владельцы — без своего пакета [self] (свои данные не «чужие»); ownerRow
-     * ([DeletePreview.owner]) — только если один владелец у ВСЕХ объектов.
+     * ([DeletePreview.owner]) — только если один владелец у ВСЕХ объектов. [contact] — медиа внутри
+     * каталога; зовётся только для каталогов среди [TOP].
      */
     fun preview(t: Txt, items: List<GroupItem>, parent: String, self: String, viaRoot: Boolean, kind: Kind,
-                cacheTime: String?, root: RootState, gone: Int): Pair<DeletePreview, GroupInfo> {
+                cacheTime: String?, root: RootState, gone: Int,
+                contact: (GroupItem) -> List<QuickLookInfo> = { emptyList() }): Pair<DeletePreview, GroupInfo> {
         val bySize = items.sortedByDescending { it.disk }
         val top = bySize.take(TOP)
         val owners = bySize.mapNotNull { it.owner }.filter { it != self }.distinct()
@@ -92,7 +98,8 @@ object GroupSheet {
             top = top.map { (if (it.dir) it.name + "/" else it.name) to it.disk }, more = items.size - top.size,
             owner = owners.singleOrNull()?.takeIf { ownerItems == items.size }, viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
             kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root,
-            topTags = top.map { it.tag })
+            topTags = top.map { it.tag }, topPeek = top.map { if (it.dir) null else it.peek },
+            topContact = top.map { if (it.dir) contact(it) else emptyList() })
         val info = GroupInfo(
             count = items.size, owners = owners, owned = items.map { it.owner != null && it.owner != self },
             disks = items.map { it.disk }, hardlink = items.any { !it.dir && it.flags and F_HLDUP != 0 },
