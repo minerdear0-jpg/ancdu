@@ -97,11 +97,8 @@ object Lang {
         }
     }
 
-    /**
-     * Диалог «Системный / English / Русский»; под списком — пункт «Звук и вибрация: …»
-     * (открывает свой выбор, [onFx] получает его диалог).
-     */
-    fun ask(a: Activity, onFx: (AlertDialog) -> Unit = {}): AlertDialog {
+    /** Диалог «Системный / English / Русский» (пункт меню «⋯»; звук и вибрация — свой пункт). */
+    fun ask(a: Activity): AlertDialog {
         val all = LangChoice.entries
         val cur = choice(a)
         return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -110,7 +107,6 @@ object Lang {
                 d.dismiss()
                 if (all[which] != cur) set(a, all[which])
             }
-            .setNeutralButton(a.tx.s(R.string.fx_item, a.tx.s(Feedback.mode.label))) { _, _ -> onFx(askFx(a)) }
             .show()
     }
 

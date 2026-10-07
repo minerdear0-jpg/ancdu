@@ -38,9 +38,6 @@
         <item quantity="many">%1$s ошибок</item>
         <item quantity="other">%1$s ошибки</item>
     </plurals>
-
-    <string name="lang_code">RU</string>
-    <string name="lang_button_desc">Язык: %1$s</string>
     <string name="lang_title">Язык</string>
     <string name="lang_system">Как в системе</string>
     <string name="fx_title">Звук и вибрация</string>
@@ -289,4 +286,13 @@
     <string name="tag_cache">кэш</string>
     <string name="tag_dl">загрузки</string>
     <string name="tag_media">медиа</string>
+    <!-- Task 25a: меню «⋯» -->
+    <string name="menu">Меню</string>
+    <string name="menu_lang">Язык: %1$s</string>
+    <string name="about">О приложении</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_source">Исходный код</string>
+    <string name="about_licenses">Шрифты: JetBrains Mono и Exo 2, SIL Open Font License 1.1</string>
+    <string name="about_cert">SHA-256 сертификата подписи</string>
+    <string name="about_cert_none">недоступен</string>
 </resources>

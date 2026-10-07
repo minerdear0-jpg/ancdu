@@ -30,8 +30,13 @@ class MainActivity : LangActivity() {
     var opening = false
         private set
     private var dialog: AlertDialog? = null
-    /** Кнопка языка в шапке («EN ▾»). */
-    lateinit var langButton: TextView
+    /** Кнопка меню «⋯» в шапке: язык, звук и вибрация, о приложении. */
+    lateinit var menuButton: TextView
+        private set
+    /** Для тестов: открытое меню «⋯» и лист «О приложении». */
+    var menu: MenuSheet? = null
+        private set
+    var about: AboutSheet? = null
         private set
     /** Для тестов: открытый диалог выбора языка. */
     var langDialog: AlertDialog? = null
@@ -105,6 +110,7 @@ class MainActivity : LangActivity() {
 
     override fun onDestroy() {
         rootPanel.destroy()
+        menu?.dismiss(); about?.dismiss()
         dialog?.dismiss()
         dialog = null
         super.onDestroy()
@@ -119,21 +125,27 @@ class MainActivity : LangActivity() {
     private fun header() = hbox(8).apply {
         addView(label("ANCDU", 20f, mono = true, bold = true).apply { letterSpacing = 0.18f })
         addView(label("v" + versionName(), 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        langButton = label("${tx.s(R.string.lang_code)} ▾", 12f, C.TEXT, mono = true).apply {
+        menuButton = label("⋯", 18f, C.TEXT, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44); minWidth = dp(44)
-            setPadding(dp(10), 0, dp(10), 0)
             background = pressable(C.BG, C.FRAME)
             isClickable = true; isFocusable = true
-            contentDescription = tx.s(R.string.lang_button_desc, tx.s(Lang.choice(this@MainActivity).label))
-            feedbackClick {
-                dialog?.dismiss()
-                dialog = Lang.ask(this@MainActivity) { fx -> dialog = fx; fxDialog = fx }.also { langDialog = it }
-            }
+            contentDescription = tx.s(R.string.menu)
+            feedbackClick { openMenu() }
         }
-        addView(langButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        addView(menuButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         // Только когда su есть: без него пилюли нет совсем.
         rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
+    }
+
+    /** Меню «⋯»: каждый пункт закрывает его и открывает свой выбор (один диалог за раз). */
+    fun openMenu() {
+        dialog?.dismiss()
+        menu?.dismiss(); about?.dismiss()
+        menu = MenuSheet(this,
+            onLang = { dialog = Lang.ask(this).also { langDialog = it } },
+            onFx = { dialog = Lang.askFx(this).also { fxDialog = it } },
+            onAbout = { about = AboutSheet(this).also { it.show() } }).also { it.show() }
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))

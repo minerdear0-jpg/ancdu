@@ -54,8 +54,6 @@ class LangPrefsTest {
     @Test fun languageNames() {
         assertEquals(listOf("Как в системе", "English", "Русский"), LangChoice.entries.map { RU.s(it.label) })
         assertEquals(listOf("System", "English", "Русский"), LangChoice.entries.map { EN.s(it.label) })
-        assertEquals("EN", EN.s(R.string.lang_code))
-        assertEquals("RU", RU.s(R.string.lang_code))
     }
 }
 

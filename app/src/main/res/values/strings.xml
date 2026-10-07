@@ -38,8 +38,6 @@
     </plurals>
 
     <!-- Language switch. -->
-    <string name="lang_code">EN</string>
-    <string name="lang_button_desc">Language: %1$s</string>
     <string name="lang_title">Language</string>
     <string name="lang_system">System</string>
     <string name="lang_en" translatable="false">English</string>
@@ -298,4 +296,13 @@
     <string name="tag_cache">cache</string>
     <string name="tag_dl">downloads</string>
     <string name="tag_media">media</string>
+    <!-- Task 25a: меню «⋯» -->
+    <string name="menu">Menu</string>
+    <string name="menu_lang">Language: %1$s</string>
+    <string name="about">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_source">Source code</string>
+    <string name="about_licenses">Fonts: JetBrains Mono and Exo 2, SIL Open Font License 1.1</string>
+    <string name="about_cert">Signing certificate SHA-256</string>
+    <string name="about_cert_none">unavailable</string>
 </resources>

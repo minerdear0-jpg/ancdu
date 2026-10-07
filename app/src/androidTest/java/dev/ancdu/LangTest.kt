@@ -114,7 +114,7 @@ class LangTest {
             ins.runOnMainSync {
                 assertEquals(lang, a.resources.configuration.locales[0].language)
                 assertEquals(main[0], a.storage.storeTitle.text.toString())
-                assertEquals(main[1], a.langButton.text.toString())
+                assertEquals(main[1], a.menuButton.contentDescription.toString())
             }
             ins.runOnMainSync { a.finish() }
             val b = browse(dir)
@@ -135,10 +135,10 @@ class LangTest {
     }
 
     @Test fun englishScreens() =
-        check("en", listOf("Shared storage", "EN ▾", "scan", "folder"), listOf("size", "name", "disk", "apparent"), "KiB")
+        check("en", listOf("Shared storage", "Menu", "scan", "folder"), listOf("size", "name", "disk", "apparent"), "KiB")
 
     @Test fun russianScreens() =
-        check("ru", listOf("Общее хранилище", "RU ▾", "скан", "каталог"), listOf("размер", "имя", "диск", "видимый"), "КиБ")
+        check("ru", listOf("Общее хранилище", "Меню", "скан", "каталог"), listOf("размер", "имя", "диск", "видимый"), "КиБ")
 
     /** RU: одна/несколько/много для 1, 2, 5, 21, 761 (ICU устройства, не JVM-правила). */
     @Test fun russianPlurals() {
@@ -156,15 +156,36 @@ class LangTest {
         assertEquals("63${Fmt.NBSP}761 файл", ResTxt(r).q(R.plurals.files, 63_761, Fmt.count(63_761, Locale.forLanguageTag("ru"))))
     }
 
-    /** Кнопка «EN ▾» → «Русский»: экран пересоздан по-русски; после перезапуска — всё ещё русский. */
+    /** Меню «⋯»: пункт [k] (0 — язык, 1 — звук, 2 — о приложении); меню закрывается. */
+    private fun pick(a: MainActivity, k: Int, text: String) {
+        ins.runOnMainSync { a.menuButton.performClick() }
+        ins.waitForIdleSync()
+        ins.runOnMainSync {
+            val m = a.menu!!
+            assertTrue(m.dialog.isShowing)
+            assertEquals(3, m.rows.size)
+            assertEquals(text, m.rows[k].text.toString())
+            assertTrue("пункт ниже 48dp", m.rows[k].height >= a.dp(48))
+            m.rows[k].performClick()
+            assertTrue("меню не закрылось", !m.dialog.isShowing)
+        }
+        ins.waitForIdleSync()
+    }
+
+    /** «⋯» → «Язык» → «Русский»: экран пересоздан по-русски; после перезапуска — всё ещё русский. */
     @Test fun switchPersistsAcrossRestart() {
         setLang("en")
         val a = main()
-        ins.runOnMainSync { a.langButton.performClick() }
-        ins.waitForIdleSync()
+        ins.runOnMainSync {
+            assertEquals("⋯", a.menuButton.text.toString())
+            assertTrue(a.menuButton.height >= a.dp(44) && a.menuButton.width >= a.dp(44))
+        }
+        pick(a, 0, "Language: English")
         ins.runOnMainSync {
             val d = a.langDialog!!
             assertTrue(d.isShowing)
+            // «Звук и вибрация» — свой пункт меню, не кнопка диалога языка.
+            assertTrue(d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)?.visibility != android.view.View.VISIBLE)
             val list = d.listView
             assertEquals(3, list.count)
             assertEquals("Русский", list.adapter.getItem(2).toString())
@@ -181,13 +202,13 @@ class LangTest {
         val again = main()
         ins.runOnMainSync {
             assertEquals("Общее хранилище", again.storage.storeTitle.text.toString())
-            assertEquals("RU ▾", again.langButton.text.toString())
+            assertEquals("Меню", again.menuButton.contentDescription.toString())
             again.finish()
         }
     }
 
-    /** «Звук и вибрация» — пункт меню языка: по умолчанию «как в системе», выбор сохраняется в prefs. */
-    @Test fun fxSettingInLangMenu() {
+    /** «Звук и вибрация» — пункт меню «⋯»: по умолчанию «как в системе», выбор сохраняется в prefs. */
+    @Test fun fxSettingInMenu() {
         setLang("en")
         val prevFx = ui.getString(FxPrefs.KEY, null)
         val prevMode = Feedback.mode
@@ -196,15 +217,7 @@ class LangTest {
             assertEquals(FxMode.SYSTEM, FxPrefs.load(ctx))
             Feedback.mode = FxPrefs.load(ctx)
             val a = main()
-            ins.runOnMainSync { a.langButton.performClick() }
-            ins.waitForIdleSync()
-            ins.runOnMainSync {
-                val d = a.langDialog!!
-                val fx = d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)
-                assertEquals("Sound & haptics: System", fx.text.toString())
-                fx.performClick()
-            }
-            ins.waitForIdleSync()
+            pick(a, 1, "Sound & haptics: System")
             ins.runOnMainSync {
                 val d = a.fxDialog!!
                 assertTrue(d.isShowing)
@@ -221,6 +234,25 @@ class LangTest {
         } finally {
             if (prevFx == null) ui.edit().remove(FxPrefs.KEY).commit() else ui.edit().putString(FxPrefs.KEY, prevFx).commit()
             Feedback.mode = prevMode
+        }
+    }
+
+    /** «⋯» → «О приложении»: версия, адрес исходников (выделяемый текст), SHA-256 сертификата подписи. */
+    @Test fun menuOpensAbout() {
+        setLang("en")
+        val a = main()
+        pick(a, 2, "About")
+        ins.runOnMainSync {
+            val s = a.about!!
+            assertTrue(s.dialog.isShowing)
+            val v = ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            assertEquals("Version $v", s.versionText.text.toString())
+            assertEquals("https://github.com/minerdear0-jpg/ancdu", s.sourceText.text.toString())
+            assertTrue(s.sourceText.isTextSelectable)
+            val cert = s.certText.text.toString()
+            assertTrue(cert, Regex("([0-9A-F]{2}:){31}[0-9A-F]{2}").matches(cert))
+            s.dismiss()
+            a.finish()
         }
     }
 
