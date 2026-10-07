@@ -5,7 +5,8 @@ import java.util.Locale
 /**
  * Все числа интерфейса — здесь, в языке [Txt.locale]: десятичный разделитель и группы разрядов
  * по локали (группы-пробелы — всегда NBSP), между числом и единицей — NBSP, единицы — из ресурсов
- * (KiB/КиБ, s/с). Проценты — целые, без пробела («48%»).
+ * (KiB/КиБ, s/с). Размер — не больше 5 знаков числа: от 1000 единиц — следующая единица с двумя
+ * знаками после запятой («0.98 GiB»). Проценты — целые, без пробела («48%»).
  */
 object Fmt {
     const val NBSP = ' '
@@ -18,6 +19,8 @@ object Fmt {
         var v = b / 1024.0
         var u = 0
         while (v >= 1024 && u < UNITS.size - 1) { v /= 1024; u++ }
+        // Не больше 5 знаков: «1009.9 MiB» не влезает в колонку размера — «0.99 GiB».
+        if (v >= 999.95 && u < UNITS.size - 1) return two(v / 1024, t.locale) + NBSP + t.s(UNITS[u + 1])
         return one(v, t.locale) + NBSP + t.s(UNITS[u])
     }
 
@@ -41,6 +44,8 @@ object Fmt {
     }
 
     private fun one(v: Double, loc: Locale): String = nbsp(String.format(loc, "%.1f", v))
+
+    private fun two(v: Double, loc: Locale): String = String.format(loc, "%.2f", v)
 
     /** Пробел, NBSP и узкий NBSP (U+202F, новые CLDR) в группах разрядов — один NBSP. */
     private fun nbsp(s: String): String = s.replace(' ', NBSP).replace(' ', NBSP)

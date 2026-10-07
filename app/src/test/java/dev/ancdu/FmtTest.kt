@@ -38,6 +38,30 @@ class FmtTest {
         assertEquals("Oct 5", Freshness.date(de, R.string.fmt_day, 1_759_700_000_000L, java.util.TimeZone.getTimeZone("UTC")))
     }
 
+    /** Не больше 5 знаков числа: от 1000 единиц — следующая единица с двумя знаками («0.98 GiB»). */
+    @Test fun sizesStayWithinFiveChars() {
+        val mib = 1L shl 20
+        assertEquals("0.99${N}GiB", Fmt.size((1009.9 * mib).toLong(), EN))
+        assertEquals("0,99${N}ГиБ", Fmt.size((1009.9 * mib).toLong(), RU))
+        assertEquals("0.98${N}GiB", Fmt.size(1000 * mib, EN))
+        assertEquals("0,98${N}ГиБ", Fmt.size(1000 * mib, RU))
+        assertEquals("999.9${N}MiB", Fmt.size((999.9 * mib).toLong(), EN))
+        assertEquals("999,9${N}МиБ", Fmt.size((999.9 * mib).toLong(), RU))
+        // 999.96 округлилось бы в «1000.0».
+        assertEquals("0.98${N}GiB", Fmt.size((999.96 * mib).toLong(), EN))
+        assertEquals("1.00${N}GiB", Fmt.size(1024 * mib - 1, EN))
+        assertEquals("1.0${N}GiB", Fmt.size(1024 * mib, EN))
+        assertEquals("0.98${N}MiB", Fmt.size(1000 * 1024L, EN))
+        assertEquals("0,98${N}МиБ", Fmt.size(1000 * 1024L, RU))
+        assertEquals("0.98${N}TiB", Fmt.size(1000L shl 30, EN))
+        assertEquals("1,023${N}B", Fmt.size(1023, EN))
+        for (b in listOf(1L, 1023L, 1024L, 1_000_000L, 1_048_575L, 1L shl 30, (1L shl 40) - 1, 5L shl 40))
+            for (t in listOf(EN, RU)) {
+                val num = Fmt.size(b, t).substringBefore(N)
+                assert(num.length <= 5) { "$b → ${Fmt.size(b, t)}" }
+            }
+    }
+
     @Test fun percents() {
         assertEquals("48%", Fmt.pct(48, 100))
         assertEquals("<1%", Fmt.pct(1, 1000))
