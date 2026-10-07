@@ -200,7 +200,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     }
 
     private fun body(): View = act.vbox(10).apply {
-        val title = if (group != null) (if (p.block == null) GroupSheet.title(t, group.count) else p.name)
+        val title = if (group != null) (if (p.block == null) GroupSheet.title(t, group.count) else GroupSheet.blockedTitle(t, group.count))
             else t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, Bidi.visible(p.name))
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
@@ -217,6 +217,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             contentDescription = t.s(R.string.path_desc, p.path)
         })
         if (group != null && group.owners.size > 1) addView(ownersRow(group.owners))
+        // Один владелец не у всех: «данные WhatsApp: 2 из 3»; у всех — прежний ownerRow (p.owner).
+        else if (group != null && group.owners.size == 1 && p.owner == null)
+            addView(ownersRow(group.owners, GroupSheet.ownerPart(t, label(group.owners[0]), group.ownerItems, group.count)))
         else p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
         addView(sizeLine())
         if ((p.dir || group != null) && p.top.isNotEmpty()) addView(children())
@@ -277,13 +280,19 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
     }
 
-    /** Владельцы группы: до трёх значков 20dp, «+N» и «данные 2 приложений: A, B». */
-    private fun ownersRow(pkgs: List<String>): View = act.hbox(8).apply {
+    /** Метка приложения [pkg] (одной строкой, bidi видимыми); нет пакета — его имя. */
+    private fun label(pkg: String): String {
         val pm = act.packageManager
-        val labels = pkgs.map { pkg ->
-            try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
+        return try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
             catch (e: android.content.pm.PackageManager.NameNotFoundException) { pkg }
-        }
+    }
+
+    /**
+     * Владельцы группы: до трёх значков 20dp и [text] (по умолчанию «данные 5 приложений: A, B, C +2» —
+     * «+N» только в тексте, один раз).
+     */
+    private fun ownersRow(pkgs: List<String>, text: String = GroupSheet.owners(t, pkgs.map { label(it) })): View = act.hbox(8).apply {
+        val pm = act.packageManager
         for (pkg in pkgs.take(GroupSheet.ICONS)) {
             val icon = try { pm.getApplicationInfo(pkg, 0).loadIcon(pm) }
                 catch (e: android.content.pm.PackageManager.NameNotFoundException) { null } ?: continue
@@ -292,10 +301,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
         }
-        if (pkgs.size > GroupSheet.ICONS) addView(act.label("+${pkgs.size - GroupSheet.ICONS}", 12f, C.MUTED, mono = true).apply {
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        })
-        val text = GroupSheet.owners(t, labels)
         addView(act.label(text, 14f, C.TEXT).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END
             ownersText = this

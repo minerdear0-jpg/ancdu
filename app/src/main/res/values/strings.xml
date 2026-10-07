@@ -282,4 +282,8 @@
     <string name="fail_partial">partly deleted</string>
     <string name="fail_blocked">delete not allowed</string>
     <string name="fail_error">error</string>
+    <string name="fail_not_started">not started</string>
+    <string name="group_partial_stopped">Deleted %1$s of %2$s · stopped</string>
+    <string name="group_title_blocked">Can\'t delete %1$s</string>
+    <string name="owner_part">%1$s data: %2$s of %3$s</string>
 </resources>

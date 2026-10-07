@@ -168,8 +168,9 @@ class GroupPreviewTest {
         assertEquals(2, p.more)
         assertFalse("один не проходит быстрый путь — галочки нет", p.fast)
         assertNull(p.block)
-        assertEquals("владельцы — по размеру", listOf("dev.ancdu", "com.x"), g.owners)
-        assertNull("владельцев два — сводка, не ownerRow", p.owner)
+        assertEquals("свой пакет — не владелец", listOf("com.x"), g.owners)
+        assertNull("владелец один, но не у всех — не ownerRow", p.owner)
+        assertEquals(1, g.ownerItems)
         assertEquals(listOf(false, true, false, false, false, false, false), g.owned)
         assertEquals(7, g.count)
         assertEquals(1, g.gone)
@@ -178,15 +179,75 @@ class GroupPreviewTest {
     }
 
     @Test fun oneOwnerHardlinkBlocked() {
-        val items = listOf(item("a", mib, owner = "com.x"), item("b", mib, flags = F_HLDUP),
-            item("d", mib, dir = true, block = Block.REFRESH_FAILED))
+        val items = listOf(item("a", mib, owner = "com.x"), item("b", mib, flags = F_HLDUP, owner = "com.x"),
+            item("d", mib, dir = true, block = Block.REFRESH_FAILED, owner = "com.x"))
         val (p, g) = GroupSheet.preview(RU, items, "/x", self = "dev.ancdu", viaRoot = false, kind = Kind.CACHE,
             cacheTime = "1 янв.", root = RootState.UNKNOWN, gone = 0)
-        assertEquals("com.x", p.owner)
+        assertEquals("владелец у всех — прежний ownerRow", "com.x", p.owner)
+        assertEquals(3, g.ownerItems)
         assertTrue(g.hardlink)
         assertEquals(Block.REFRESH_FAILED, p.block)
         assertEquals("1 янв.", p.cacheTime)
         assertEquals("3 объекта", p.name)
         assertEquals(0, p.more)
+    }
+}
+
+/** Полировка: предел строк, стоп с настоящими ошибками, «не начато», владельцы, запрет, копия ключа. */
+class GroupPolishTest {
+    private val mib = 1L shl 20
+
+    @Test fun partialAlertCapsAtTenBySize() {
+        val res = listOf(ItemResult("ok", false, mib, 0, 1)) +
+            (1..13).map { ItemResult("f$it", false, it * mib, -13, 0) }
+        val o = GroupResult.outcome(res) as GroupResult.Outcome.Partial
+        val (_, msg) = GroupResult.alert(RU, o)
+        val lines = msg.substringAfter("Не удалено:\n").split("\n")
+        assertEquals(11, lines.size)
+        assertEquals("f13 — нет доступа", lines[0])          // крупнейший первым
+        assertEquals("f4 — нет доступа", lines[9])
+        assertEquals("…ещё 3", lines[10])
+    }
+
+    @Test fun stopWithRealFailureIsPartial() {
+        val res = listOf(ItemResult("a", false, mib, 0, 1), ItemResult("b", false, mib, -13, 0),
+            ItemResult("c", false, mib, -4, 0, attempted = false))
+        val o = GroupResult.outcome(res)
+        assertTrue(o is GroupResult.Outcome.Partial)
+        assertTrue((o as GroupResult.Outcome.Partial).stopped)
+        val (title, msg) = GroupResult.alert(RU, o)
+        assertEquals("Удалено 1 из 3 · остановлено", title)
+        assertEquals("Deleted 1 of 3 · stopped", GroupResult.alert(EN, o).first)
+        assertTrue(msg, msg.contains("b — нет доступа") && msg.contains("c — не начато"))
+        // чистый «Стоп» без ошибок — по-прежнему молча, подвал
+        val pure = GroupResult.outcome(listOf(ItemResult("a", false, mib, 0, 1),
+            ItemResult("d", true, mib, -4, 5), ItemResult("c", false, mib, -4, 0, attempted = false)))
+        assertTrue(pure is GroupResult.Outcome.Stopped)
+    }
+
+    @Test fun neverAttemptedIsNotStarted() {
+        // после отказа su остальные не начинались
+        assertEquals(Fail.NOT_STARTED, GroupResult.fail(ItemResult("x", false, mib, -1, 0, attempted = false)))
+        assertEquals(Fail.NOT_STARTED, GroupResult.fail(ItemResult("x", true, mib, -4, 0, attempted = false)))
+        assertEquals("не начато", RU.s(Fail.NOT_STARTED.res))
+        assertEquals("not started", EN.s(Fail.NOT_STARTED.res))
+        // запрещённый к началу — по-прежнему «удаление запрещено»
+        assertEquals(Fail.BLOCKED, GroupResult.fail(ItemResult("s", true, mib, -1, 0, attempted = false, block = Block.SYSTEM)))
+    }
+
+    @Test fun ownerTexts() {
+        assertEquals("данные WhatsApp: 2 из 3", GroupSheet.ownerPart(RU, "WhatsApp", 2, 3))
+        assertEquals("WhatsApp data: 2 of 3", GroupSheet.ownerPart(EN, "WhatsApp", 2, 3))
+        assertEquals("Нельзя удалить 3 объекта", GroupSheet.blockedTitle(RU, 3))
+        assertEquals("Can't delete 3 items", GroupSheet.blockedTitle(EN, 3))
+    }
+
+    @Test fun nameKeyCopiesBytes() {
+        val raw = "a.bin".toByteArray()
+        val k = NameKey(raw)
+        raw[0] = 'z'.code.toByte()
+        assertEquals(NameKey("a.bin".toByteArray()), k)
+        k.bytes[0] = 'q'.code.toByte()
+        assertEquals("a.bin", String(k.bytes))
     }
 }

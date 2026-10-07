@@ -26,6 +26,8 @@ class GroupInfo(
     val hardlink: Boolean,
     val gone: Int,
     val topItems: List<Long>,
+    /** Сколько объектов у единственного владельца [owners] (0 — владельцев не один). */
+    val ownerItems: Int = 0,
 ) {
     /** Ярус группы: строжайшее правило, сумма размеров. */
     fun tier(viaRoot: Boolean, fast: Boolean): DeleteTier = DeletePolicy.groupTier(viaRoot, fast, owned, disks)
@@ -59,30 +61,39 @@ object GroupSheet {
     /** Подвал после ухода из папки: «Выбор снят: 3». */
     fun cleared(t: Txt, n: Int): String = t.s(R.string.selection_cleared, Fmt.count(n.toLong(), t.locale))
 
+    /** «Нельзя удалить 3 объекта» — лист группы с запретом. */
+    fun blockedTitle(t: Txt, n: Int): String = t.s(R.string.group_title_blocked, objects(t, n))
+
+    /** Один владелец не у всех: «данные WhatsApp: 2 из 3». */
+    fun ownerPart(t: Txt, label: String, k: Int, n: Int): String =
+        t.s(R.string.owner_part, label, Fmt.count(k.toLong(), t.locale), Fmt.count(n.toLong(), t.locale))
+
     /** Путь папки с «/» в конце. */
     fun parentPath(path: String): String = if (path.endsWith("/")) path else "$path/"
 
     /**
      * Сводный превью-объект листа и [GroupInfo]. Суммы disk/apparent/items, «· N эл.» — если есть
      * каталог, крупнейшие [TOP] по диску, быстрый путь — только если его проходят ВСЕ, запрет —
-     * первый найденный, владелец — если он один. [self] — свой пакет (свои данные не «чужие»).
+     * первый найденный. Владельцы — без своего пакета [self] (свои данные не «чужие»); ownerRow
+     * ([DeletePreview.owner]) — только если один владелец у ВСЕХ объектов.
      */
     fun preview(t: Txt, items: List<GroupItem>, parent: String, self: String, viaRoot: Boolean, kind: Kind,
                 cacheTime: String?, root: RootState, gone: Int): Pair<DeletePreview, GroupInfo> {
         val bySize = items.sortedByDescending { it.disk }
         val top = bySize.take(TOP)
-        val owners = bySize.mapNotNull { it.owner }.distinct()
+        val owners = bySize.mapNotNull { it.owner }.filter { it != self }.distinct()
+        val ownerItems = owners.singleOrNull()?.let { o -> items.count { it.owner == o } } ?: 0
         val p = DeletePreview(
             name = objects(t, items.size), path = parentPath(parent), dir = items.any { it.dir },
             disk = DeletePolicy.sum(items.map { it.disk }), apparent = DeletePolicy.sum(items.map { it.apparent }),
             items = DeletePolicy.sum(items.map { it.items }), flags = 0,
             top = top.map { (if (it.dir) it.name + "/" else it.name) to it.disk }, more = items.size - top.size,
-            owner = owners.singleOrNull(), viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
+            owner = owners.singleOrNull()?.takeIf { ownerItems == items.size }, viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
             kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root)
         val info = GroupInfo(
             count = items.size, owners = owners, owned = items.map { it.owner != null && it.owner != self },
             disks = items.map { it.disk }, hardlink = items.any { !it.dir && it.flags and F_HLDUP != 0 },
-            gone = gone, topItems = top.map { if (it.dir) it.items else -1L })
+            gone = gone, topItems = top.map { if (it.dir) it.items else -1L }, ownerItems = ownerItems)
         return p to info
     }
 }
@@ -95,6 +106,8 @@ enum class Fail(val res: Int) {
     PARTIAL(R.string.fail_partial),
     BLOCKED(R.string.fail_blocked),
     ERROR(R.string.fail_error),
+    /** Не отправлялся: «Стоп» или отказ su раньше него. */
+    NOT_STARTED(R.string.fail_not_started),
 }
 
 /**
@@ -127,7 +140,10 @@ object GroupResult {
     fun fail(x: ItemResult): Fail? = when {
         deleted(x) -> null
         x.block != null -> Fail.BLOCKED
+        !x.attempted -> Fail.NOT_STARTED
         x.dir && x.done > 0 -> Fail.PARTIAL
+        // «Стоп» до ядра: ничего не тронуто.
+        x.r == -DeleteProgress.EINTR -> Fail.NOT_STARTED
         x.r == -EACCES || x.r == -EPERM -> Fail.ACCESS
         // rm_tree отдаёт EBUSY точки монтирования как EXDEV.
         x.r == -EBUSY || x.r == -EXDEV -> Fail.BUSY
@@ -140,19 +156,31 @@ object GroupResult {
         class Done(total: Int, freed: Long) : Outcome(total, total, freed)
         /** «Стоп»: удалённое осталось удалённым, остальное не трогалось. */
         class Stopped(deleted: Int, total: Int, freed: Long) : Outcome(deleted, total, freed)
-        class Partial(deleted: Int, total: Int, freed: Long, val fails: List<Pair<String, Fail>>) : Outcome(deleted, total, freed)
+        /** [fails] — по размеру, крупнейшие первыми; [stopped] — был и «Стоп». */
+        class Partial(deleted: Int, total: Int, freed: Long, val fails: List<Pair<String, Fail>>,
+                      val stopped: Boolean = false) : Outcome(deleted, total, freed)
     }
+
+    /** Строк «Не удалено:» в сообщении; дальше — «…ещё N». */
+    const val MAX_LINES = 10
+
+    /** Настоящая ошибка — не «Стоп» и не «не начато» (без запрета). */
+    private fun realFail(x: ItemResult): Boolean =
+        !deleted(x) && x.r != -DeleteProgress.EINTR && (x.attempted || x.block != null)
 
     /** Освобождено — размеры удалённых целиком (нижняя граница: частичные не считаются). */
     fun outcome(results: List<ItemResult>): Outcome {
         val ok = results.filter { deleted(it) }
         // Пропавший к началу (ENOENT) места не освободил.
         val freed = DeletePolicy.sum(ok.filter { it.r == 0 }.map { it.disk })
+        val stopped = results.any { it.r == -DeleteProgress.EINTR }
         return when {
             ok.size == results.size -> Outcome.Done(results.size, freed)
-            results.any { it.r == -DeleteProgress.EINTR } -> Outcome.Stopped(ok.size, results.size, freed)
+            // Чистый «Стоп» — молча; были и настоящие ошибки — сообщение (с «· остановлено»).
+            stopped && results.none { realFail(it) } -> Outcome.Stopped(ok.size, results.size, freed)
             else -> Outcome.Partial(ok.size, results.size, freed,
-                results.mapNotNull { x -> fail(x)?.let { (if (x.dir) x.name + "/" else x.name) to it } })
+                results.sortedByDescending { it.disk }
+                    .mapNotNull { x -> fail(x)?.let { (if (x.dir) x.name + "/" else x.name) to it } }, stopped)
         }
     }
 
@@ -165,8 +193,10 @@ object GroupResult {
 
     /** Сообщение частичного итога: заголовок «Удалено 2 из 3», текст — освобождено и «Не удалено:» по строке. */
     fun alert(t: Txt, o: Outcome.Partial): Pair<String, String> {
-        val title = t.s(R.string.group_partial, Fmt.count(o.deleted.toLong(), t.locale), Fmt.count(o.total.toLong(), t.locale))
-        val lines = o.fails.joinToString("\n") { (nm, f) -> t.s(R.string.fail_line, Bidi.visible(nm), t.s(f.res)) }
+        val title = t.s(if (o.stopped) R.string.group_partial_stopped else R.string.group_partial,
+            Fmt.count(o.deleted.toLong(), t.locale), Fmt.count(o.total.toLong(), t.locale))
+        val lines = o.fails.take(MAX_LINES).joinToString("\n") { (nm, f) -> t.s(R.string.fail_line, Bidi.visible(nm), t.s(f.res)) } +
+            if (o.fails.size > MAX_LINES) "\n" + t.s(R.string.more_children, Fmt.count((o.fails.size - MAX_LINES).toLong(), t.locale)) else ""
         return title to DeleteProgress.freed(t, o.freed) + "\n\n" + t.s(R.string.not_deleted) + "\n" + lines
     }
 

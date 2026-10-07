@@ -298,7 +298,7 @@ object Holder {
                             val it = plan.item
                             val (code, n) = runItem(handle, it)
                             results += ItemResult(it.name, it.dir, it.disk, code, n)
-                            // su отказал: следующие тоже спросили бы su — не начинаются.
+                            // su отказал: следующие тоже спросили бы su — не начинаются («не начато»).
                             if (group && it.helper != null && DeletePolicy.nothingDeleted(code, true) && k + 1 < jobs.size) {
                                 for (rest in jobs.subList(k + 1, jobs.size)) results += skipped(rest, code)
                                 break
@@ -321,7 +321,7 @@ object Holder {
         }
     }
 
-    /** Не начатый объект группы. */
+    /** Не начатый объект группы: attempted = false, без запрета — причина «не начато» (GroupResult.fail). */
     private fun skipped(j: GroupJob, r: Int) = ItemResult(j.name, j.dir, j.disk, r, 0L, attempted = false)
 
     /** На io: один объект — массовый шаг, затем ядро (DeleteSteps). Код и сколько записей удалено им. */
