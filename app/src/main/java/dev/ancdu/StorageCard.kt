@@ -176,7 +176,7 @@ class StorageCard(private val a: MainActivity) {
     }
 
     /** Есть ли в Holder дерево общего хранилища (без root). */
-    private fun storageShown(): Boolean = Holder.h != 0L && Holder.root == Scans.STORAGE && !Holder.viaRoot
+    fun storageShown(): Boolean = Holder.h != 0L && Holder.root == Scans.STORAGE && !Holder.viaRoot
 
     /**
      * Полоса скана хранилища. Доля — от items последнего кэша хранилища (читается один раз, когда

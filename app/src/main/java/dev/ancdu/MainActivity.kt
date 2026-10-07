@@ -14,6 +14,9 @@ class MainActivity : LangActivity() {
     /** Карточка памяти — вход в дерево общего хранилища. */
     lateinit var storage: StorageCard
         private set
+    /** «Самые крупные файлы» под карточкой. */
+    lateinit var biggest: BiggestSection
+        private set
     /** Пилюля su и блок Root. */
     lateinit var rootPanel: RootPanel
         private set
@@ -40,6 +43,9 @@ class MainActivity : LangActivity() {
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
     private val onBg: () -> Unit = { BgScan.promoteOnMain(); storage.render() }
     private val onRoot: () -> Unit = { rootPanel.render() }
+    /** Новое дерево (фоновый скан, подстановка ждущего) или конец удаления: пересчитать крупнейшие. */
+    private val onTree: () -> Unit = { biggest.refresh() }
+    private val onDeleted: (Int) -> Unit = { biggest.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,9 +55,11 @@ class MainActivity : LangActivity() {
         val rootCaches = prefs.all.values.any { CacheMeta.parse(it as? String)?.su == true }
         rootPanel = RootPanel(this, Root.suExists(), rootCaches)
         storage = StorageCard(this)
+        biggest = BiggestSection(this)
         val body = vbox(16).apply { setPadding(dp(16), dp(12), dp(16), dp(24)) }
         body.addView(header())
         body.addView(storage.panel)
+        body.addView(biggest.box)
         // Ниже панели — строки без карточек, разделённые волосяными линиями.
         appsBox = vbox()
         body.addView(appsBox)
@@ -67,12 +75,15 @@ class MainActivity : LangActivity() {
         BgScan.mainResumed = true
         BgScan.addListener(onBg)
         Root.addListener(onRoot)
+        Holder.addSessionListener(onTree)
+        Holder.addDeleteListener(onDeleted)
         // Скан закончился, пока был открыт браузер: здесь его уже никто не держит — подставляем.
         BgScan.promoteOnMain()
         storage.gate = BgScan.maybeStart(this)
         renderLast()
         storage.render()
         rootPanel.render()
+        biggest.refresh()
         val my = ++gen
         val app = applicationContext
         Thread {
@@ -87,6 +98,8 @@ class MainActivity : LangActivity() {
         BgScan.mainResumed = false
         BgScan.removeListener(onBg)
         Root.removeListener(onRoot)
+        Holder.removeSessionListener(onTree)
+        Holder.removeDeleteListener(onDeleted)
         super.onPause()
     }
 
@@ -196,8 +209,9 @@ class MainActivity : LangActivity() {
      * Чтение кэша — на Holder.io (FIFO с saveCache/delete/free), Holder.set — на главном потоке.
      * Экран закрылся, пока кэш читался, — новая сессия освобождается на io, Holder не трогается.
      * [time] — время скана из записи «caches»: оно и становится временем дерева (Holder.time).
+     * [focus] — [EXTRA_FOCUS] для браузера (файл в фокусе) или null.
      */
-    fun openCache(name: String, root: String, su: Boolean, time: Long) {
+    fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null) {
         if (opening) return
         opening = true
         val app = applicationContext
@@ -229,8 +243,25 @@ class MainActivity : LangActivity() {
                     return@runOnUiThread
                 }
                 Holder.set(h, Kind.CACHE, root, su, time)
-                startActivity(Intent(this, BrowserActivity::class.java))
+                startActivity(Intent(this, BrowserActivity::class.java).apply { if (focus != null) putExtra(EXTRA_FOCUS, focus) })
             }
         }
+    }
+
+    /**
+     * Строка «крупнейших файлов»: браузер общего хранилища у папки файла [names] (байты имён от
+     * корня), строка видна, карточка открыта. Дерево — как у тапа по карточке: ждущее
+     * подставляется, готовое живое — сразу, иначе кэш.
+     */
+    fun openFocused(names: List<ByteArray>) {
+        if (Holder.deleting || opening) return
+        if (BgScan.pendingStorage()) Holder.promote()
+        val focus = Focus.encode(names)
+        val shown = storage.storageShown()
+        val browser = Intent(this, BrowserActivity::class.java).putExtra(EXTRA_FOCUS, focus)
+        if (shown && Holder.kind != Kind.INDEX) { startActivity(browser); return }
+        val meta = Scans.meta(this, Scans.STORAGE, false)
+        if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus); return }
+        if (shown) startActivity(browser)
     }
 }

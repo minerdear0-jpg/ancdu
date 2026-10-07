@@ -530,6 +530,8 @@ class BrowserActivity : LangActivity() {
             list.source = src
             load(node, keepScroll)
             if (st != null) restoreSelection(st)
+            // Только при первом создании: пересоздание держит свою папку и прокрутку.
+            else if (savedInstanceState == null) Focus.parse(intent.getByteArrayExtra(EXTRA_FOCUS))?.let { focus(it) }
         }
         renderProgress()
     }
@@ -678,6 +680,32 @@ class BrowserActivity : LangActivity() {
     /** Отменить ждущий лист; его su-обновление, ещё не начатое, снимается с очереди BgScan. */
     private fun cancelAsk() {
         auto.cancelSheet()?.target?.let { BgScan.unqueue(it) }
+    }
+
+    /**
+     * [EXTRA_FOCUS]: файл [names] (байты имён от корня) — его папка, строка видна, затем карточка
+     * быстрого просмотра. Файла уже нет — ближайшая существующая папка и «… уже нет на диске».
+     */
+    private fun focus(names: List<ByteArray>) {
+        val hit = resolveNode(names)
+        val flags = LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[3].toInt()
+        val dir = flags and F_DIR != 0
+        if (!hit.exact || dir) {
+            val folder = if (dir) hit.node else maxOf(Native.parent(h, hit.node), 0)
+            if (folder != node) load(folder, 0)
+            if (!hit.exact) note(DeleteProgress.gone(txt, Native.str(names.last())))
+            return
+        }
+        val target = hit.node
+        val parent = maxOf(Native.parent(h, target), 0)
+        if (parent != node) load(parent, 0)
+        val i = kids.indexOf(target)
+        if (i !in 0 until n) return
+        list.reveal(i)
+        val size = value(i)
+        val handle = h
+        // Карточка — после первого кадра экрана (окно Activity уже на месте).
+        ui.post { if (!isFinishing && !busy && h == handle && h != 0L) openQuickLook(target, size, flags) }
     }
 
     /** Узел по байтам имён от корня в дереве [h] (файл или каталог). */
