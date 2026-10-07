@@ -196,6 +196,15 @@
     <string name="ql_installed">установлена %1$s</string>
     <string name="ql_select">Выбрать</string>
     <string name="ql_delete">Удалить…</string>
+    <string name="ql_cant_play">воспроизведение недоступно</string>
+    <string name="ql_play">Воспроизвести видео</string>
+    <string name="ql_pause">Пауза</string>
+    <string name="ql_resume">Продолжить</string>
+    <string name="ql_mute">Выключить звук</string>
+    <string name="ql_unmute">Включить звук</string>
+    <string name="ql_seek">Позиция</string>
+    <string name="ql_frame">Кадр %1$s из %2$s</string>
+    <string name="sheet_peek">Быстрый просмотр</string>
 
     <string name="scanning">Сканирование · %1$s</string>
     <string name="no_root">без root</string>

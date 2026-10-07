@@ -211,6 +211,17 @@
     <string name="ql_installed">installed %1$s</string>
     <string name="ql_select">Select</string>
     <string name="ql_delete">Delete…</string>
+    <!-- Video storyboard and the inline player. -->
+    <string name="ql_cant_play">can\'t play</string>
+    <string name="ql_play">Play video</string>
+    <string name="ql_pause">Pause</string>
+    <string name="ql_resume">Play</string>
+    <string name="ql_mute">Mute</string>
+    <string name="ql_unmute">Unmute</string>
+    <string name="ql_seek">Position</string>
+    <string name="ql_frame">Frame %1$s of %2$s</string>
+    <!-- Previews in the delete sheet. -->
+    <string name="sheet_peek">Quick look</string>
 
     <!-- Scan screen. -->
     <string name="scanning">Scanning · %1$s</string>

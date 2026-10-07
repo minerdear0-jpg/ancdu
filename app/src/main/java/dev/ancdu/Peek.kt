@@ -34,6 +34,13 @@ object Peek {
     }
 
     /**
+     * Вид превью узла дерева: путь только для root ([rootOnly]), ссылка, каталог, другая ФС — NONE
+     * (места под превью нет, ничего не читается); иначе — по расширению ([kind]).
+     */
+    fun kindFor(ext: String?, mime: String?, rootOnly: Boolean, flags: Int): PeekKind =
+        if (rootOnly || !treeAllows(flags)) PeekKind.NONE else kind(ext, mime)
+
+    /**
      * Первые [n] байт [b] как текст или null (двоичный): в первых [SNIFF] байтах нет NUL, после
      * декодирования UTF-8 с заменой U+FFFD меньше 10%. Недочитанный хвост многобайтного символа
      * отбрасывается. Управляющие C0 (кроме \t и \n) и направления текста вырезаются.
