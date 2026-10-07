@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Метки безопасности строк: sys > app > cache > dl > media. */
+/** Метки безопасности строк: sys > cache > app > dl > media. */
 class TagTest {
     private val S = "/storage/emulated/0"
     private val SELF = "dev.ancdu"
@@ -48,8 +48,17 @@ class TagTest {
         assertEquals(TagKind.CACHE, of("/data/user/10/x/cache", F_DIR, root = "/"))
         assertEquals(TagKind.CACHE, of("/data/user_de/0/x/cache/f", root = "/"))
         assertEquals(TagKind.CACHE, of("/data/media/0/Android/data/x/cache/f", root = "/"))
-        // свой кэш — тоже кэш (не «чужие данные»)
+        // свой кэш — тоже кэш (не «чужие данные»), без владельца
         assertEquals(TagKind.CACHE, of("/data/user/0/dev.ancdu/cache/f", root = "/"))
+        assertNull(Tag.of("/data/user/0/dev.ancdu/cache/f", 0, SELF, null, "/", SELF)!!.pkg)
+        // кэш чужого приложения: метка «cache», владелец — в pkg (описание его называет)
+        val wa = Tag.of("$S/Android/data/com.whatsapp/cache", F_DIR, "com.whatsapp", null, S, SELF)!!
+        assertEquals(TagKind.CACHE, wa.kind)
+        assertEquals("com.whatsapp", wa.pkg)
+        assertEquals("cache", wa.text("WhatsApp"))
+        assertEquals(", cache, WhatsApp app data", wa.desc(EN, "WhatsApp"))
+        assertEquals(", кэш, данные приложения WhatsApp", wa.desc(RU, "WhatsApp"))
+        assertEquals(", cache, app data", wa.desc(EN, null))
         // осторожно: файл «cache», не прямо под каталогом приложения, похожие имена
         assertNull(of("$S/Android/data/x/cache"))
         assertNull(of("$S/Android/data/x/files/cache", F_DIR))
@@ -73,7 +82,11 @@ class TagTest {
 
     @Test fun precedence() {
         assertEquals(TagKind.SYS, of("$S/Android/data/com.x/cache", F_DIR, Block.SYSTEM, owner = "com.x"))
-        assertEquals(TagKind.APP, of("$S/Android/data/com.x/cache", F_DIR))     // app > cache
+        assertEquals(TagKind.CACHE, of("$S/Android/data/com.x/cache", F_DIR))   // cache > app
+        assertEquals(TagKind.CACHE, of("$S/Android/data/com.x/cache/img.jpg"))
+        assertEquals(TagKind.APP, of("$S/Android/data/com.x/files", F_DIR))     // вне кэша — app
+        assertEquals(TagKind.APP, of("$S/Android/data/com.x/files/a.jpg"))      // app > media
+        assertEquals(TagKind.CACHE, of("/data/data/com.x/cache/f", root = "/"))
         assertEquals(TagKind.DL, of("$S/Download/movie.mp4"))                  // dl > media
         assertEquals(TagKind.DL, of("$S/Download/DCIM/a.jpg"))
     }

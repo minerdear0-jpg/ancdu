@@ -11,7 +11,8 @@ enum class TagKind(val word: String, val color: Int, val desc: Int) {
 
 /**
  * Короткая моно-метка строки: «sys», «app:<Метка>», «cache», «dl», «media» — текст, не только
- * цвет. [pkg] — пакет владельца у [TagKind.APP]. Чистый Kotlin.
+ * цвет. [pkg] — пакет владельца (другого приложения) у [TagKind.APP] и [TagKind.CACHE]: кэш чужого
+ * приложения в описании TalkBack называет и владельца. Чистый Kotlin.
  */
 class Tag(val kind: TagKind, val pkg: String? = null) {
     /** Текст метки; у приложения — «app:<label>», без метки — «app». [label] — из PackageManager. */
@@ -20,10 +21,18 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
         return if (kind == TagKind.APP && l.isNotEmpty()) "app:$l" else kind.word
     }
 
-    /** Добавка к описанию строки для TalkBack: «, кэш» / ", cache"; у приложения — с его меткой. */
+    /**
+     * Добавка к описанию строки для TalkBack: «, кэш» / ", cache"; у приложения — с его меткой; у кэша
+     * чужого приложения — и владелец («, кэш, данные приложения WhatsApp»).
+     */
     fun desc(t: Txt, label: String?): String {
         val l = label?.let(Bidi::label)?.trim().orEmpty()
-        return ", " + if (kind == TagKind.APP && l.isNotEmpty()) t.s(R.string.tag_app_named, l) else t.s(kind.desc)
+        val owner = if (l.isNotEmpty()) t.s(R.string.tag_app_named, l) else t.s(R.string.tag_app)
+        return when {
+            kind == TagKind.APP -> ", $owner"
+            kind == TagKind.CACHE && pkg != null -> ", ${t.s(kind.desc)}, $owner"
+            else -> ", " + t.s(kind.desc)
+        }
     }
 
     companion object {
@@ -37,21 +46,22 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
         private fun digits(s: String) = s.isNotEmpty() && s.all { it in '0'..'9' }
 
         /**
-         * Метка пути [path] (флаги узла [flags]) или null. Порядок: sys > app > cache > dl > media.
+         * Метка пути [path] (флаги узла [flags]) или null. Порядок: sys > cache > app > dl > media.
          * - sys — есть запрет удаления [block] (кроме «дерево устарело» и «нет быстрого пути»);
-         * - app — владелец [owner] (Owner.packageOf) — другое приложение, не [self];
          * - cache — каталог cache, .cache или Cache прямо в каталоге приложения
          *   (<хранилище>/Android/data/<pkg>, /data/data/<pkg>, /data/user(_de)/<n>/<pkg>) и всё в нём;
          *   кэш выше корня дерева [root] не считается (дерево внутри кэша — не метка на каждой строке);
+         *   владелец — другое приложение: он в [Tag.pkg] (описание его называет);
+         * - app — владелец [owner] (Owner.packageOf) — другое приложение, не [self];
          * - dl — <хранилище>/Download и всё в нём; media — DCIM, Pictures, Movies, Music, Recordings
          *   прямо в хранилище или файл с медиа-расширением.
          * Хранилище — корень дерева [root] (не «/»), /storage/emulated/<n> и /data/media/<n>.
          */
         fun of(path: String, flags: Int, owner: String?, block: Block?, root: String, self: String): Tag? {
             if (block != null && block != Block.REFRESH_FAILED && block != Block.NO_FAST) return Tag(TagKind.SYS)
-            if (owner != null && owner != self) return Tag(TagKind.APP, owner)
+            val other = owner?.takeIf { it != self }
             val s = path.split('/').filter { it.isNotEmpty() }
-            if (s.isEmpty()) return null
+            if (s.isEmpty()) return other?.let { Tag(TagKind.APP, it) }
             val r = root.trimEnd('/')
             val rs = r.split('/').count { it.isNotEmpty() }
             val dir = flags and F_DIR != 0
@@ -68,8 +78,9 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
             for (ci in caches) {
                 if (ci < rs || s[ci] !in CACHE_DIRS) continue
                 if (ci == s.size - 1 && !dir) continue   // файл с именем «cache» — не каталог кэша
-                return Tag(TagKind.CACHE)
+                return Tag(TagKind.CACHE, other)
             }
+            if (other != null) return Tag(TagKind.APP, other)
             if (stores.any { s.size > it && s[it] == "Download" }) return Tag(TagKind.DL)
             if (stores.any { s.size > it && s[it] in MEDIA_DIRS }) return Tag(TagKind.MEDIA)
             if (!dir && Ellipsis.ext(s.last())?.lowercase() in MEDIA_EXT) return Tag(TagKind.MEDIA)
