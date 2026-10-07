@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Открываемый экран: проявляется и въезжает с 4% ширины. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="150"
+    android:interpolator="@interpolator/motion_enter"
+    android:shareInterpolator="true">
+    <alpha android:fromAlpha="0" android:toAlpha="1" />
+    <translate android:fromXDelta="4%" android:toXDelta="0" />
+</set>

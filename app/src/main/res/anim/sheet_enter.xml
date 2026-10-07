@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Лист удаления въезжает снизу. -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="160"
+    android:interpolator="@interpolator/motion_enter"
+    android:fromYDelta="100%" android:toYDelta="0" />

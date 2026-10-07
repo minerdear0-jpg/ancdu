@@ -69,6 +69,19 @@ object Fonts {
 object Motion {
     @Volatile var override: Boolean? = null
     fun on(): Boolean = override ?: ValueAnimator.areAnimatorsEnabled()
+
+    /**
+     * Переход экранов (enter, exit): открытие — новый проявляется и въезжает с 4% (150 мс),
+     * закрытие — обратное (120 мс); экран под ним стоит на месте. Без анимаций — (0, 0).
+     */
+    fun transition(open: Boolean): Pair<Int, Int> = when {
+        !on() -> 0 to 0
+        open -> R.anim.screen_open to R.anim.screen_hold_open
+        else -> R.anim.screen_hold_close to R.anim.screen_close
+    }
+
+    /** Анимации окна листа удаления; без анимаций — 0. */
+    fun sheet(): Int = if (on()) R.style.SheetAnim else 0
 }
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()

@@ -116,6 +116,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             setGravity(Gravity.BOTTOM)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             setDimAmount(0.6f)
+            // Въезд снизу 160 мс, уход 120 мс; затемнение — вместе с окном. Без анимаций — 0.
+            setWindowAnimations(Motion.sheet())
         }
         dialog.setOnDismissListener { ui.removeCallbacks(tick); onClose() }
     }

@@ -10,6 +10,7 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
 import android.view.View
+import android.view.animation.AnimationUtils
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
@@ -251,7 +252,7 @@ class BrowserActivity : LangActivity() {
             if (busy) return
             if (info[4 * index + 3].toInt() and F_DIR == 0) { askDelete(index); return }
             scrollAt[node] = list.scroll
-            load(kids[index], 0)
+            load(kids[index], 0, dir = 1)
         }
         override fun longClick(index: Int) { if (!busy) askDelete(index) }
     }
@@ -613,7 +614,8 @@ class BrowserActivity : LangActivity() {
     fun setSort(k: Int) { if (busy) return; sort = k; load(node, 0) }
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
 
-    private fun load(target: Int, restore: Int) {
+    /** [dir] — переход по дереву: +1 вглубь, −1 назад или по крошкам, 0 — тот же уровень (без анимации). */
+    private fun load(target: Int, restore: Int, dir: Int = 0) {
         // Любая навигация отменяет ждущий лист (подстановка дерева при этом всё равно будет).
         cancelAsk()
         loads++
@@ -641,9 +643,25 @@ class BrowserActivity : LangActivity() {
         setFooter(idleFooter())
         renderChips()
         refreshPending()
+        slide(dir)
         list.refresh()
         list.scroll = restore
     }
+
+    /**
+     * Переход по дереву: анимируется только список — въезжает с ±16dp ([dir] +1 справа, −1 слева)
+     * и проявляется за 120 мс; шапка меняется сразу. Следующий load отменяет идущую анимацию.
+     */
+    private fun slide(dir: Int) {
+        list.animate().cancel()
+        list.translationX = 0f; list.alpha = 1f
+        if (dir == 0 || !Motion.on()) return
+        list.translationX = dir * dp(16).toFloat(); list.alpha = 0f
+        list.animate().translationX(0f).alpha(1f).setDuration(120)
+            .setInterpolator(enterCurve).withLayer().start()
+    }
+
+    private val enterCurve by lazy { AnimationUtils.loadInterpolator(this, R.interpolator.motion_enter) }
 
     /**
      * Заголовок — текущая папка (на корне — путь корня), крошки — её предки: путь виден один раз.
@@ -684,7 +702,7 @@ class BrowserActivity : LangActivity() {
     fun jumpTo(target: Int) {
         if (busy || target == node || target !in crumbNodes) return
         for (nd in crumbNodes.dropWhile { it != target }.drop(1)) scrollAt.remove(nd)
-        load(target, scrollAt.remove(target) ?: 0)
+        load(target, scrollAt.remove(target) ?: 0, dir = -1)
     }
 
     @Deprecated("Activity API")
@@ -693,7 +711,7 @@ class BrowserActivity : LangActivity() {
         cancelAsk()
         if (node != 0) {
             val p = maxOf(Native.parent(h, node), 0)
-            load(p, scrollAt.remove(p) ?: 0)
+            load(p, scrollAt.remove(p) ?: 0, dir = -1)
         } else {
             super.onBackPressed()
         }

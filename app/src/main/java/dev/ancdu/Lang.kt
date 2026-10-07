@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.LocaleManager
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -123,7 +124,25 @@ abstract class LangActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         lang = Lang.stored(this)
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 34) {
+            Motion.transition(open = true).let { (e, x) -> overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, e, x) }
+            Motion.transition(open = false).let { (e, x) -> overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, e, x) }
+        }
     }
+
+    /** API 30–33: переход открытия — сразу после запуска (на 34+ — overrideActivityTransition). */
+    override fun startActivity(intent: Intent, options: Bundle?) {
+        super.startActivity(intent, options)
+        if (Build.VERSION.SDK_INT < 34) pending(open = true)
+    }
+
+    override fun finish() {
+        super.finish()
+        if (Build.VERSION.SDK_INT < 34) pending(open = false)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pending(open: Boolean) = Motion.transition(open).let { (e, x) -> overridePendingTransition(e, x) }
 
     override fun onResume() {
         super.onResume()
