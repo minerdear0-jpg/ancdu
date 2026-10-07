@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -184,6 +185,68 @@ class QuickLookTest {
         ins.runOnMainSync {
             assertEquals(PeekKind.NONE, q.kind)
             assertNull(q.box)
+            q.dismiss()
+        }
+    }
+
+    /**
+     * Видео (создано здесь же MediaCodec + MediaMuxer): раскадровка показывает хотя бы один кадр,
+     * сведения — «0:01 · 320×240»; тап по большому кадру — мини-плеер (без звука), закрытие карточки
+     * освобождает плеер и кадры. Кодировщика нет — тест пропускается.
+     */
+    @Test fun videoStoryboardAndPlayer() {
+        val d = fixture()
+        val clip = File(d, "clip.mp4")
+        assumeTrue("нет кодировщика H.264", TestMedia.video(clip))
+        val a = browse(d)
+        val q = tap(a, "clip.mp4")
+        ins.runOnMainSync {
+            assertEquals(PeekKind.VIDEO, q.kind)
+            assertNotNull(q.video)
+        }
+        assertTrue("нет ни одного кадра", waitFor(Storyboard.STRIP_MS + 1000) { q.video?.frames?.any { it != null } == true })
+        assertTrue(waitFor { q.metaText.text.contains("320×240") })
+        ins.runOnMainSync {
+            val v = q.video!!
+            assertTrue(v.frames.size in 1..Storyboard.FRAMES)
+            assertEquals(v.frames.size, v.strip.childCount)
+            assertNull(q.noPreview)
+            assertTrue(q.metaText.text.toString(), q.metaText.text.contains("0:01"))
+            assertTrue(v.main.performClick())
+        }
+        assertTrue("плеер не запустился", waitFor { q.video?.player?.prepared == true || q.video?.cantPlay != null })
+        var player: MiniPlayer? = null
+        ins.runOnMainSync {
+            val v = q.video!!
+            assertNull("воспроизведение недоступно", v.cantPlay)
+            player = v.player!!
+            assertTrue("без звука по умолчанию", player!!.muted)
+            assertTrue(player!!.playButton.contentDescription.isNotEmpty())
+            assertEquals(a.tx.s(R.string.ql_unmute), player!!.muteButton.contentDescription.toString())
+            assertTrue(player!!.muteButton.height >= a.dp(44))
+            q.dismiss()
+        }
+        ins.runOnMainSync {
+            assertTrue("плеер освобождён", player!!.released)
+            assertTrue(q.video!!.closed)
+            assertTrue(q.video!!.frames.isEmpty())
+        }
+    }
+
+    /** FIFO с именем .mp4: место под превью по имени, но ни кадров, ни зависания — «превью недоступно» сразу. */
+    @Test fun fifoVideoNeverRead() {
+        val d = fixture()
+        android.system.Os.mkfifo(File(d, "pipe.mp4").path, "600".toInt(8))
+        val a = browse(d)
+        val q = tap(a, "pipe.mp4")
+        ins.runOnMainSync {
+            assertEquals(PeekKind.VIDEO, q.kind)
+            assertNotNull(q.box)
+        }
+        assertTrue(waitFor(Peek.TIMEOUT_MS - 300) { q.noPreview != null })
+        ins.runOnMainSync {
+            assertFalse("ждали таймаута", q.timedOut)
+            assertTrue(q.video!!.frames.none { it != null })
             q.dismiss()
         }
     }

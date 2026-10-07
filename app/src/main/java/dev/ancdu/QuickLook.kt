@@ -8,7 +8,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.Drawable
-import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.os.CancellationSignal
 import android.os.Handler
@@ -58,10 +57,13 @@ class QuickLookInfo(
  * время читаются на [exec] (не Holder.io — удаления не ждут), отменяются при закрытии; не пришло
  * за [Peek.TIMEOUT_MS] — «превью недоступно». [onDelete] — «Удалить…»: карточка уже закрыта.
  * [onSelect] — «ВЫБРАТЬ» ([selectLabel]; null — кнопки нет): карточка уже закрыта, звук даёт выбор.
+ * [fromSheet] — карточка открыта над листом удаления: без «УДАЛИТЬ…» и «ВЫБРАТЬ» (действие у листа),
+ * одна «Закрыть»; «Назад» возвращает к листу.
+ * Видео — раскадровка и мини-плеер ([VideoBox]).
  */
 class QuickLook(private val act: Activity, val info: QuickLookInfo, private val onClose: () -> Unit = {},
                 private val selectLabel: String? = null, private val onSelect: (() -> Unit)? = null,
-                private val onDelete: () -> Unit) {
+                val fromSheet: Boolean = false, private val onDelete: () -> Unit) {
     private val t: Txt = act.tx
     private val ui = Handler(Looper.getMainLooper())
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
@@ -71,7 +73,7 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
      * Вид превью; у путей только для root и у ссылок / не обычных узлов дерева — NONE (места нет).
      * FIFO и устройства дерево не отличает — их отсекает [PeekJob] («превью недоступно» сразу).
      */
-    val kind: PeekKind = if (info.rootOnly || !Peek.treeAllows(info.flags)) PeekKind.NONE else Peek.kind(ext, mime)
+    val kind: PeekKind = Peek.kindFor(ext, mime, info.rootOnly, info.flags)
 
     lateinit var typeText: TextView
         private set
@@ -82,6 +84,12 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
     lateinit var selectButton: TextView
         private set
     lateinit var deleteButton: TextView
+        private set
+    /** «Закрыть» карточки над листом (null — обычная карточка). */
+    var closeButton: TextView? = null
+        private set
+    /** Раскадровка и плеер видео (null — не видео или ещё не загружается). */
+    internal var video: VideoBox? = null
         private set
     /** Место под превью (null — у этого вида превью нет). */
     var box: FrameLayout? = null
@@ -112,11 +120,12 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         // TalkBack: заголовок окна — имя файла.
         dialog.setTitle(Bidi.visible(info.name))
         // «Назад» и тап мимо карточки — tock; закрытие кнопкой «Удалить…» — без него (откроется лист).
-        dialog.setOnCancelListener { Feedback.cue(deleteButton, Cue.BACK) }
+        dialog.setOnCancelListener { Feedback.cue(closeButton ?: deleteButton, Cue.BACK) }
         dialog.setOnDismissListener {
             closed = true
             sink.card = null
             signal.cancel()
+            video?.close()
             ui.removeCallbacksAndMessages(null)
             onClose()
         }
@@ -128,6 +137,9 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
     }
 
     fun dismiss() = dialog.dismiss()
+
+    /** Activity уходит на паузу: плеер — на паузу, в фоне не играет. */
+    fun pause() { video?.pause() }
 
     private fun build(): View = MaxHeightBox(act, 0.85f).apply {
         background = Brackets(act, C.PANEL, bottom = false)
@@ -161,14 +173,18 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
 
     /** «ВЫБРАТЬ» и «УДАЛИТЬ…» — равными колонками; одна — во всю ширину. */
     private fun actions(): View = act.hbox(10).apply {
+        if (!SheetPeek.cardActions(fromSheet)) closeButton = button(t.s(R.string.close), C.TEXT, C.FRAME).apply {
+            setOnClickListener { Feedback.cue(this, Cue.BACK); dialog.dismiss() }
+        }.also { addView(it, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)) }
         selectButton = button(selectLabel ?: t.s(R.string.ql_select), C.TEXT, C.FRAME).apply {
-            visibility = if (onSelect == null) View.GONE else View.VISIBLE
+            visibility = if (onSelect == null || fromSheet) View.GONE else View.VISIBLE
             setOnClickListener { dialog.dismiss(); onSelect?.invoke() }
         }
         addView(selectButton, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         deleteButton = button(t.s(R.string.ql_delete), C.DANGER_TEXT, C.DANGER_TEXT).apply {
             // Звук даёт открывшийся лист удаления (arm).
             setOnClickListener { dialog.dismiss(); onDelete() }
+            if (!SheetPeek.cardActions(fromSheet)) visibility = View.GONE
         }
         addView(deleteButton, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
     }
@@ -200,9 +216,18 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
             val m = try { File(path).lastModified() } catch (e: Throwable) { 0L }
             sink.post { it.mtime = Peek.mtime(tt, m); it.renderMeta() }
         }
-        if (box == null) return
+        val b = box ?: return
         ui.postDelayed(timeout, Peek.TIMEOUT_MS)
-        val job = PeekJob(path, kind, Size(maxOf(1, act.resources.displayMetrics.widthPixels - act.dp(42)), act.dp(BOX_DP - 2)),
+        val w = maxOf(1, act.resources.displayMetrics.widthPixels - act.dp(42))
+        if (kind == PeekKind.VIDEO) {
+            val v = VideoBox(act, path, sink, t)
+            video = v
+            b.addView(v.view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            val job = FrameJob(path, Size(w, act.dp(BOX_DP - 4 - Storyboard.STRIP_DP)), signal, sink)
+            exec.execute { job.run() }
+            return
+        }
+        val job = PeekJob(path, kind, Size(w, act.dp(BOX_DP - 2)),
             act.dp(40), act.applicationContext.packageManager, t, signal)
         exec.execute {
             val r = try { job.run() } catch (e: Throwable) {
@@ -252,9 +277,22 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         }
     }
 
+    /** Сведения видео («0:42 · 1920×1080») — в строку сведений. */
+    internal fun videoMeta(text: String?) { details = text; renderMeta() }
+
+    /** Первый кадр раскадровки показан: превью есть. */
+    internal fun videoReady() {
+        if (closed || settled) return
+        settled = true
+        ui.removeCallbacks(timeout)
+    }
+
+    internal fun videoFailed() { if (!closed && !settled) { ui.removeCallbacks(timeout); fail() } }
+
     /** «превью недоступно» по центру места превью. */
     private fun fail() {
         settled = true
+        video?.close()
         val b = box ?: return
         if (noPreview != null) return
         noPreview = act.label(t.s(R.string.ql_no_preview), 13f, C.MUTED, mono = true).apply { gravity = Gravity.CENTER }
@@ -293,11 +331,7 @@ internal class PeekJob(val path: String, val kind: PeekKind, val px: Size, val i
                        val pm: PackageManager, val t: Txt, val signal: CancellationSignal) {
     /** На [QuickLook.exec]. null — превью нет (не обычный файл, не прочитался, двоичный, отменён). */
     fun run(): Preview? {
-        if (signal.isCanceled) return null
-        val real = Peek.regularTarget(path, ::nodeType) { p ->
-            try { File(p).canonicalPath } catch (e: IOException) { null }
-        } ?: return null
-        if (signal.isCanceled) return null
+        val real = regular(path, signal) ?: return null
         return when (kind) {
             PeekKind.IMAGE -> {
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -306,17 +340,11 @@ internal class PeekJob(val path: String, val kind: PeekKind, val px: Size, val i
                 val dims = if (o.outWidth > 0 && o.outHeight > 0) Peek.dims(o.outWidth, o.outHeight) else null
                 Preview.Image(ThumbnailUtils.createImageThumbnail(File(real), px, signal), dims)
             }
+            // Карточка показывает видео раскадровкой ([FrameJob]); здесь — кадр для листа.
             PeekKind.VIDEO -> {
-                val dur = withRegular(real) { fd ->
-                    MediaMetadataRetriever().run {
-                        try {
-                            setDataSource(fd)
-                            extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let { Peek.duration(it) } ?: ""
-                        } finally { release() }
-                    }
-                } ?: return null
+                withRegular(real) { true } ?: return null
                 if (signal.isCanceled) return null
-                Preview.Image(ThumbnailUtils.createVideoThumbnail(File(real), px, signal), dur.ifEmpty { null })
+                Preview.Image(ThumbnailUtils.createVideoThumbnail(File(real), px, signal), null)
             }
             PeekKind.TEXT -> withRegular(real) { fd ->
                 val b = ByteArray(Peek.READ)
@@ -351,10 +379,22 @@ internal class PeekJob(val path: String, val kind: PeekKind, val px: Size, val i
         }
     }
 
-    private companion object {
-        const val MAX_ICON = 4096
+    companion object {
+        private const val MAX_ICON = 4096
 
-        fun nodeType(p: String): Peek.NodeType = try {
+        /**
+         * Путь, который можно читать ([Peek.regularTarget]: обычный файл или ссылка на него), или
+         * null; отменено ([signal]) — тоже null.
+         */
+        fun regular(path: String, signal: CancellationSignal?): String? {
+            if (signal?.isCanceled == true) return null
+            val real = Peek.regularTarget(path, ::nodeType) { p ->
+                try { File(p).canonicalPath } catch (e: IOException) { null }
+            } ?: return null
+            return if (signal?.isCanceled == true) null else real
+        }
+
+        private fun nodeType(p: String): Peek.NodeType = try {
             val m = Os.lstat(p).st_mode
             when {
                 OsConstants.S_ISREG(m) -> Peek.NodeType.REGULAR
