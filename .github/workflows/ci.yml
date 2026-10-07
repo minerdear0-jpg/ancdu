@@ -1,0 +1,74 @@
+# CI: нативное ядро на хосте (обычная сборка, ASan+UBSan, TSan, сверка с du) и Android-сборка
+# debug + JVM-тесты. Секреты не нужны: release здесь не собирается, а debug подписывается
+# debug-ключом. Release-автоматизации нет намеренно.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: core-tests (clang, ASan/UBSan, TSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang cmake ninja-build
+
+      # TSan не переносит 32-битную энтропию mmap новых ядер раннеров ("unexpected memory
+      # mapping"). Непривилегированные user namespaces (AppArmor Ubuntu 24.04) нужны тесту
+      # cross-fs; без них он сам пишет SKIP.
+      - name: Kernel knobs for sanitizers and namespaces
+        run: |
+          sudo sysctl -w vm.mmap_rnd_bits=28
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # run_all.sh сам создаёт свежую песочницу (mkdtemp): TMPDIR и cwd каждого теста.
+      - name: core-tests/run_all.sh
+        run: core-tests/run_all.sh
+
+  android:
+    name: Android (debug + JVM tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NDK_VERSION: 27.0.12077973
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Кэш Gradle (зависимости, wrapper).
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build
+
+      # Кэш NDK: build.sh ставит его через sdkmanager, только если каталога нет.
+      - name: Cache NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ runner.os }}-${{ env.NDK_VERSION }}
+
+      - name: Build debug APK and run JVM tests
+        run: ./build.sh --debug --test

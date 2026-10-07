@@ -10,7 +10,8 @@
 #
 # Окружение: JDK 17+, Android SDK (ANDROID_HOME / ANDROID_SDK_ROOT / ~/Android/Sdk),
 # cmake ≥ 3.22 и ninja в PATH. Подпись release — см. app/build.gradle.kts (ANCDU_SIGNING
-# или ANCDU_KEYSTORE…); без ключа release подписывается debug-ключом.
+# или ANCDU_KEYSTORE…); без ключа release подписывается debug-ключом, кроме
+# ANCDU_REQUIRE_SIGNING=1 и сборки тега в CI — там без ключа release падает.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -27,7 +28,7 @@ while (($#)); do
     --install) install=1 ;;
     -s) serial=${2:?-s требует серийный номер}; shift ;;
     --clean) clean=1 ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "неизвестный параметр: $1 (см. --help)" >&2; exit 2 ;;
   esac
   shift
@@ -81,6 +82,9 @@ tasks=()
 ((run_tests)) && tasks+=(testDebugUnitTest)
 tasks+=("assemble$cap")
 if [[ $variant == release && -z ${ANCDU_KEYSTORE:-} && ! -f ${ANCDU_SIGNING:-$HOME/.android/ancdu-release.properties} ]]; then
+  if [[ ${ANCDU_REQUIRE_SIGNING:-} == 1 ]]; then
+    die "release-ключ обязателен (ANCDU_REQUIRE_SIGNING=1), но не настроен"
+  fi
   say "release-ключ не настроен — APK будет подписан debug-ключом (только для своей проверки)"
 fi
 say "gradle ${tasks[*]}"

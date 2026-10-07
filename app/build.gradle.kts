@@ -6,6 +6,9 @@ plugins { id("com.android.application") }
 // keyPassword), по умолчанию ~/.android/ancdu-release.properties; либо переменные
 // ANCDU_KEYSTORE / ANCDU_KEYSTORE_PASSWORD / ANCDU_KEY_ALIAS / ANCDU_KEY_PASSWORD.
 // Без них release подписывается debug-ключом (для локальной проверки, не для публикации).
+// Ключ обязателен — его нет, и сборка release падает — при ANCDU_REQUIRE_SIGNING=1 или в CI
+// (CI=true) на теге (GITHUB_REF_TYPE=tag или GITHUB_REF=refs/tags/…): опубликовать
+// debug-подписанный APK случайно нельзя. Debug-сборки это не затрагивает.
 val signing: Map<String, String>? = run {
     val env = System.getenv()
     env["ANCDU_KEYSTORE"]?.let { ks ->
@@ -20,6 +23,25 @@ val signing: Map<String, String>? = run {
     val p = Properties().apply { f.inputStream().use { load(it) } }
     p.stringPropertyNames().associateWith { p.getProperty(it) }
 }
+
+val requireSigning: Boolean = run {
+    val env = System.getenv()
+    val tag = env["GITHUB_REF_TYPE"] == "tag" || env["GITHUB_REF"].orEmpty().startsWith("refs/tags/")
+    env["ANCDU_REQUIRE_SIGNING"] == "1" || (env["CI"] == "true" && tag)
+}
+
+// Проверка — задачей перед release-сборкой, а не при конфигурации: debug и тесты собираются
+// и без ключа даже там, где он обязателен.
+val checkReleaseSigning by tasks.registering {
+    val missing = signing == null
+    val required = requireSigning
+    doLast {
+        if (missing && required) throw GradleException(
+            "ancdu: release signing key required (ANCDU_REQUIRE_SIGNING=1 or a CI tag build) but not " +
+                "configured: set ANCDU_KEYSTORE… or ANCDU_SIGNING (see app/build.gradle.kts)")
+    }
+}
+tasks.configureEach { if (name == "preReleaseBuild") dependsOn(checkReleaseSigning) }
 
 val abis = listOf("arm64-v8a", "x86_64")
 val jniOut = layout.buildDirectory.dir("generated/ancduJni")
