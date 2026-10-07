@@ -32,6 +32,10 @@ object DeleteProgress {
 
     fun title(t: Txt, name: String): String = t.s(R.string.progress_title, name)
 
+    /** Заголовок диалога: [count] > 1 — «Удаление 3 объектов», один — [title] его имени. */
+    fun titleFor(t: Txt, name: String, count: Int): String =
+        if (count > 1) t.q(R.plurals.progress_title_n, count.toLong(), Fmt.count(count.toLong(), t.locale)) else title(t, name)
+
     /** «12 340 / 69 370 эл. · 0:12»: форма plurals — по [total]. */
     fun line(t: Txt, done: Long, total: Long, ms: Long): String =
         t.q(R.plurals.items, total, "${Fmt.count(clamp(done, total), t.locale)} / ${Fmt.count(total, t.locale)}") +

@@ -13,7 +13,11 @@ class AutoPromote {
      * [delDisk] — размер удалённого узла на момент подтверждения; null — ждёт лист удаления;
      * [target] — дерево, обновление которого ждёт запрос листа (его снять с очереди при отмене).
      */
-    class Request(val names: List<ByteArray>, val name: String, val delDisk: Long?, val target: ScanTarget? = null)
+    class Request(val names: List<ByteArray>, val name: String, val delDisk: Long?, val target: ScanTarget? = null,
+                  /** Итог группы уже показан: после подстановки (или провала обновления) — этот же текст. */
+                  val note: String? = null,
+                  /** Ждёт лист ГРУППЫ: [names] — путь папки, выбранное в ней — у экрана. */
+                  val group: Boolean = false)
 
     var request: Request? = null
         private set
@@ -21,6 +25,16 @@ class AutoPromote {
     fun afterDelete(names: List<ByteArray>, name: String, delDisk: Long) { request = Request(names, name, delDisk) }
     fun beforeDelete(names: List<ByteArray>, name: String, target: ScanTarget) {
         request = Request(names, name, null, target)
+    }
+
+    /** Удаление группы с частично удалённым каталогом: [note] — уже показанный итог. */
+    fun afterGroup(names: List<ByteArray>, name: String, delDisk: Long, note: String) {
+        request = Request(names, name, delDisk, note = note)
+    }
+
+    /** Лист группы из устаревшего дерева: одно обновление на всю группу ([names] — путь папки). */
+    fun beforeGroup(names: List<ByteArray>, name: String, target: ScanTarget) {
+        request = Request(names, name, null, target, group = true)
     }
 
     /**
@@ -54,6 +68,7 @@ class AutoPromote {
     companion object {
         /** После подстановки: [exact] — узел запроса найден в новом дереве, [disk] — его размер там. */
         fun outcome(t: Txt, r: Request, exact: Boolean, disk: Long): Outcome {
+            r.note?.let { return Outcome.Footer(it) }
             val del = r.delDisk ?: return if (exact) Outcome.Sheet else Outcome.Footer(DeleteProgress.gone(t, r.name))
             return Outcome.Footer(
                 if (exact) DeleteProgress.freedLeft(t, maxOf(0L, del - disk))
@@ -65,6 +80,6 @@ class AutoPromote {
          * дереву ([exact] — узел в нём найден, [disk] — его размер сейчас), без «остатка».
          */
         fun unrefreshed(t: Txt, r: Request, exact: Boolean, disk: Long): String =
-            DeleteProgress.freed(t, if (exact) maxOf(0L, (r.delDisk ?: 0L) - disk) else 0L)
+            r.note ?: DeleteProgress.freed(t, if (exact) maxOf(0L, (r.delDisk ?: 0L) - disk) else 0L)
     }
 }

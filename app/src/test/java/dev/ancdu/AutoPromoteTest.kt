@@ -104,4 +104,24 @@ class AutoPromoteTest {
         assertEquals("освобождено 0${Fmt.NBSP}Б", AutoPromote.unrefreshed(RU, r, exact = true, disk = 11 * mib))
         assertEquals("freed 0${Fmt.NBSP}B", AutoPromote.unrefreshed(EN, r, exact = false, disk = 0))
     }
+
+    /** Группа: после удаления итог уже показан — после подстановки тот же текст, что бы ни нашлось. */
+    @Test fun groupDeleteKeepsItsNote() {
+        val a = AutoPromote()
+        a.afterGroup(path, "Camera", 10 * mib, "Удалено 2 из 3")
+        val r = a.take()!!
+        assertEquals("Удалено 2 из 3", footer(AutoPromote.outcome(RU, r, exact = true, disk = 4 * mib)))
+        assertEquals("Удалено 2 из 3", footer(AutoPromote.outcome(RU, r, exact = false, disk = 0)))
+        assertEquals("Удалено 2 из 3", AutoPromote.unrefreshed(RU, r, exact = true, disk = 0))
+    }
+
+    /** Лист группы ждёт обновления: запрос помечен, отмена навигацией снимает его, как у одного. */
+    @Test fun groupSheetRequest() {
+        val a = AutoPromote()
+        a.beforeGroup(path, "Camera", t)
+        assertTrue(a.request!!.group)
+        assertNull(a.request!!.delDisk)
+        assertSame(t, a.cancelSheet()!!.target)
+        assertNull(a.request)
+    }
 }

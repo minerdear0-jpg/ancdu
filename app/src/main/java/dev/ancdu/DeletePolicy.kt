@@ -174,6 +174,20 @@ object DeletePolicy {
             else -> DeleteTier.NONE
         }
 
+    /** Сумма размеров без переполнения; отрицательные (нет данных) не вычитаются. */
+    fun sum(sizes: List<Long>): Long {
+        var s = 0L
+        for (v in sizes) { if (v <= 0) continue; s = if (s > Long.MAX_VALUE - v) Long.MAX_VALUE else s + v }
+        return s
+    }
+
+    /**
+     * Ярус листа группы: строжайшее правило — одного чужого ([owned]) хватает на паузу, размер —
+     * СУММА [disks] (20 × 60 МиБ ≥ 1 ГиБ — пауза). root — как у [tier].
+     */
+    fun groupTier(viaRoot: Boolean, fast: Boolean, owned: List<Boolean>, disks: List<Long>): DeleteTier =
+        tier(viaRoot, fast, owned.any { it }, sum(disks))
+
     /** Числа обратного отсчёта паузы [ms] по порядку показа (2500 → 3, 2, 1). */
     fun countdown(ms: Long): List<Long> = ((ms + 999) / 1000 downTo 1L).toList()
 }

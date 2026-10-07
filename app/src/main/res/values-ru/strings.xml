@@ -117,7 +117,7 @@
     <string name="refresh_count">обновление · %1$s</string>
     <string name="refresh_waiting">обновление · ждёт</string>
     <string name="newer_desc">Есть более новое дерево — обновить</string>
-    <string name="long_click_label">Удалить</string>
+    <string name="long_click_label">Выбрать</string>
     <string name="gallery_cleaning">галерея: очистка %1$s…</string>
     <string name="sort_size">размер</string>
     <string name="sort_name">имя</string>
@@ -224,4 +224,53 @@
     <string name="legend_data">данные</string>
     <string name="legend_cache">кэш</string>
     <string name="app_desc">%1$s, %2$s: APK %3$s, данные %4$s, кэш %5$s</string>
+    <!-- Режим выбора и удаление группы. -->
+    <string name="click_label_quick">Просмотр</string>
+    <string name="sel_exit">Выйти из выбора</string>
+    <string name="sel_all">Все</string>
+    <string name="sel_none">Ничего</string>
+    <string name="sel_delete">Удалить…</string>
+    <string name="sel_on">выбрано</string>
+    <string name="sel_off">не выбрано</string>
+    <string name="sel_select">Выбрать</string>
+    <string name="sel_deselect">Снять выбор</string>
+    <string name="sel_blocked_desc">, нельзя удалить: %1$s</string>
+    <string name="sel_mode_announce">Режим выбора. Выбрано %1$s</string>
+    <string name="selection_cleared">Выбор снят: %1$s</string>
+    <plurals name="selected_n">
+        <item quantity="one">%1$s выбран</item>
+        <item quantity="few">%1$s выбрано</item>
+        <item quantity="many">%1$s выбрано</item>
+        <item quantity="other">%1$s выбрано</item>
+    </plurals>
+    <plurals name="objects">
+        <item quantity="one">%1$s объект</item>
+        <item quantity="few">%1$s объекта</item>
+        <item quantity="many">%1$s объектов</item>
+        <item quantity="other">%1$s объекта</item>
+    </plurals>
+    <plurals name="progress_title_n">
+        <item quantity="one">Удаление %1$s объекта</item>
+        <item quantity="few">Удаление %1$s объектов</item>
+        <item quantity="many">Удаление %1$s объектов</item>
+        <item quantity="other">Удаление %1$s объекта</item>
+    </plurals>
+    <plurals name="owners_n">
+        <item quantity="one">данные %1$s приложения: %2$s</item>
+        <item quantity="few">данные %1$s приложений: %2$s</item>
+        <item quantity="many">данные %1$s приложений: %2$s</item>
+        <item quantity="other">данные %1$s приложения: %2$s</item>
+    </plurals>
+    <string name="group_title">Удалить %1$s?</string>
+    <string name="group_gone">%1$s уже нет на диске</string>
+    <string name="group_stopped">Остановлено: удалено %1$s из %2$s · %3$s</string>
+    <string name="group_partial">Удалено %1$s из %2$s</string>
+    <string name="not_deleted">Не удалено:</string>
+    <string name="fail_line">%1$s — %2$s</string>
+    <string name="fail_access">нет доступа</string>
+    <string name="fail_busy">занят</string>
+    <string name="fail_symlink">символьная ссылка</string>
+    <string name="fail_partial">удалено частично</string>
+    <string name="fail_blocked">удаление запрещено</string>
+    <string name="fail_error">ошибка</string>
 </resources>

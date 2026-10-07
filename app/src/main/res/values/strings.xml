@@ -126,7 +126,7 @@
     <string name="refresh_count">refresh · %1$s</string>
     <string name="refresh_waiting">refresh · waiting</string>
     <string name="newer_desc">A newer tree is ready — refresh</string>
-    <string name="long_click_label">Delete</string>
+    <string name="long_click_label">Select</string>
     <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
     <string name="sort_size">size</string>
     <string name="sort_name">name</string>
@@ -241,4 +241,45 @@
     <string name="legend_data">data</string>
     <string name="legend_cache">cache</string>
     <string name="app_desc">%1$s, %2$s: APK %3$s, data %4$s, cache %5$s</string>
+    <!-- Selection mode and group delete (Selection, GroupSheet, GroupResult). -->
+    <string name="click_label_quick">Quick look</string>
+    <string name="sel_exit">Leave selection</string>
+    <string name="sel_all">All</string>
+    <string name="sel_none">None</string>
+    <string name="sel_delete">Delete…</string>
+    <string name="sel_on">selected</string>
+    <string name="sel_off">not selected</string>
+    <string name="sel_select">Select</string>
+    <string name="sel_deselect">Deselect</string>
+    <string name="sel_blocked_desc">, can\'t delete: %1$s</string>
+    <string name="sel_mode_announce">Selection mode. %1$s selected</string>
+    <string name="selection_cleared">Selection cleared: %1$s</string>
+    <plurals name="selected_n">
+        <item quantity="one">%1$s selected</item>
+        <item quantity="other">%1$s selected</item>
+    </plurals>
+    <plurals name="objects">
+        <item quantity="one">%1$s item</item>
+        <item quantity="other">%1$s items</item>
+    </plurals>
+    <plurals name="progress_title_n">
+        <item quantity="one">Deleting %1$s item</item>
+        <item quantity="other">Deleting %1$s items</item>
+    </plurals>
+    <plurals name="owners_n">
+        <item quantity="one">data of %1$s app: %2$s</item>
+        <item quantity="other">data of %1$s apps: %2$s</item>
+    </plurals>
+    <string name="group_title">Delete %1$s?</string>
+    <string name="group_gone">%1$s no longer on disk</string>
+    <string name="group_stopped">Stopped: deleted %1$s of %2$s · %3$s</string>
+    <string name="group_partial">Deleted %1$s of %2$s</string>
+    <string name="not_deleted">Not deleted:</string>
+    <string name="fail_line">%1$s — %2$s</string>
+    <string name="fail_access">no access</string>
+    <string name="fail_busy">busy</string>
+    <string name="fail_symlink">symbolic link</string>
+    <string name="fail_partial">partly deleted</string>
+    <string name="fail_blocked">delete not allowed</string>
+    <string name="fail_error">error</string>
 </resources>
