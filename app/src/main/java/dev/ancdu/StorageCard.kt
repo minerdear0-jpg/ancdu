@@ -35,6 +35,12 @@ class StorageCard(private val a: MainActivity) {
         private set
     private lateinit var deltaTxt: TextView
     private lateinit var scanLine: ScanLine
+    /** Скан хранилища шёл (или ждал) при прошлом [render]: конец — по итогу именно его. */
+    private var scanWas = ScanState.NONE
+    /** [BgScan.endMark] на начале этого скана хранилища. */
+    private var endMark = 0L
+    /** Оценка доли: items кэша хранилища, прочитанные один раз на старте скана. */
+    private var estimate: Long? = null
     /** Без доступа ко всем файлам: объяснение и «Открыть настройки» (раскрывается тапом). */
     lateinit var permBox: LinearLayout
         private set
@@ -173,6 +179,25 @@ class StorageCard(private val a: MainActivity) {
     private fun storageShown(): Boolean = Holder.h != 0L && Holder.root == Scans.STORAGE && !Holder.viaRoot
 
     /**
+     * Полоса скана хранилища. Доля — от items последнего кэша хранилища (читается один раз, когда
+     * скан пошёл); без него и в очереди — неопределённая. Конец — на 100%, если удался именно этот
+     * скан, иначе (провал, «грязный» итог) — скрыть сразу.
+     */
+    private fun renderLine() {
+        val was = scanWas
+        val st = when { BgScan.storageRunning -> ScanState.RUNNING; BgScan.storageActive -> ScanState.QUEUED; else -> ScanState.NONE }
+        scanWas = st
+        if (st == ScanState.NONE) {
+            if (was == ScanState.NONE) return
+            if (ScanProgress.completes(BgScan.endFor(Scans.STORAGE, false, endMark))) scanLine.finish() else scanLine.hide()
+            return
+        }
+        if (was == ScanState.NONE) endMark = BgScan.endMark
+        if (st == ScanState.RUNNING && was != ScanState.RUNNING) estimate = Scans.meta(a, Scans.STORAGE, false)?.items
+        scanLine.show(if (st == ScanState.RUNNING) ScanProgress.fraction(BgScan.p[1], estimate) else null)
+    }
+
+    /**
      * Нижняя строка. Объём, элементы и время — всегда из ОДНОГО источника (не statfs): дерева в
      * Holder (его собственное время — Holder.time), иначе итога скана этого процесса, иначе
      * записи кэша. Новое время рядом со старыми итогами не появляется.
@@ -187,7 +212,7 @@ class StorageCard(private val a: MainActivity) {
             storeArrow.setTextColor(C.AMBER)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
-            scanLine.hide()
+            scanLine.hide(); scanWas = ScanState.NONE
             view.contentDescription = t.s(R.string.card_desc_need_access, t.s(R.string.card_desc))
             return
         }
@@ -224,11 +249,7 @@ class StorageCard(private val a: MainActivity) {
         }
         // Только скан общего хранилища (идёт или в очереди за обновлением другого корня).
         val running = BgScan.storageActive
-        // Доля — от items последнего кэша хранилища; без него (и в очереди) — неопределённая.
-        if (running) scanLine.show(if (BgScan.storageRunning) ScanProgress.fraction(BgScan.p[1],
-                Scans.meta(a, Scans.STORAGE, false)?.items) else null)
-        else if (BgScan.failure != null) scanLine.hide()
-        else scanLine.finish()
+        renderLine()
         val line = Freshness.line(t, running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
             System.currentTimeMillis())
         freshTxt.visibility = View.VISIBLE
