@@ -63,11 +63,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build
 
+      # Путь NDK — из окружения шага (ANDROID_HOME выставляет setup-android) в GITHUB_ENV:
+      # выражения ниже видят только его.
+      - name: Resolve NDK path
+        run: |
+          sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:?no Android SDK}}
+          echo "NDK_DIR=$sdk/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
       # Кэш NDK: build.sh ставит его через sdkmanager, только если каталога нет.
       - name: Cache NDK
         uses: actions/cache@v4
         with:
-          path: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+          path: ${{ env.NDK_DIR }}
           key: ndk-${{ runner.os }}-${{ env.NDK_VERSION }}
 
       - name: Build debug APK and run JVM tests
