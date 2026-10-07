@@ -121,6 +121,8 @@ class SheetPreviewTest {
             assertNotNull("контактный лист каталога", c)
             assertEquals(1, c!!.childCount)
             assertNull(s.contactRows[big])
+            // и у самого каталога листа — его крупнейшие картинки (FIFO пустой — мимо)
+            assertEquals(2, s.selfContactRow!!.childCount)
         }
         val slot = { v: View? -> s.thumbs.slots.first { it.view === v } }
         assertTrue("FIFO: сразу «нет превью»", waitFor(Peek.TIMEOUT_MS - 300) { slot(s.childThumbs[pipe]).done })

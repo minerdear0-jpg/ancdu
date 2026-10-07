@@ -46,11 +46,15 @@ object ContactSheet {
 
     class Kid(val id: Int, val disk: Long, val flags: Int)
 
-    private val EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp",
-        "mp4", "m4v", "mkv", "mov", "webm", "3gp")
-
-    /** Картинка или видео по расширению (без учёта регистра). */
-    fun media(name: String): Boolean = Ellipsis.ext(name)?.lowercase(Locale.ROOT) in EXT
+    /**
+     * Картинка или видео — тот же вид, что у карточки ([Peek.kindFor]); [mime] — MIME по
+     * расширению в нижнем регистре (MimeTypeMap).
+     */
+    fun media(name: String, flags: Int, mime: (String) -> String?): Boolean {
+        val ext = Ellipsis.ext(name)
+        val kind = Peek.kindFor(ext, ext?.let { mime(it.lowercase(Locale.ROOT)) }, rootOnly = false, flags = flags)
+        return kind == PeekKind.IMAGE || kind == PeekKind.VIDEO
+    }
 
     /** Позиция в списке детей одного каталога. */
     private class Cursor(val list: List<Kid>, var i: Int) {
@@ -59,9 +63,11 @@ object ContactSheet {
 
     /**
      * Крупнейшие медиафайлы под [root]: [kids] — дети узла по убыванию disk (без удалённых),
-     * [name] — имя файла. Пропускаются ссылки, другая ФС, повторные жёсткие ссылки и пустые.
+     * [name] — имя файла, [mime] — см. [media]. Пропускаются ссылки, другая ФС, повторные жёсткие
+     * ссылки и пустые.
      */
-    fun pick(root: Int, kids: (Int) -> List<Kid>, name: (Int) -> String, k: Int = K, budget: Int = BUDGET): List<Kid> {
+    fun pick(root: Int, kids: (Int) -> List<Kid>, name: (Int) -> String, mime: (String) -> String?,
+             k: Int = K, budget: Int = BUDGET): List<Kid> {
         val out = ArrayList<Kid>(k)
         if (k <= 0) return out
         val heap = PriorityQueue<Cursor>(compareByDescending<Cursor> { it.head.disk }.thenBy { it.head.id })
@@ -76,7 +82,7 @@ object ContactSheet {
                 kid.flags and (F_SYMLINK or F_OTHERFS) != 0 -> {}
                 kid.flags and F_DIR != 0 -> kids(kid.id).takeIf { it.isNotEmpty() }?.let { heap += Cursor(it, 0) }
                 kid.flags and F_HLDUP != 0 || kid.disk <= 0 -> {}
-                media(name(kid.id)) -> out += kid
+                media(name(kid.id), kid.flags, mime) -> out += kid
             }
         }
         return out

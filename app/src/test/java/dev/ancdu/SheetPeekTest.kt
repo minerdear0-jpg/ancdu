@@ -50,6 +50,12 @@ class SheetPeekTest {
         assertEquals("Быстрый просмотр", RU.s(R.string.sheet_peek))
     }
 
+    private companion object {
+        /** Как MimeTypeMap для расширений теста. */
+        val MIME = mapOf("jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png", "webp" to "image/webp",
+            "heic" to "image/heic", "mp4" to "video/mp4", "pdf" to "application/pdf", "mp3" to "audio/mpeg")
+    }
+
     private class Tree {
         val kids = HashMap<Int, MutableList<ContactSheet.Kid>>()
         val names = HashMap<Int, String>()
@@ -75,7 +81,8 @@ class SheetPeekTest {
         }
 
         fun pick(root: Int = 0, k: Int = ContactSheet.K, budget: Int = ContactSheet.BUDGET): List<String> =
-            ContactSheet.pick(root, { visits++; kids[it].orEmpty() }, { names.getValue(it) }, k, budget).map { names.getValue(it.id) }
+            ContactSheet.pick(root, { visits++; kids[it].orEmpty() }, { names.getValue(it) }, { MIME[it] }, k, budget)
+                .map { names.getValue(it.id) }
     }
 
     @Test fun contactSheetTopMediaInSubtree() {

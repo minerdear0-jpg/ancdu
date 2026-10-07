@@ -61,6 +61,8 @@ class DeletePreview(
     val topContact: List<List<QuickLookInfo>> = emptyList(),
     /** Сам файл листа одного файла — место превью 120dp (null — каталог, группа). */
     val selfPeek: QuickLookInfo? = null,
+    /** Лист одного каталога: до 4 крупнейших картинок и видео в нём самом ([ContactSheet]). */
+    val selfContact: List<QuickLookInfo> = emptyList(),
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -123,6 +125,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     val childThumbs = ArrayList<FrameLayout?>()
     /** Для тестов: «контактные листы» строк-каталогов (строка без него — null). */
     val contactRows = ArrayList<LinearLayout?>()
+    /** Для тестов: «контактный лист» самого каталога листа (null — нет медиа или не каталог). */
+    var selfContactRow: LinearLayout? = null
+        private set
     /**
      * Когда закрылась карточка поверх листа (uptime; 0 — не открывалась): «Удалить» молчит
      * [CARD_GUARD_MS] после — второй тап по ✕ / кнопке карточки не удаляет.
@@ -311,6 +316,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             addView(ownersRow(group.owners, GroupSheet.ownerPart(t, label(group.owners[0]), group.ownerItems, group.count)))
         else p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
         addView(sizeLine())
+        // Лист одного каталога: крупнейшие картинки и видео в нём самом.
+        if (group == null && p.dir) contactRow(p.selfContact)?.let { selfContactRow = it; addView(it) }
         if ((p.dir || group != null) && p.top.isNotEmpty()) addView(children())
         if (group != null && group.gone > 0) addView(act.label(GroupSheet.gone(t, group.gone), 13f, C.MUTED).also { goneText = it })
         if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER))

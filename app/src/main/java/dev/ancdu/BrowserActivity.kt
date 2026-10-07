@@ -16,6 +16,7 @@ import android.view.View
 import android.view.animation.AnimationUtils
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.webkit.MimeTypeMap
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Button
@@ -1341,6 +1342,7 @@ class BrowserActivity : LangActivity() {
             cacheTime = if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null,
             fast = fastAllowed(path), root = Root.state, tag = tagOf(path, flags, block), topTags = topTags,
             topPeek = topPeek, topContact = topContact,
+            selfContact = if (dir) contactSheet(handle, target, path) else emptyList(),
             selfPeek = if (dir) null else peekInfo(name, path,
                 Native.str(Native.path(handle, Native.parent(handle, target))), self[0], flags))
     }
@@ -1357,11 +1359,12 @@ class BrowserActivity : LangActivity() {
     private fun contactSheet(handle: Long, dir: Int, path: String): List<QuickLookInfo> {
         if (dir < 0 || Peek.rootOnly(path, Holder.viaRoot, packageName)) return emptyList()
         val picked = ContactSheet.pick(dir, { nd ->
-            val ch = IntArray(Native.childCount(handle, nd))
-            val n = minOf(maxOf(0, Native.children(handle, nd, SORT_SIZE, false, ch)), ContactSheet.KIDS_CAP)
+            // Порядок SORT_SIZE по диску — уже готовый: короткий массив — крупнейшие дети.
+            val ch = IntArray(minOf(Native.childCount(handle, nd), ContactSheet.KIDS_CAP))
+            val n = maxOf(0, Native.children(handle, nd, SORT_SIZE, false, ch))
             val inf = LongArray(4 * maxOf(n, 1)).also { if (n > 0) Native.nodeInfo(handle, ch, n, it) }
             (0 until n).map { ContactSheet.Kid(ch[it], inf[4 * it], inf[4 * it + 3].toInt()) }
-        }, { nd -> Native.str(Native.name(handle, nd)) })
+        }, { nd -> Native.str(Native.name(handle, nd)) }, { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) })
         return picked.map { kid ->
             val fp = Native.str(Native.path(handle, kid.id))
             peekInfo(Native.str(Native.name(handle, kid.id)), fp,
