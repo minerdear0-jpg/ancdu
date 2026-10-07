@@ -98,11 +98,13 @@ class BiggestFilesTest {
         val a = launch()
         assertTrue("крупнейшие файлы не появились за 5 с", waitFor { a.biggest.rows.size == Biggest.K })
         assertTrue(waitFor { a.biggest.rowViews[0].height > 0 })
+        var shownBefore = 0
         ins.runOnMainSync {
             // Тот же источник (поколение дерева, удалений не было) — строки не пересчитываются.
             val n = a.biggest.loads
             a.biggest.refresh()
             assertEquals(n, a.biggest.loads)
+            shownBefore = a.biggest.shown
             a.biggest.refresh(force = true)
             assertEquals(n + 1, a.biggest.loads)
             // Волосяные линии только между строками: после последней — ничего.
@@ -110,14 +112,17 @@ class BiggestFilesTest {
             assertEquals(a.biggest.rowViews.last(), list.getChildAt(list.childCount - 1))
             assertEquals(2 * Biggest.K - 1, list.childCount)
         }
-        assertTrue(waitFor { a.biggest.rows.size == Biggest.K && a.biggest.rowViews[0].height > 0 })
+        // Дождаться, пока принудительная перезагрузка действительно покажет новые строки.
+        assertTrue(waitFor { a.biggest.shown > shownBefore && a.biggest.rows.size == Biggest.K && a.biggest.rowViews[0].height > 0 })
         ins.runOnMainSync {
             val rows = a.biggest.rows
             assertEquals(View.VISIBLE, a.biggest.box.visibility)
             assertEquals(listOf("big.bin", "v.mp4", "notes.txt", "s7.txt", "s6.txt"), rows.map { it.name })
             assertEquals("Download/", rows[0].parent)
             assertEquals("DCIM/Camera/", rows[1].parent)
-            assertEquals(a.getString(R.string.internal_storage), rows[2].parent)   // файл в самом корне
+            // Файл в самом корне: подпись — заголовок корня, как в браузере (для /storage/emulated/0 —
+            // «Внутренняя память», для временного корня теста — его имя).
+            assertEquals(PathText.rootTitle(dir!!.path, a.getString(R.string.internal_storage)), rows[2].parent)
             assertEquals(TagKind.DL, rows[0].tag?.kind)
             assertEquals(TagKind.MEDIA, rows[1].tag?.kind)
             val v = a.biggest.rowViews[0] as BigRow
