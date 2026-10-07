@@ -72,8 +72,9 @@ class DeleteSheetTest {
     private fun indexOf(a: BrowserActivity, name: String): Int = rows(a).indexOfFirst { it.name == name }
         .also { assertTrue("нет строки $name", it >= 0) }
 
+    /** Лист одного объекта (выбор из одного; долгое нажатие теперь входит в режим выбора). */
     private fun longPress(a: BrowserActivity, i: Int): DeleteSheet {
-        ins.runOnMainSync { a.list.source!!.longClick(i) }
+        ins.runOnMainSync { a.askDelete(i) }
         assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
         return a.sheet!!
     }
@@ -119,7 +120,7 @@ class DeleteSheetTest {
         assertTrue(File(dir, "small.bin").exists())
     }
 
-    /** Тап по файлу — карточка, не лист; лист — долгим нажатием. */
+    /** Тап по файлу — карточка, не лист; долгое нажатие — выбор, «УДАЛИТЬ…» — лист одного. */
     @Test fun fileLongPressOpensSheet() {
         val dir = fixture("ds2")
         File(dir, "sub").mkdirs()
@@ -132,15 +133,20 @@ class DeleteSheetTest {
             assertTrue(a.sheet?.dialog?.isShowing != true)
             a.quickLook!!.dismiss()
             a.list.source!!.longClick(i)
+            assertTrue(a.selection.active)
+            assertTrue(a.sheet?.dialog?.isShowing != true)
+            a.deleteSelected()
         }
         assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
         ins.runOnMainSync {
             val s = a.sheet!!
+            assertNull("один выбранный — лист одного", s.group)
             assertEquals(0, a.node)              // ни тап, ни долгое нажатие по файлу не навигируют
             assertTrue(s.childNames.isEmpty())
             assertNotNull(s.deleteButton)
             assertFalse(s.p.dir)
             s.dismiss()
+            a.leaveSelection()
         }
         // тап по каталогу по-прежнему открывает его
         val sub = indexOf(a, "sub/")
@@ -204,7 +210,7 @@ class DeleteSheetTest {
             }
             val i = indexOf(a, "photos/")
             ins.runOnMainSync {
-                a.list.source!!.longClick(i)
+                a.askDelete(i)
                 // Ход обновления — в шапке: полоса и «обновление · …» (идёт или ждёт).
                 assertEquals(View.VISIBLE, a.scanLine.visibility)
                 assertTrue(a.badge.text.toString(), a.badge.text.startsWith(a.prefixOf(R.string.refresh_count)))

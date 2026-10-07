@@ -156,6 +156,38 @@ class BrowserActivity : LangActivity() {
     private var showHint = true
 
     /**
+     * Режим выбора — в ОДНОЙ папке: ключи — байты имён её детей, [selScope] — её путь (байты имён
+     * от корня). Переживает сортировку, режим размера и подстановку дерева (заново по именам).
+     */
+    val selection = Selection()
+    private var selScope: List<ByteArray> = emptyList()
+    // Ключи строк и запрет выбора — лениво, до следующего load().
+    private var keys = arrayOfNulls<NameKey>(0)
+    /** 0 — не считано, 1 — можно выбрать, 2 — нельзя ([selBlocks]). */
+    private var selState = ByteArray(0)
+    private var selBlocks = arrayOfNulls<Block>(0)
+    private var selectableRows: List<Pair<NameKey, Int>>? = null
+    /** Панель выбора внизу (вместо подвала): ✕, итог и число, «ВСЕ»/«НИЧЕГО», «УДАЛИТЬ…». */
+    lateinit var selBar: LinearLayout
+        private set
+    lateinit var selTotal: TextView
+        private set
+    lateinit var selCount: TextView
+        private set
+    lateinit var selAll: TextView
+        private set
+    lateinit var selDelete: TextView
+        private set
+    lateinit var selExit: TextView
+        private set
+    /** Итог и число — одна живая область (polite). */
+    private lateinit var selText: LinearLayout
+    /** Сообщение подвала в режиме выбора — поверх низа списка (подвала нет, список не прыгает). */
+    private lateinit var notice: TextView
+    /** Лист группы ждёт обновления дерева: сколько было выбрано (для «N уже нет на диске»). */
+    private var groupAsked = 0
+
+    /**
      * Holder.set сменил сессию — вызывается синхронно внутри set, до free(старой). Экран тут же
      * перестаёт трогать старый дескриптор: отцепляет список и забывает h (JNI игнорирует 0).
      * Если идёт удаление, пересоздание сделает onDeleted (delete стоит на io раньше free).
@@ -171,6 +203,12 @@ class BrowserActivity : LangActivity() {
 
     private val onDeleted: (Int) -> Unit = { r ->
         dismissWait()
+        // В любом случае — выход из выбора (не удалённые остаются с ⚠).
+        selection.leave()
+        if (Holder.delCount > 1) groupDeleted() else singleDeleted(r)
+    }
+
+    private fun singleDeleted(r: Int) {
         // su отказал: «root ✓» из прошлого больше не правда (и быстрый путь по умолчанию — выкл.).
         // Только prefs и Root.state — и для уходящего экрана.
         if (DeletePolicy.nothingDeleted(r, Holder.delRoot)) Root.denied(this)
@@ -207,17 +245,55 @@ class BrowserActivity : LangActivity() {
         }
     }
 
-    /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). */
-    private fun setFooter(text: CharSequence) {
-        footer.text = text
-        footer.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
+    /**
+     * Удаление группы кончилось: всё — done и «освобождено X»; «Стоп» — тишина (tock уже был) и
+     * «Остановлено: удалено 1 из 3 · …»; иначе — refuse и сообщение «Удалено 2 из 3» с причиной
+     * по каждому. Дерево — как после одного: каталог удалён частично — оно обновится само.
+     */
+    private fun groupDeleted() {
+        val results = Holder.delResults
+        if (GroupResult.rootRefused(results, Holder.delRoot)) Root.denied(this)
+        if (h == 0L || Holder.h != h) {
+            list.source = null
+            recreate()
+            return
+        }
+        list.source = src
+        load(node, keepScroll)
+        if (isFinishing) return
+        val o = GroupResult.outcome(results)
+        val text = when (o) {
+            is GroupResult.Outcome.Done -> { Feedback.cue(list, Cue.DONE); GroupResult.footer(txt, o).also { note(it) } }
+            is GroupResult.Outcome.Stopped -> GroupResult.footer(txt, o).also { note(it) }
+            is GroupResult.Outcome.Partial -> {
+                Feedback.cue(list, Cue.REFUSE)
+                val (title, msg) = GroupResult.alert(txt, o)
+                report(title, msg)
+                GroupResult.footer(txt, o)
+            }
+        }
+        // Holder.delDir у группы — есть частично удалённый каталог: BgScan уже обновляет дерево.
+        if (Holder.delDir) {
+            auto.afterGroup(Holder.delNames, Holder.delName, Holder.delDisk, text)
+            if (!BgScan.active) refreshFailed(auto.take()!!)
+        }
+        Log.i("ancdu", "group delete n=${results.size} ok=${o.deleted} refresh=${auto.request != null}")
     }
 
-    /** Подвал: [text] на 4 с, затем обычная подсказка. */
+    /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). В режиме выбора подвала нет. */
+    private fun setFooter(text: CharSequence) {
+        footer.text = text
+        footer.visibility = if (selection.active) View.GONE else if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
+    }
+
+    /** Подвал: [text] на 4 с, затем обычная подсказка. В режиме выбора — поверх низа списка. */
     private fun note(text: String) {
-        setFooter(text)
+        if (selection.active) { notice.text = text; notice.visibility = View.VISIBLE } else setFooter(text)
         ui.removeCallbacks(restoreFooter)
-        restoreFooter = Runnable { if (footer.text.toString() == text) setFooter(idleFooter()) }
+        restoreFooter = Runnable {
+            if (notice.visibility == View.VISIBLE && notice.text.toString() == text) notice.visibility = View.GONE
+            else if (footer.text.toString() == text) setFooter(idleFooter())
+        }
         ui.postDelayed(restoreFooter, 4000)
     }
 
@@ -225,8 +301,8 @@ class BrowserActivity : LangActivity() {
 
     private var restoreFooter = Runnable {}
 
-    /** Для тестов: текст подвала. */
-    val footerText: CharSequence get() = footer.text
+    /** Для тестов: текст подвала (в режиме выбора — сообщение поверх списка, если оно видно). */
+    val footerText: CharSequence get() = if (notice.visibility == View.VISIBLE) notice.text else footer.text
 
     private fun report(title: String, msg: String) {
         lastAlert = title to msg
@@ -264,15 +340,38 @@ class BrowserActivity : LangActivity() {
                 // F_ERR — и нет доступа, и незаконченное удаление: данные узла неполные.
                 if (flags and F_ERR != 0) { append(", "); append(txt.s(R.string.desc_incomplete)) }
             }.also { descs[index] = it }
+            if (selection.active) {
+                // Флажок: CheckBox для TalkBack; запрещённая строка — недоступна, с причиной.
+                val on = selection.contains(kids[index])
+                val b = blockAt(index)
+                row.checked = on
+                row.enabled = b == null
+                row.stateDesc = txt.s(if (on) R.string.sel_on else R.string.sel_off)
+                row.clickLabel = txt.s(if (on) R.string.sel_deselect else R.string.sel_select)
+                if (b != null) row.desc += txt.s(R.string.sel_blocked_desc, txt.s(b.res))
+                // Долгое у файла — карточка; у каталога — то же, что тап.
+                if (dir) row.long = false else row.longLabel = txt.s(R.string.click_label_quick)
+            } else if (!dir) {
+                row.clickLabel = txt.s(R.string.click_label_quick)
+            }
         }
         override fun click(index: Int) {
             if (busy) return
-            // Файл — карточка быстрого просмотра (не удаление); долгое нажатие — лист удаления.
+            // В режиме выбора тап выбирает (и каталог: вглубь нельзя).
+            if (selection.active) { toggleRow(index); return }
+            // Файл — карточка быстрого просмотра; долгое нажатие — режим выбора.
             if (info[4 * index + 3].toInt() and F_DIR == 0) { openQuickLook(kids[index], value(index), info[4 * index + 3].toInt()); return }
             scrollAt[node] = list.scroll
             load(kids[index], 0, dir = 1)
         }
-        override fun longClick(index: Int) { if (!busy) askDelete(index) }
+        override fun longClick(index: Int) {
+            if (busy) return
+            if (!selection.active) { enterSelection(index); return }
+            val flags = info[4 * index + 3].toInt()
+            if (flags and F_DIR == 0) openQuickLook(kids[index], value(index), flags) else toggleRow(index)
+        }
+        // В режиме выбора звук даёт сам выбор: tick — выбран, tock — снят, refuse — запрет.
+        override fun clickCue(index: Int): Cue? = if (selection.active) null else Cue.TAP
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -353,6 +452,13 @@ class BrowserActivity : LangActivity() {
             setPadding(dp(16), 0, dp(16), dp(10))
             visibility = View.GONE
         }
+        notice = label("", 12f, C.TEXT, mono = true).apply {
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            setBackgroundColor(C.PANEL2)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            visibility = View.GONE
+        }
+        selBar = selectionBar()
         setContentView(vbox().apply {
             setBackgroundColor(C.BG)
             addView(top)
@@ -362,8 +468,11 @@ class BrowserActivity : LangActivity() {
             addView(FrameLayout(this@BrowserActivity).apply {
                 addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
                 addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                addView(notice, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
             }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(footer)
+            // Режим выбора: панель вместо подвала — сдвигается низ списка, шапка и верх — нет.
+            addView(selBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(gallery)
         })
         // Подсказка подвала — только первые HINT_SESSIONS открытий браузера (не пересозданий).
@@ -392,6 +501,7 @@ class BrowserActivity : LangActivity() {
         } else {
             list.source = src
             load(node, keepScroll)
+            if (st != null) restoreSelection(st)
         }
         renderProgress()
     }
@@ -404,6 +514,29 @@ class BrowserActivity : LangActivity() {
         out.putInt(S_SORT, sort)
         out.putBoolean(S_APPARENT, apparent)
         out.putInt(S_SCROLL, if (busy) keepScroll else list.scroll)
+        // Выбор — по именам (байты); очень большой не сохраняется (предел Binder).
+        if (selection.active && !busy) {
+            val ks = selection.keys
+            if (ks.size <= SAVE_MAX && ks.sumOf { it.bytes.size } <= SAVE_BYTES) {
+                out.putInt(S_SEL_N, ks.size)
+                for ((i, k) in ks.withIndex()) out.putByteArray(S_SEL + i, k.bytes)
+            }
+        }
+    }
+
+    /** Пересоздание: тот же выбор в той же папке — по именам в дереве [h]. */
+    private fun restoreSelection(st: Bundle) {
+        val k = st.getInt(S_SEL_N, 0)
+        if (k <= 0) return
+        val map = childMap(node)
+        for (i in 0 until k) {
+            val key = NameKey(st.getByteArray(S_SEL + i) ?: continue)
+            val nd = map[key] ?: continue
+            if (blockReason(h, nd, Native.str(Native.path(h, nd))).let { it != null && it != Block.REFRESH_FAILED }) continue
+            if (!selection.active) selection.start(key, nd) else if (selection.nodeOf(key) == null) selection.toggle(key, nd)
+        }
+        if (selection.active) selScope = pathNames(h, node)
+        renderSelection()
     }
 
     override fun onResume() {
@@ -488,6 +621,7 @@ class BrowserActivity : LangActivity() {
     private fun landed(r: AutoPromote.Request) {
         promotePending()
         if (h == 0L) return
+        if (r.group) { groupLanded(); return }
         val hit = resolveNode(r.names)
         val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
         when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
@@ -503,6 +637,7 @@ class BrowserActivity : LangActivity() {
     private fun refreshFailed(r: AutoPromote.Request) {
         Log.i("ancdu", "tree refresh failed: ${BgScan.failure}")
         setFooter(hint)
+        if (r.group) { if (selection.active) openGroupSheet(gone = 0) else note(GroupSheet.gone(txt, groupAsked)); return }
         val hit = resolveNode(r.names)
         if (r.delDisk != null) {
             val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
@@ -537,6 +672,10 @@ class BrowserActivity : LangActivity() {
         const val S_SORT = "sort"
         const val S_APPARENT = "apparent"
         const val S_SCROLL = "scroll"
+        const val S_SEL_N = "sel_n"
+        const val S_SEL = "sel_"
+        const val SAVE_MAX = 2000
+        const val SAVE_BYTES = 256 * 1024
         const val K_SESSIONS = "browser_sessions"
         const val HINT_SESSIONS = 3
         /** Плашка вида дерева: до двух строк рядом с чипом «новее». */
@@ -565,8 +704,22 @@ class BrowserActivity : LangActivity() {
         if (h == 0L) { finish(); return }
         list.source = src
         val hit = PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = true) }
+        // Выбор — по именам в новом дереве; пропавшие выбрасываются. Папки нет — load снимет выбор.
+        if (selection.active && hit.exact) {
+            val map = childMap(hit.node)
+            selection.rebind { map[it] }
+        }
         load(hit.node, if (hit.exact) keep else 0)
         refreshPending()
+    }
+
+    /** Живые дети [nd] дерева [h] по байтам имени (один проход). */
+    private fun childMap(nd: Int): HashMap<NameKey, Int> {
+        val c = IntArray(Native.childCount(h, nd))
+        val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
+        val m = HashMap<NameKey, Int>(k * 2)
+        for (i in 0 until k) m[NameKey(Native.name(h, c[i]))] = c[i]
+        return m
     }
 
     /** Ребёнок [nd] с именем ровно [nm] (байты) в дереве [h] — каталог, если [dirOnly], — или null. */
@@ -654,6 +807,8 @@ class BrowserActivity : LangActivity() {
     private fun load(target: Int, restore: Int, dir: Int = 0) {
         // Любая навигация отменяет ждущий лист (подстановка дерева при этом всё равно будет).
         cancelAsk()
+        // Выбор живёт в ОДНОЙ папке: ушли из неё (панель пути, папки нет в новом дереве) — снят.
+        val dropped = if (selection.active && !samePath(pathNames(h, target), selScope)) selection.leave() else 0
         loads++
         node = target
         // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
@@ -661,6 +816,7 @@ class BrowserActivity : LangActivity() {
         n = maxOf(0, Native.children(h, node, sort, apparent, kids))
         names = arrayOfNulls(n); shown = arrayOfNulls(n); sizes = arrayOfNulls(n)
         pcts = arrayOfNulls(n); descs = arrayOfNulls(n)
+        keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
@@ -680,8 +836,151 @@ class BrowserActivity : LangActivity() {
         renderChips()
         refreshPending()
         slide(dir)
-        list.refresh()
+        renderSelection()
         list.scroll = restore
+        if (dropped > 0) note(GroupSheet.cleared(txt, dropped))
+    }
+
+    private fun samePath(a: List<ByteArray>, b: List<ByteArray>): Boolean =
+        a.size == b.size && a.indices.all { a[it].contentEquals(b[it]) }
+
+    // ---------- режим выбора ----------
+
+    private fun keyAt(i: Int): NameKey = keys[i] ?: NameKey(Native.name(h, kids[i])).also { keys[i] = it }
+
+    /** Запрет выбора строки [i] или null. Каталог устаревшего дерева выбрать можно: лист сам обновит дерево. */
+    private fun blockAt(i: Int): Block? {
+        when (selState[i].toInt()) { 1 -> return null; 2 -> return selBlocks[i] }
+        val b = blockReason(h, kids[i], Native.str(Native.path(h, kids[i]))).takeIf { it != Block.REFRESH_FAILED }
+        selState[i] = if (b == null) 1 else 2
+        selBlocks[i] = b
+        return b
+    }
+
+    /** Все выбираемые строки уровня (ключ, узел) — для «ВСЕ»; один проход на уровень. */
+    private fun selectable(): List<Pair<NameKey, Int>> =
+        selectableRows ?: (0 until n).filter { blockAt(it) == null }.map { keyAt(it) to kids[it] }.also { selectableRows = it }
+
+    private fun refuse(b: Block) {
+        Feedback.cue(list, Cue.REFUSE)
+        note(txt.s(b.res))
+    }
+
+    /** Долгое нажатие: режим выбора с этой строкой (tick и вибрация долгого нажатия). Запрещённую — нельзя. */
+    private fun enterSelection(i: Int) {
+        val b = blockAt(i)
+        if (b != null) { refuse(b); return }
+        cancelAsk()
+        selection.start(keyAt(i), kids[i])
+        selScope = pathNames(h, node)
+        Feedback.cue(list, Cue.TAP)
+        renderSelection()
+        // Строка не должна уйти под панель.
+        list.reveal(i)
+        if (list.a11yOn()) list.announceForAccessibility(txt.s(R.string.sel_mode_announce, Fmt.count(1, txt.locale)))
+    }
+
+    /** Тап в режиме выбора: выбрать (tick) или снять (tock); снят последний — режим выходит. */
+    private fun toggleRow(i: Int) {
+        val b = blockAt(i)
+        if (b != null) { refuse(b); return }
+        cancelAsk()
+        val on = selection.toggle(keyAt(i), kids[i])
+        Feedback.cue(list, if (on) Cue.TAP else Cue.BACK)
+        renderSelection()
+    }
+
+    /** Выйти из выбора; [cleared] — подвал «Выбор снят: N» на 4 с. */
+    fun leaveSelection(cleared: Boolean = false) {
+        cancelAsk()
+        val k = selection.leave()
+        renderSelection()
+        if (cleared && k > 0) note(GroupSheet.cleared(txt, k))
+    }
+
+    /** «ВСЕ» — каждый выбираемый (запрещённые пропускаются); «НИЧЕГО» — выход. */
+    fun selectAllOrNone() {
+        if (busy || !selection.active) return
+        cancelAsk()
+        if (selection.isAll(selectable()) { false }) {
+            Feedback.cue(list, Cue.BACK)
+            leaveSelection()
+        } else {
+            Feedback.cue(list, Cue.TAP)
+            selection.selectAll(selectable()) { false }
+            renderSelection()
+        }
+    }
+
+    /**
+     * Панель 64dp внизу: ✕ (44dp), итог (mono 15 жирный) над «3 ВЫБРАНО» (caps 12), «ВСЕ» в
+     * контуре FRAME и «УДАЛИТЬ…» в контуре DANGER_TEXT. Не влезает (200%) — две строки.
+     */
+    private fun selectionBar(): LinearLayout = vbox().apply {
+        setBackgroundColor(C.PANEL)
+        visibility = View.GONE
+        hairline()
+        selExit = label("✕", 16f, C.MUTED).apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(44); minHeight = dp(44)
+            background = pressable(android.graphics.Color.TRANSPARENT)
+            contentDescription = txt.s(R.string.sel_exit)
+            isClickable = true; isFocusable = true
+            feedbackClick(Cue.BACK) { if (!busy) leaveSelection() }
+        }
+        selTotal = label("", 15f, C.TEXT, mono = true, bold = true).apply { maxLines = 1 }
+        selCount = caps("", C.MUTED)
+        selText = vbox().apply {
+            addView(selTotal); addView(selCount)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        fun outlined(text: String, color: Int): TextView = caps(text, color).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(44); minWidth = dp(44)
+            setPadding(dp(14), 0, dp(14), 0)
+            background = pressable(android.graphics.Color.TRANSPARENT, color)
+            isClickable = true; isFocusable = true
+            isSoundEffectsEnabled = false
+        }
+        selAll = outlined(txt.s(R.string.sel_all), C.TEXT).apply {
+            background = pressable(android.graphics.Color.TRANSPARENT, C.FRAME)
+            // Звук — в selectAllOrNone (tick — все, tock — ничего).
+            setOnClickListener { selectAllOrNone() }
+        }
+        // Звук даёт открывшийся лист (arm).
+        selDelete = outlined(txt.s(R.string.sel_delete), C.DANGER_TEXT).apply { setOnClickListener { deleteSelected() } }
+        val flow = Flow(this@BrowserActivity, dp(8), dp(8), endLast = true).apply {
+            addView(hbox(8).apply { addView(selExit); addView(selText) })
+            addView(hbox(8).apply { addView(selAll); addView(selDelete) })
+        }
+        addView(FrameLayout(this@BrowserActivity).apply {
+            minimumHeight = dp(63)
+            setPadding(dp(8), dp(6), dp(16), dp(6))
+            addView(flow, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER_VERTICAL))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+    }
+
+    /** Панель и подвал по режиму; итог — из nodeInfo выбранных узлов (диск или видимый — как в списке). */
+    private fun renderSelection() {
+        if (!::selBar.isInitialized) return
+        val on = selection.active
+        selBar.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) {
+            footer.visibility = View.GONE
+            val nodes = selection.nodes
+            val inf = LongArray(4 * maxOf(nodes.size, 1))
+            if (nodes.isNotEmpty() && h != 0L) Native.nodeInfo(h, nodes, nodes.size, inf)
+            val total = DeletePolicy.sum(nodes.indices.map { inf[4 * it + if (apparent) 1 else 0] })
+            selTotal.text = Fmt.size(total, txt)
+            selCount.text = GroupSheet.selected(txt, nodes.size)
+            selText.contentDescription = "${selTotal.text}, ${selCount.text}"
+            selAll.text = txt.s(if (selection.isAll(selectable()) { false }) R.string.sel_none else R.string.sel_all)
+        } else {
+            notice.visibility = View.GONE
+            footer.visibility = if (footer.text.isEmpty()) View.INVISIBLE else View.VISIBLE
+        }
+        list.refresh()
     }
 
     /**
@@ -750,6 +1049,8 @@ class BrowserActivity : LangActivity() {
     @Deprecated("Activity API")
     override fun onBackPressed() {
         if (busy) return
+        // В режиме выбора «назад» только снимает выбор — без перехода.
+        if (selection.active) { leaveSelection(cleared = true); return }
         cancelAsk()
         if (node != 0) {
             val p = maxOf(Native.parent(h, node), 0)
@@ -759,7 +1060,124 @@ class BrowserActivity : LangActivity() {
         }
     }
 
-    private fun askDelete(i: Int) = ask(kids[i])
+    /** Лист удаления строки [i] — выбор из одного (тот же лист, что «УДАЛИТЬ…» с одним выбранным). */
+    fun askDelete(i: Int) { if (!busy && i in 0 until n) ask(kids[i]) }
+
+    /**
+     * «УДАЛИТЬ…» панели выбора. Один выбранный — ровно сегодняшний лист ([ask]); больше — лист
+     * группы. Узлы — только дети текущей папки.
+     */
+    fun deleteSelected() {
+        if (busy || h == 0L || !selection.active) return
+        val nodes = selection.nodes
+        if (nodes.size == 1) { ask(nodes[0]); return }
+        askGroup()
+    }
+
+    /**
+     * Лист группы. Ждёт более новое дерево — подставляется сразу (выбор — по именам в нём);
+     * в кэше или индексе выбран каталог — ОДНО обновление на всю группу (как у [ask]), лист
+     * откроет [refreshPending]; пропавшие с диска выбрасываются («1 уже нет на диске»).
+     */
+    private fun askGroup() {
+        sheet?.dismiss()
+        cancelAsk()
+        val before = selection.count
+        if (hasNewer()) {
+            promotePending()
+            if (h == 0L) return
+            if (!selection.active) { note(GroupSheet.gone(txt, before)); return }
+        }
+        val stale = (Holder.kind == Kind.CACHE || Holder.kind == Kind.INDEX) &&
+            LongArray(4 * selection.count).also { Native.nodeInfo(h, selection.nodes, selection.count, it) }
+                .let { inf -> (0 until selection.count).any { inf[4 * it + 3].toInt() and F_DIR != 0 } }
+        if (stale) {
+            groupAsked = before
+            auto.beforeGroup(pathNames(h, node), nameOf(node), ScanTarget(Holder.root, Holder.viaRoot))
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { renderProgress(); return }
+            auto.take()
+            Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
+        }
+        openGroupSheet(gone = before - selection.count)
+    }
+
+    /** Обновлённое дерево для листа группы подставлено: выбор уже заново по именам. */
+    private fun groupLanded() {
+        if (!selection.active) { note(GroupSheet.gone(txt, groupAsked)); return }
+        openGroupSheet(gone = maxOf(0, groupAsked - selection.count))
+    }
+
+    /**
+     * Лист группы по выбору в папке [node] дерева [h]. Подтверждение удаляет ПО ИМЕНАМ (байты) в
+     * этой папке — каждое ищется в живом дереве к своему началу.
+     */
+    private fun openGroupSheet(gone: Int) {
+        val handle = h
+        val folder = node
+        sheet?.dismiss()
+        val nodes = selection.nodes
+        val keys = selection.keys.map { it.bytes }
+        val inf = LongArray(4 * nodes.size).also { Native.nodeInfo(handle, nodes, nodes.size, it) }
+        val items = nodes.indices.map { j ->
+            val nd = nodes[j]
+            val path = Native.str(Native.path(handle, nd))
+            val flags = inf[4 * j + 3].toInt()
+            GroupItem(name = nameOf(nd), dir = flags and F_DIR != 0, disk = inf[4 * j], apparent = inf[4 * j + 1],
+                items = inf[4 * j + 2], flags = flags, owner = Owner.packageOf(path),
+                block = blockReason(handle, nd, path), fast = fastAllowed(path))
+        }
+        val (p, g) = GroupSheet.preview(txt, items, currentPath, packageName, Holder.viaRoot, Holder.kind,
+            if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null, Root.state, gone)
+        sheet = DeleteSheet(this, p, onClose = { refreshPending() }, group = g) { fast ->
+            startGroup(handle, folder, keys, fast)
+        }.also { it.show() }
+    }
+
+    /**
+     * Главный поток. Удаление группы: объекты — дети [folder] сессии [handle] с именами [keys]
+     * (байты). Каждый к своему началу ищется по имени в живом дереве и снова проверяется
+     * политикой (на io, [groupJob]); запрещённые не отправляются, вне папки — ничего.
+     */
+    private fun startGroup(handle: Long, folder: Int, keys: List<ByteArray>, fast: Boolean): Boolean {
+        if (busy || isDestroyed) return false
+        if (handle != Holder.h || handle != h || folder != node) {
+            alert(txt.s(R.string.delete_cancelled_title), txt.s(R.string.tree_changed)) {
+                list.source = null; recreate()
+            }
+            return false
+        }
+        // Числа диалога — по именам сейчас (тот же поиск повторится к началу каждого).
+        val map = childMap(folder)
+        val found = keys.map { map[NameKey(it)] }
+        val live = found.filterNotNull().toIntArray()
+        val inf = LongArray(4 * maxOf(live.size, 1)).also { if (live.isNotEmpty()) Native.nodeInfo(handle, live, live.size, it) }
+        val disks = HashMap<Int, Long>()
+        val dirs = HashSet<Int>()
+        for ((j, nd) in live.withIndex()) {
+            disks[nd] = inf[4 * j]
+            if (inf[4 * j + 3].toInt() and F_DIR != 0) dirs += nd
+        }
+        val total = DeletePolicy.sum(live.indices.map { inf[4 * it + 2] })
+        val disk = DeletePolicy.sum(live.indices.map { inf[4 * it] })
+        val app = applicationContext
+        val kind = Holder.kind
+        val viaRoot = Holder.viaRoot
+        val sessionRoot = Holder.root
+        val resolver = GroupResolver(handle, folder)
+        val jobs = keys.mapIndexed { j, key ->
+            val nd = found[j]
+            val name = Native.str(key)
+            GroupJob(name, nd != null && nd in dirs, nd?.let { disks[it] } ?: 0L) {
+                groupJob(app, resolver, key, name, fast, kind, viaRoot, sessionRoot)
+            }
+        }
+        keepScroll = list.scroll
+        Log.i("ancdu", "group delete n=${keys.size} kind=$kind viaRoot=$viaRoot fast=$fast items=$total")
+        Holder.deleteGroup(handle, jobs, root = viaRoot || fast, name = nameOf(folder), total = total, disk = disk,
+            names = pathNames(handle, folder))
+        showWait()
+        return true
+    }
 
     /**
      * Карточка файла [target] дерева [h] ([size] — размер в показанном режиме). «Удалить…» открывает
@@ -774,10 +1192,21 @@ class BrowserActivity : LangActivity() {
         val info = QuickLookInfo(name = nameOf(target), path = path,
             parent = Native.str(Native.path(handle, Native.parent(handle, target))), size = size,
             owner = Owner.packageOf(path), rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName), flags = flags)
+        // «ВЫБРАТЬ»: вне выбора — войти в него с этим файлом, в выборе — переключить файл.
+        val selected = selection.active && selection.contains(target)
         // Закрыта карточка — подставить дерево, если оно пришло, пока она была открыта.
-        quickLook = QuickLook(this, info, onClose = { refreshPending() }) {
+        quickLook = QuickLook(this, info, onClose = { refreshPending() },
+            selectLabel = txt.s(if (selected) R.string.sel_deselect else R.string.ql_select),
+            onSelect = { if (!busy && h == handle && !isFinishing) selectFromCard(target) }) {
             if (!busy && h == handle && !isFinishing) ask(target)
         }.also { it.show() }
+    }
+
+    /** «ВЫБРАТЬ» карточки: файл [target] — строка текущего уровня. */
+    private fun selectFromCard(target: Int) {
+        val i = kids.indexOf(target)
+        if (i !in 0 until n) return
+        if (selection.active) toggleRow(i) else enterSelection(i)
     }
 
     /**
@@ -888,7 +1317,7 @@ class BrowserActivity : LangActivity() {
         val body = vbox(12).apply {
             setPadding(dp(20), dp(20), dp(20), dp(16))
             background = Brackets(this@BrowserActivity, C.PANEL)
-            addView(label(DeleteProgress.title(txt, Holder.delName), 18f, C.TEXT, bold = true))
+            addView(label(DeleteProgress.titleFor(txt, Holder.delName, Holder.delCount), 18f, C.TEXT, bold = true))
             addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, dp(8)))
             addView(text)
             addView(stop, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -901,7 +1330,7 @@ class BrowserActivity : LangActivity() {
             .setView(body).setCancelable(false).create().apply {
                 window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
                 // Заголовок окна — для TalkBack (видимый заголовок — в теле).
-                window?.setTitle(DeleteProgress.title(txt, Holder.delName))
+                window?.setTitle(DeleteProgress.titleFor(txt, Holder.delName, Holder.delCount))
                 show()
             }
         renderWait()
@@ -1041,4 +1470,65 @@ private fun deleteItem(app: Context, handle: Long, target: Int, fast: Boolean, k
                 MediaScannerConnection.scanFile(app, arrayOf(path), null, null)
             }
         })
+}
+
+/**
+ * Дети папки [folder] дерева [handle] по байтам имени — только на io, внутри удаления группы.
+ * Карта строится один раз к началу первого объекта (из живого дерева), каждый найденный узел
+ * перед удалением проверяется заново: не удалён, родитель — [folder], имя — ровно то же.
+ * Не сошлось — полный проход по живым детям.
+ */
+private class GroupResolver(val handle: Long, val folder: Int) {
+    private var map: HashMap<NameKey, Int>? = null
+
+    private fun live(): Pair<IntArray, Int> {
+        val c = IntArray(Native.childCount(handle, folder))
+        return c to maxOf(0, Native.children(handle, folder, SORT_NAME, false, c))
+    }
+
+    fun find(key: ByteArray): Int? {
+        val m = map ?: HashMap<NameKey, Int>().also { m ->
+            val (c, k) = live()
+            for (i in 0 until k) m[NameKey(Native.name(handle, c[i]))] = c[i]
+            map = m
+        }
+        m[NameKey(key)]?.let { if (verified(it, key)) return it }
+        val (c, k) = live()
+        for (i in 0 until k) if (verified(c[i], key)) return c[i]
+        return null
+    }
+
+    private fun verified(nd: Int, key: ByteArray): Boolean {
+        val f = LongArray(8).also { Native.nodeInfo(handle, intArrayOf(nd, folder), 2, it) }
+        return f[3].toInt() and F_DELETED == 0 && f[7].toInt() and F_DELETED == 0 &&
+            Native.parent(handle, nd) == folder && Native.name(handle, nd).contentEquals(key)
+    }
+}
+
+/**
+ * На io, к началу объекта группы: ребёнок папки с именем ровно [key] в ЖИВОМ дереве (не по
+ * старому id узла), повторная проверка запрета ([kind], [sessionRoot] — сессии на момент
+ * подтверждения), затем тот же путь удаления, что у одного ([deleteItem]). Нет в дереве —
+ * ENOENT (уже удалён); запрещён — не отправляется.
+ */
+private fun groupJob(app: Context, res: GroupResolver, key: ByteArray, name: String, fast: Boolean, kind: Kind,
+                     viaRoot: Boolean, sessionRoot: String): Planned = try {
+    val handle = res.handle
+    val node = res.find(key)
+    if (node == null) Planned.Skip(ItemResult(name, false, 0L, -GroupResult.ENOENT, 0L))
+    else {
+        val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(node), 1, it) }
+        val flags = inf[3].toInt()
+        val dir = flags and F_DIR != 0
+        val path = Native.str(Native.path(handle, node))
+        val block = DeletePolicy.blockReason(path, false, res.folder == 0, sessionRoot, flags, kind)
+            ?: if (fast && (DeletePolicy.fastBlockReason(path) != null || !Root.suExists())) Block.NO_FAST else null
+        if (block != null) {
+            Log.i("ancdu", "group item not sent: $block")
+            Planned.Skip(ItemResult(name, dir, inf[0], -1, 0L, attempted = false, block = block))
+        } else Planned.Go(deleteItem(app, handle, node, fast, kind, viaRoot))
+    }
+} catch (e: Exception) {
+    Log.w("ancdu", "group item skipped", e)
+    Planned.Skip(ItemResult(name, false, 0L, -5, 0L, attempted = false))
 }

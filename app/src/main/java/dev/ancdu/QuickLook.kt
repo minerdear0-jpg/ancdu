@@ -57,8 +57,10 @@ class QuickLookInfo(
  * (по расширению, до чтения — без скачка), сведения «размер · подробности · время». Превью и
  * время читаются на [exec] (не Holder.io — удаления не ждут), отменяются при закрытии; не пришло
  * за [Peek.TIMEOUT_MS] — «превью недоступно». [onDelete] — «Удалить…»: карточка уже закрыта.
+ * [onSelect] — «ВЫБРАТЬ» ([selectLabel]; null — кнопки нет): карточка уже закрыта, звук даёт выбор.
  */
 class QuickLook(private val act: Activity, val info: QuickLookInfo, private val onClose: () -> Unit = {},
+                private val selectLabel: String? = null, private val onSelect: (() -> Unit)? = null,
                 private val onDelete: () -> Unit) {
     private val t: Txt = act.tx
     private val ui = Handler(Looper.getMainLooper())
@@ -157,9 +159,12 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         renderMeta()
     }
 
-    /** «ВЫБРАТЬ» (до задачи 23 скрыта) и «УДАЛИТЬ…» — равными колонками; одна — во всю ширину. */
+    /** «ВЫБРАТЬ» и «УДАЛИТЬ…» — равными колонками; одна — во всю ширину. */
     private fun actions(): View = act.hbox(10).apply {
-        selectButton = button(t.s(R.string.ql_select), C.TEXT, C.FRAME).apply { visibility = View.GONE }
+        selectButton = button(selectLabel ?: t.s(R.string.ql_select), C.TEXT, C.FRAME).apply {
+            visibility = if (onSelect == null) View.GONE else View.VISIBLE
+            setOnClickListener { dialog.dismiss(); onSelect?.invoke() }
+        }
         addView(selectButton, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         deleteButton = button(t.s(R.string.ql_delete), C.DANGER_TEXT, C.DANGER_TEXT).apply {
             // Звук даёт открывшийся лист удаления (arm).

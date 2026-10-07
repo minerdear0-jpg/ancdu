@@ -54,9 +54,13 @@ class DeletePreview(
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
-/** [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен); [onClose] — лист закрыт любым путём. */
+/**
+ * [onDelete] получает выбор «быстро через root» (false, если быстрый путь недоступен); [onClose] — лист закрыт любым путём.
+ * [group] — лист ГРУППЫ ([p] — сводка, GroupSheet.preview): заголовок «Удалить 3 объекта?», путь папки,
+ * крупнейшие пять, владельцы, ярус по сумме. null — один объект, ровно прежний лист.
+ */
 class DeleteSheet(private val act: Activity, val p: DeletePreview, private val onClose: () -> Unit = {},
-                  private val onDelete: (Boolean) -> Unit) {
+                  val group: GroupInfo? = null, private val onDelete: (Boolean) -> Unit) {
     private val ui = Handler(Looper.getMainLooper())
     private val t: Txt = act.tx
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
@@ -84,14 +88,22 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Для тестов: показанные числа обратного отсчёта по порядку (перезапуск продолжает список). */
     val countdownShown = ArrayList<Long>()
 
-    private val hardlink = !p.dir && p.flags and F_HLDUP != 0
+    /** Для тестов: строка «данные 2 приложений: …» листа группы (null — владельцев меньше двух). */
+    var ownersText: TextView? = null
+        private set
+    /** Для тестов: строка «N уже нет на диске» листа группы. */
+    var goneText: TextView? = null
+        private set
+
+    private val hardlink = group?.hardlink ?: (!p.dir && p.flags and F_HLDUP != 0)
     /** Данные другого приложения: своё (тест, свой кэш) «чужим» не считается. */
     private val owned = p.owner != null && p.owner != act.packageName
     /**
      * Ярус по текущему выбору: отмеченное «быстро через root» удаляет через su — ярус root
      * (пауза 2,5 с, ARM_ROOT, предупреждение root), как у root-сессии.
      */
-    val tier: DeleteTier get() = DeletePolicy.tier(p.viaRoot, fastBox?.isChecked == true, owned, p.disk)
+    val tier: DeleteTier get() = group?.tier(p.viaRoot, fastBox?.isChecked == true)
+        ?: DeletePolicy.tier(p.viaRoot, fastBox?.isChecked == true, owned, p.disk)
     private val readyLabel = if (hardlink) t.s(R.string.delete_btn) else t.s(R.string.delete_btn_size, Fmt.size(p.disk, t))
     private var enableAt = 0L
     /** Последнее показанное число ТЕКУЩЕГО отсчёта (null — отсчёт только начался). */
@@ -188,7 +200,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     }
 
     private fun body(): View = act.vbox(10).apply {
-        val title = t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, Bidi.visible(p.name))
+        val title = if (group != null) (if (p.block == null) GroupSheet.title(t, group.count) else p.name)
+            else t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, Bidi.visible(p.name))
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
@@ -203,9 +216,11 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
             contentDescription = t.s(R.string.path_desc, p.path)
         })
-        p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
+        if (group != null && group.owners.size > 1) addView(ownersRow(group.owners))
+        else p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
         addView(sizeLine())
-        if (p.dir && p.top.isNotEmpty()) addView(children())
+        if ((p.dir || group != null) && p.top.isNotEmpty()) addView(children())
+        if (group != null && group.gone > 0) addView(act.label(GroupSheet.gone(t, group.gone), 13f, C.MUTED).also { goneText = it })
         if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER))
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
@@ -262,9 +277,36 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
     }
 
+    /** Владельцы группы: до трёх значков 20dp, «+N» и «данные 2 приложений: A, B». */
+    private fun ownersRow(pkgs: List<String>): View = act.hbox(8).apply {
+        val pm = act.packageManager
+        val labels = pkgs.map { pkg ->
+            try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
+            catch (e: android.content.pm.PackageManager.NameNotFoundException) { pkg }
+        }
+        for (pkg in pkgs.take(GroupSheet.ICONS)) {
+            val icon = try { pm.getApplicationInfo(pkg, 0).loadIcon(pm) }
+                catch (e: android.content.pm.PackageManager.NameNotFoundException) { null } ?: continue
+            addView(android.widget.ImageView(act).apply {
+                setImageDrawable(icon)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
+        }
+        if (pkgs.size > GroupSheet.ICONS) addView(act.label("+${pkgs.size - GroupSheet.ICONS}", 12f, C.MUTED, mono = true).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        })
+        val text = GroupSheet.owners(t, labels)
+        addView(act.label(text, 14f, C.TEXT).apply {
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+            ownersText = this
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        contentDescription = text
+    }
+
     private fun children(): View = act.vbox(4).apply {
         val barMax = act.dp(56)
-        for ((raw, size) in p.top) {
+        for ((k, pair) in p.top.withIndex()) {
+            val (raw, size) = pair
             val nm = Bidi.visible(raw)
             childNames += nm
             addView(act.hbox(8).apply {
@@ -279,11 +321,18 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 }
                 addView(frame, LinearLayout.LayoutParams(barMax, act.dp(8)))
                 // До двух строк, дальше — многоточие посередине (конец имени и «/» видны).
-                addView(MiddleLines(act, nm, 2).apply {
+                val name = MiddleLines(act, nm, 2).apply {
                     textSize = 13f; setTextColor(C.TEXT); typeface = Fonts.get(act, mono = true, bold = false)
+                }
+                // Группа: у каталога — приглушённо «· 1 204 эл.» под именем.
+                val n = group?.topItems?.getOrNull(k)?.takeIf { it >= 0 }
+                if (n == null) addView(name, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                else addView(act.vbox().apply {
+                    addView(name)
+                    addView(act.label("· " + t.items(n), 12f, C.MUTED, mono = true))
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 addView(act.label(Fmt.size(size, t), 13f, C.MUTED, mono = true))
-                contentDescription = "$nm, ${Fmt.size(size, t)}"
+                contentDescription = "$nm, ${Fmt.size(size, t)}" + if (n != null) ", " + t.items(n) else ""
             })
         }
         if (p.more > 0) addView(act.label(t.s(R.string.more_children, Fmt.count(p.more.toLong(), t.locale)), 12f, C.MUTED, mono = true).apply {

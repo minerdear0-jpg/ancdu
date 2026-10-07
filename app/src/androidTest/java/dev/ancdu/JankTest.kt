@@ -149,7 +149,7 @@ class JankTest {
         val runs = (1..3).map { k ->
             shell("dumpsys gfxinfo ${ctx.packageName} reset")
             for (i in 0 until 10) {
-                ins.runOnMainSync { a.list.source!!.longClick(i) }
+                ins.runOnMainSync { a.askDelete(i) }
                 SystemClock.sleep(400)
                 ins.runOnMainSync { a.sheet?.dismiss() }
                 SystemClock.sleep(300)

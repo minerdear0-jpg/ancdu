@@ -675,7 +675,7 @@ class BrowserTest {
         try {
             ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
             val fi = index("f.txt")
-            ins.runOnMainSync { act.list.source!!.longClick(fi) }
+            ins.runOnMainSync { act.askDelete(fi) }
             assertTrue(waitFor { act.sheet?.dialog?.isShowing == true })
             ins.runOnMainSync {
                 assertEquals(h2, Holder.h)                 // подставлено мгновенно
@@ -694,7 +694,7 @@ class BrowserTest {
             ins.runOnMainSync { assertEquals(h2, Holder.h) }   // лист закрыт, но флага нет — ждёт чип
             val gi = index("g.txt")
             var before: DeleteSheet? = null
-            ins.runOnMainSync { before = act.sheet; act.list.source!!.longClick(gi) }
+            ins.runOnMainSync { before = act.sheet; act.askDelete(gi) }
             ins.waitForIdleSync()
             ins.runOnMainSync {
                 assertEquals(h3, Holder.h)
@@ -761,7 +761,7 @@ class BrowserTest {
         try {
             val i = index(act, "sub/")
             ins.runOnMainSync {
-                act.list.source!!.longClick(i)
+                act.askDelete(i)
                 assertTrue(act.sheet?.dialog?.isShowing != true)
                 // Ход обновления — в шапке: полоса и «обновление · …» (идёт или ждёт).
                 assertEquals(View.VISIBLE, act.scanLine.visibility)

@@ -95,7 +95,9 @@ class QuickLookTest {
             assertNotNull("место под превью — сразу", q.box)
             assertEquals(a.getString(R.string.ql_text), q.typeText.text.toString())
             assertEquals("notes.txt", q.nameText.text.toString())
-            assertEquals(View.GONE, q.selectButton.visibility)
+            // «ВЫБРАТЬ» видна (задача 23): вход в режим выбора с этим файлом.
+            assertEquals(View.VISIBLE, q.selectButton.visibility)
+            assertEquals(a.getString(R.string.ql_select), q.selectButton.text.toString())
             assertEquals(View.VISIBLE, q.deleteButton.visibility)
         }
         assertTrue(waitFor { q.previewText != null })

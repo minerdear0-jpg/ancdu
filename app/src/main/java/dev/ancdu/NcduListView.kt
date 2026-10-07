@@ -3,6 +3,7 @@ package dev.ancdu
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
 import android.text.TextPaint
@@ -28,10 +29,23 @@ class Row {
     var segColors: IntArray? = null
     var sub: String? = null
     var desc = ""
+    /** Режим выбора: флажок в колонке процента (true — выбрана, строка PANEL2); null — режима нет. */
+    var checked: Boolean? = null
+    /** false — строку нельзя выбрать (запрет удаления): для TalkBack — недоступна. */
+    var enabled = true
+    /** TalkBack: состояние флажка («выбрано / не выбрано»). */
+    var stateDesc: String? = null
+    /** TalkBack: подпись действия «нажатие»; null — без подписи. */
+    var clickLabel: String? = null
+    /** TalkBack: подпись «долгого нажатия» этой строки; null — общая [NcduListView.longClickLabel]. */
+    var longLabel: String? = null
+    /** Есть ли у строки «долгое нажатие» для TalkBack. */
+    var long = true
 
     fun reset() {
         name = ""; size = ""; pct = ""; bar = 0f; barColor = C.AMBER; nameColor = C.TEXT
         mark = ""; segs = null; segColors = null; sub = null; desc = ""
+        checked = null; enabled = true; stateDesc = null; clickLabel = null; longLabel = null; long = true
     }
 }
 
@@ -40,6 +54,8 @@ interface RowSource {
     fun bind(index: Int, row: Row)
     fun click(index: Int) {}
     fun longClick(index: Int) {}
+    /** Звук касания строки до [click]; null — его даёт сам [click]. */
+    fun clickCue(index: Int): Cue? = Cue.TAP
 }
 
 /** Список в стиле ncdu: рисуются только видимые строки, свой скролл, доступность без AndroidX. */
@@ -113,6 +129,15 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val rowSub = ListMath.rowHeight(ctx.dp(64), mainH + subGap + subH, ctx.dp(8))
     private val fill = Paint()
     private val tmp = Rect()
+    /** Флажок режима выбора: 16dp, галочка 2dp INK. */
+    private val checkBox = ctx.dp(16)
+    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = ctx.dp(2).toFloat(); color = C.INK
+        strokeCap = Paint.Cap.SQUARE; strokeJoin = Paint.Join.MITER
+    }
+    private val tickPath = Path()
+    /** Строка, которую показать целиком после смены высоты (вход в режим выбора); -1 — нет. */
+    private var revealRow = -1
     /** Нажатая строка (PANEL2 и амберная скобка слева); -1 — нет. */
     private var pressed = -1
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -136,7 +161,7 @@ class NcduListView(ctx: Context) : View(ctx) {
             val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
             // Короткий тап: нажатие видно ещё 100 мс после отпускания (см. onTouchEvent).
             if (i >= 0) pressed = i
-            if (i >= 0) { Feedback.cue(this@NcduListView, Cue.TAP); source?.click(i) }
+            if (i >= 0) { source?.clickCue(i)?.let { Feedback.cue(this@NcduListView, it) }; source?.click(i) }
             return i >= 0
         }
         override fun onLongPress(e: MotionEvent) {
@@ -152,6 +177,29 @@ class NcduListView(ctx: Context) : View(ctx) {
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
+    /**
+     * Показать строку [i] целиком, если она под нижним краем (панель выбора снизу уменьшает
+     * высоту списка): сразу и ещё раз после смены размера.
+     */
+    fun reveal(i: Int) {
+        revealRow = i
+        applyReveal()
+    }
+
+    private fun applyReveal() {
+        val i = revealRow
+        if (i < 0 || height <= 0) return
+        val bottom = (i + 1) * rowHeight
+        if (bottom - scroll > height) scroll = bottom - height
+        if (i * rowHeight < scroll) scroll = i * rowHeight
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        applyReveal()
+        revealRow = -1
+    }
+
     fun refresh() {
         scroll = scroll // повторное ограничение под новое число строк
         invalidate()
@@ -159,6 +207,7 @@ class NcduListView(ctx: Context) : View(ctx) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) revealRow = -1
         val r = gestures.onTouchEvent(e) || super.onTouchEvent(e)
         if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
             removeCallbacks(unpress); postDelayed(unpress, 100)
@@ -194,6 +243,11 @@ class NcduListView(ctx: Context) : View(ctx) {
             c.drawRect(bx, top + inset, bx + arm, top + inset + one, fill)
             c.drawRect(bx, top + rh - inset - one, bx + arm, top + rh - inset, fill)
         }
+        val checked = row.checked
+        if (checked == true && !down) {
+            fill.color = C.PANEL2
+            c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
+        }
         fill.color = C.LINE
         c.drawRect(0f, (top + rh - 1).toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
         // Блок текста (имя и, если есть, подпись) центрируется по вертикали строки.
@@ -214,8 +268,9 @@ class NcduListView(ctx: Context) : View(ctx) {
         x += col + gap
         if (!compact) drawBar(c, x, mid)
         if (!compact) x += barW + gap
-        // процент (по правому краю колонки)
-        c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
+        // процент (по правому краю колонки); в режиме выбора — флажок на его месте
+        if (checked != null) drawCheck(c, x + pctW - checkBox, mid - checkBox / 2, checked)
+        else c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
         x += pctW + gap
         // имя: метка не режется, имя — до конца строки с многоточием (у файлов — в конце основы)
         mono.color = row.nameColor
@@ -227,6 +282,27 @@ class NcduListView(ctx: Context) : View(ctx) {
         if (sub != null) {
             val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
             c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)
+        }
+    }
+
+    /** Флажок 16dp с левым верхним углом ([x], [y]): выбран — амберная заливка и галочка INK, иначе контур 1dp FRAME. */
+    private fun drawCheck(c: Canvas, x: Int, y: Int, on: Boolean) {
+        val l = x.toFloat(); val t = y.toFloat(); val s = checkBox.toFloat()
+        if (on) {
+            fill.color = C.AMBER
+            c.drawRect(l, t, l + s, t + s, fill)
+            val u = s / 16f
+            tickPath.reset()
+            tickPath.moveTo(l + 3.5f * u, t + 8.2f * u)
+            tickPath.lineTo(l + 6.6f * u, t + 11.2f * u)
+            tickPath.lineTo(l + 12.5f * u, t + 4.8f * u)
+            c.drawPath(tickPath, tick)
+        } else {
+            fill.color = C.FRAME
+            c.drawRect(l, t, l + s, t + one, fill)
+            c.drawRect(l, t + s - one, l + s, t + s, fill)
+            c.drawRect(l, t, l + one, t + s, fill)
+            c.drawRect(l + s - one, t, l + s, t + s, fill)
         }
     }
 
@@ -278,15 +354,24 @@ class NcduListView(ctx: Context) : View(ctx) {
             return AccessibilityNodeInfo.obtain(this@NcduListView, id).apply {
                 setParent(this@NcduListView)
                 packageName = context.packageName
-                className = "android.widget.Button"
+                val checked = row.checked
+                // Режим выбора: флажок (состояние — «выбрано / не выбрано»).
+                className = if (checked != null) "android.widget.CheckBox" else "android.widget.Button"
+                if (checked != null) {
+                    isCheckable = true
+                    isChecked = checked
+                    stateDescription = row.stateDesc
+                }
                 contentDescription = row.desc.ifEmpty { "${row.name}, ${row.size}" }
                 isClickable = true
-                isLongClickable = true
-                isEnabled = true
+                isLongClickable = row.long
+                isEnabled = row.enabled
                 isVisibleToUser = true
-                addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
-                val lcl = longClickLabel
-                addAction(if (lcl == null) AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK
+                val cl = row.clickLabel
+                addAction(if (cl == null) AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK
+                          else AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, cl))
+                val lcl = row.longLabel ?: longClickLabel
+                if (row.long) addAction(if (lcl == null) AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK
                           else AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, lcl))
                 val top = id * rowHeight - scroll
                 tmp.set(0, top, width, top + rowHeight)
