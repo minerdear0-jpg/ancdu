@@ -53,6 +53,8 @@ class GroupResultTest {
         assertEquals(Fail.SYMLINK, GroupResult.fail(bad("a", -40)))    // ELOOP
         assertEquals(Fail.CHANGED, GroupResult.fail(bad("a", -116)))   // ESTALE: подменён после скана
         assertEquals(Fail.CHANGED, GroupResult.fail(bad("d", -116, dir = true)))
+        assertEquals(Fail.ERROR, GroupResult.fail(bad("d", -20, dir = true)))  // ENOTDIR: родитель не каталог
+        assertEquals(Fail.PARTIAL, GroupResult.fail(bad("d", -20, dir = true, done = 2)))
         assertEquals(Fail.ERROR, GroupResult.fail(bad("a", -5)))       // EIO у файла
         assertEquals(Fail.PARTIAL, GroupResult.fail(bad("d", -5, dir = true)))
         // каталог, из которого что-то удалено, — «удалено частично», какой бы ни была ошибка

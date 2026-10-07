@@ -155,6 +155,14 @@ class DeletePolicyTest {
         for (r in listOf(eio, exdev, eacces, enoent)) assertFalse("$r", DeletePolicy.nothingDeleted(r, viaRoot = true))
         // без root -EPERM даёт сам rm_tree — часть могла удалиться
         for (r in listOf(eperm, eio, exdev, eacces)) assertFalse("$r", DeletePolicy.nothingDeleted(r, viaRoot = false))
+        // хелпер не открыл путь (выход 8 → -EACCES, 10 → -ENOTDIR): ничего не удалено, но не отказ su
+        val enotdir = -20
+        for (r in listOf(eacces, enotdir)) {
+            assertTrue("$r", DeletePolicy.rootPathRefused(r, viaRoot = true))
+            assertFalse("$r", DeletePolicy.nothingDeleted(r, viaRoot = true))
+            assertFalse("$r", DeletePolicy.rootPathRefused(r, viaRoot = false))
+        }
+        for (r in listOf(eperm, eio, exdev, enoent)) assertFalse("$r", DeletePolicy.rootPathRefused(r, viaRoot = true))
     }
 
     private fun reason(path: String, scanRoot: Boolean = false, parentIsRoot: Boolean = false,

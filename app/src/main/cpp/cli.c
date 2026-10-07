@@ -99,7 +99,8 @@ static void *watch_stdin(void *p) {
  * --watch-stdin: EOF на stdin (приложение закрыло его, работает и через su) — стоп.
  * Родитель пути открывается от «/» без ссылок (rm_open_parent nofollow): ссылка или «.»/«..»
  * в нём — отказ до удаления, выход 7. Компонента нет (ENOENT) — путь уже удалён, выход 0.
- * Иная ошибка (EACCES, ENOTDIR, ENAMETOOLONG…) — выход 8. В обоих отказах ничего не удалено.
+ * Нет доступа (EACCES, EPERM) — выход 8 (RM_UNCHECKED), иное (ENOTDIR, ENAMETOOLONG…) — 10
+ * (RM_NO_PARENT). Во всех отказах ничего не удалено.
  * Удаление идёт относительно открытого fd родителя: подмена компонента после проверки не
  * уводит его в сторону.
  * --expect DEV:INO: вершина (lstat) должна быть этим объектом со скана, иначе выход 9 —
@@ -143,7 +144,9 @@ static int run_rm(const char *path, int threads, int watch, const rm_expect *wan
     fputs("progress 0\n", stderr);
     if (pfd == -ENOENT) return ANCDU_EXIT_OK; /* компонента родителя нет — пути тоже, уже удалён */
     fprintf(stderr, "rm: refused: %s\n", strerror(-pfd));
-    return pfd == -ELOOP ? ANCDU_EXIT_RM_SYMLINK : ANCDU_EXIT_RM_UNCHECKED;
+    if (pfd == -ELOOP) return ANCDU_EXIT_RM_SYMLINK;
+    if (pfd == -EACCES || pfd == -EPERM) return ANCDU_EXIT_RM_UNCHECKED;
+    return ANCDU_EXIT_RM_NO_PARENT;
   }
   if (watch) {
     /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */
@@ -166,6 +169,8 @@ static int run_rm(const char *path, int threads, int watch, const rm_expect *wan
   if (gone) return ANCDU_EXIT_OK;
   fprintf(stderr, "rm: %s\n", strerror(-r));
   if (r == -ESTALE) return ANCDU_EXIT_RM_CHANGED;
+  /* Поток удаления не создан (rm_tree_at: -EAGAIN, done 0) — ничего не тронуто. */
+  if (r == -EAGAIN && atomic_load(&rms.done) == 0) return ANCDU_EXIT_RM_UNCHECKED;
   return r == -EINTR ? ANCDU_EXIT_RM_STOPPED : ANCDU_EXIT_RM_PARTIAL;
 }
 

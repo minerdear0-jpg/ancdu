@@ -134,6 +134,7 @@ object GroupResult {
     private const val EBUSY = 16
     private const val EXDEV = 18
     private const val EACCES = 13
+    private const val ENOTDIR = 20
 
     /** Удалён: код 0 или ENOENT (его уже не было). */
     fun deleted(x: ItemResult): Boolean = x.attempted && x.block == null && (x.r == 0 || x.r == -ENOENT)
@@ -151,6 +152,8 @@ object GroupResult {
         // rm_tree отдаёт EBUSY точки монтирования как EXDEV.
         x.r == -EBUSY || x.r == -EXDEV -> Fail.BUSY
         x.r == -DeleteProgress.ELOOP -> Fail.SYMLINK
+        // Родитель не каталог (через root — выход 10), ничего не удалено (done 0 — выше).
+        x.r == -ENOTDIR -> Fail.ERROR
         x.dir -> Fail.PARTIAL
         else -> Fail.ERROR
     }

@@ -140,6 +140,9 @@ int main(void) {
   write_file(pj(T, "pre/x"), 1);
   mk_dir(pj(T, "pre2"));
   write_file(pj(T, "pre2/x"), 1);
+  mk_dir(pj(T, "nd"));
+  mk_dir(pj(T, "nd/inner2"));
+  write_file(pj(T, "nd/inner2/x"), 1);
   mk_dir(pj(T, "stopme"));
   write_file(pj(T, "stopme/keep"), 1);
   int err;
@@ -204,15 +207,29 @@ int main(void) {
     CHECK(a->flags[inner] & F_DELETED);
   }
 
-  /* родителя не проверить (EACCES): выход 8 → -EPERM («ничего не удалено»), не -ELOOP */
+  /* нет доступа к родителю (EACCES): выход 8 → -EACCES — ничего не удалено, но это не отказ su
+   * (не -EPERM: приложение не сбрасывает «root ✓»), и не -ELOOP */
   if (geteuid() != 0) {
     uint32_t sub = find(a, "leaf");
     CHECK(chmod(pj(T, "acc"), 0) == 0);
     CHECK(parent_nofollow(pj(T, "acc/mid/leaf")) == -EACCES);
-    CHECK(sess_delete(p, sub, SH, ANCDU_CLI) == -EPERM);
+    CHECK(sess_delete(p, sub, SH, ANCDU_CLI) == -EACCES);
     CHECK(chmod(pj(T, "acc"), 0755) == 0);
     CHECK(access(pj(T, "acc/mid/leaf/x"), F_OK) == 0);
     CHECK(a->flags[sub] & F_ERR);
+  }
+
+  /* родитель стал файлом (ENOTDIR): выход 10 → -ENOTDIR, ничего не удалено, не отказ su */
+  {
+    uint32_t in2 = find(a, "inner2");
+    char ndp[4200];
+    snprintf(ndp, sizeof ndp, "%s", pj(T, "nd"));
+    sandbox_guard(T, ndp);
+    CHECK(rename(ndp, pj(T, "nd.old")) == 0);
+    write_file(ndp, 1);
+    CHECK(sess_delete(p, in2, SH, ANCDU_CLI) == -ENOTDIR);
+    CHECK(access(pj(T, "nd.old/inner2/x"), F_OK) == 0);
+    CHECK(a->flags[in2] & F_ERR);
   }
 
   /* обход FUSE: путь узла не под /storage/emulated/<n>/ — -EINVAL, хелпер не запускался */

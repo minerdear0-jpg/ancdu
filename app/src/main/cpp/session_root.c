@@ -396,7 +396,9 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
      * отказал или хелпер не нашёлся/не стартовал (любой иной выход < 128).
      * -EINTR — RM_STOPPED: остановлен через stdin (sess_delete_stop), удалено частично.
      * -ELOOP — RM_SYMLINK: ссылка в родителе пути, ничего не удалено.
-     * -EPERM — и RM_UNCHECKED: родителя не открыть (EACCES, ENAMETOOLONG…), ничего не удалено.
+     * -EACCES — RM_UNCHECKED: нет доступа к родителю или удаление не началось; ничего не
+     * удалено. Не -EPERM: это не отказ su (Root.denied — только по настоящему отказу).
+     * -ENOTDIR — RM_NO_PARENT: родитель не открывается как каталог, ничего не удалено.
      * -ESTALE — RM_CHANGED: вершина не тот объект, что видел скан (--expect), ничего не удалено.
      * -EIO — могло удалиться частично: RM_PARTIAL (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
@@ -406,7 +408,8 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     else if (pid < 0) r = -EPERM;
     else if (code == ANCDU_EXIT_RM_STOPPED) r = -EINTR;
     else if (code == ANCDU_EXIT_RM_SYMLINK) r = -ELOOP;
-    else if (code == ANCDU_EXIT_RM_UNCHECKED) r = -EPERM;
+    else if (code == ANCDU_EXIT_RM_UNCHECKED) r = -EACCES;
+    else if (code == ANCDU_EXIT_RM_NO_PARENT) r = -ENOTDIR;
     else if (code == ANCDU_EXIT_RM_CHANGED) r = -ESTALE;
     else if (code < 0 || code == ANCDU_EXIT_RM_PARTIAL || code >= 128) r = -EIO;
     else r = -EPERM;

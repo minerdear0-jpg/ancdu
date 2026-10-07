@@ -66,5 +66,5 @@ object DeleteProgress {
      */
     fun refreshAfter(r: Int, viaRoot: Boolean, done: Long, dir: Boolean): Boolean =
         dir && r != 0 && r != -ELOOP && !NativeErr.changedSinceScan(r) && !DeletePolicy.nothingDeleted(r, viaRoot) &&
-            !isCancelled(r, done)
+            !DeletePolicy.rootPathRefused(r, viaRoot) && !isCancelled(r, done)
 }

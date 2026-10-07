@@ -17,6 +17,11 @@ enum ancdu_exit {
   ANCDU_EXIT_RM_PARTIAL = 5,   /* --rm: удалено не всё */
   ANCDU_EXIT_RM_STOPPED = 6,   /* --rm: остановлено через stdin (частично) */
   ANCDU_EXIT_RM_SYMLINK = 7,   /* --rm: ссылка или «.»/«..» в родителе — ничего не удалено */
-  ANCDU_EXIT_RM_UNCHECKED = 8, /* --rm: родителя не открыть (EACCES, ENOTDIR…) — ничего не удалено */
+  /* --rm: нет доступа к родителю (EACCES, EPERM) или удаление не началось (поток удаления не
+   * создан, EAGAIN) — ничего не удалено. Это не отказ su: приложение -EACCES, не -EPERM. */
+  ANCDU_EXIT_RM_UNCHECKED = 8,
   ANCDU_EXIT_RM_CHANGED = 9,   /* --rm --expect: вершина подменена после скана — ничего не удалено */
+  /* --rm: родитель не открывается как каталог (ENOTDIR, ENAMETOOLONG, EINVAL openat2…) — ничего
+   * не удалено; приложение -ENOTDIR. */
+  ANCDU_EXIT_RM_NO_PARENT = 10,
 };

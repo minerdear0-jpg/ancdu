@@ -66,10 +66,8 @@ class DeleteProgressTest {
         // остановлено после начала, частично, ошибка — обновить
         assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 1, dir = true))
         assertTrue(DeleteProgress.refreshAfter(eintr, viaRoot = true, done = 500, dir = true))
-        for (r in listOf(eio, eacces)) {
-            assertTrue("$r", DeleteProgress.refreshAfter(r, viaRoot = false, done = 0, dir = true))
-            assertTrue("$r root", DeleteProgress.refreshAfter(r, viaRoot = true, done = 0, dir = true))
-        }
+        for (r in listOf(eio, eacces)) assertTrue("$r", DeleteProgress.refreshAfter(r, viaRoot = false, done = 0, dir = true))
+        assertTrue(DeleteProgress.refreshAfter(eio, viaRoot = true, done = 0, dir = true))
         // без root -EPERM даёт сам rm_tree — часть могла удалиться
         assertTrue(DeleteProgress.refreshAfter(eperm, viaRoot = false, done = 0, dir = true))
         // ничего не удалено: su отказал, симлинк в пути, «Стоп» до начала
@@ -80,6 +78,10 @@ class DeleteProgressTest {
         // «изменилось после скана»: ничего не удалено, узел уже помечен ⚠
         assertFalse(DeleteProgress.refreshAfter(-NativeErr.ESTALE, viaRoot = false, done = 0, dir = true))
         assertFalse(DeleteProgress.refreshAfter(-NativeErr.ESTALE, viaRoot = true, done = 0, dir = true))
+        // через root хелпер не открыл путь — нечего обновлять; без root -EACCES — частично, обновить
+        assertFalse(DeleteProgress.refreshAfter(eacces, viaRoot = true, done = 0, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(-20, viaRoot = true, done = 0, dir = true))
+        assertTrue(DeleteProgress.refreshAfter(eacces, viaRoot = false, done = 0, dir = true))
         // файл: удалён или нет — сканировать нечего
         for (r in listOf(eio, eacces, eperm, eintr))
             assertFalse("$r file", DeleteProgress.refreshAfter(r, viaRoot = false, done = 1, dir = false))

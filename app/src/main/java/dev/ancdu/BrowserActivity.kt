@@ -228,6 +228,8 @@ class BrowserActivity : LangActivity() {
                     DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.cancelled(txt))
                     r == -DeleteProgress.ELOOP -> report(txt.s(R.string.delete_failed), txt.s(R.string.delete_symlink))
                     NativeErr.changedSinceScan(r) -> report(txt.s(R.string.delete_failed), txt.s(R.string.delete_changed))
+                    DeletePolicy.rootPathRefused(r, Holder.delRoot) -> report(txt.s(R.string.delete_failed),
+                        txt.s(R.string.delete_root_path))
                     DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report(txt.s(R.string.delete_failed),
                         txt.s(R.string.delete_no_root))
                     // Файл не удалён: сканировать нечего, ничего не освобождено.

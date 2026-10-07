@@ -153,6 +153,7 @@
     <string name="delete_failed">Couldn\'t delete</string>
     <string name="delete_symlink">The path goes through a symbolic link — nothing was deleted.</string>
     <string name="delete_no_root">Couldn\'t get root — nothing was deleted.</string>
+    <string name="delete_root_path">Root couldn\'t open the path — nothing was deleted.</string>
     <string name="delete_changed">It changed since the scan — nothing was deleted. Refresh the list and try again.</string>
     <string name="delete_cancelled_title">Delete cancelled</string>
     <string name="tree_changed">The tree changed while the dialog was open. Nothing was deleted.</string>

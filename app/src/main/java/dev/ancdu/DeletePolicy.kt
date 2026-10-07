@@ -141,6 +141,16 @@ object DeletePolicy {
      */
     fun nothingDeleted(r: Int, viaRoot: Boolean): Boolean = viaRoot && r == -EPERM
 
+    /**
+     * Через root хелпер не открыл путь — ничего не удалено, но это не отказ su (Root.denied не
+     * нужен): -EACCES — нет доступа к родителю или удаление не началось (выход 8), -ENOTDIR —
+     * родитель не каталог (выход 10). Без root эти коды даёт сам rm_tree — возможно частично.
+     */
+    fun rootPathRefused(r: Int, viaRoot: Boolean): Boolean = viaRoot && (r == -EACCES || r == -ENOTDIR)
+
+    private const val EACCES = 13
+    private const val ENOTDIR = 20
+
     private const val GIB = 1L shl 30
 
     /**

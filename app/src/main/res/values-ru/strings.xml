@@ -144,6 +144,7 @@
     <string name="delete_failed">Не удалось удалить</string>
     <string name="delete_symlink">Путь проходит через символическую ссылку — ничего не удалено.</string>
     <string name="delete_no_root">Не удалось получить root — ничего не удалено.</string>
+    <string name="delete_root_path">Root не смог открыть путь — ничего не удалено.</string>
     <string name="delete_changed">Изменилось после скана — ничего не удалено. Обновите список и повторите.</string>
     <string name="delete_cancelled_title">Удаление отменено</string>
     <string name="tree_changed">Дерево сменилось, пока был открыт диалог. Ничего не удалено.</string>
