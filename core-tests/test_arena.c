@@ -76,6 +76,30 @@ static void test_attach_rejects_garbage(void) {
   arena_unmap(&a);
 }
 
+/* Ёмкости копируются в arena при attach: общий заголовок (memfd, его пишет другой процесс)
+ * после attach не перечитывается — раздутый cap_nodes/cap_names в нём не даёт писать за
+ * отображение; count/names_used за ёмкостью — validate отказывает. */
+static void test_caps_not_reread(void) {
+  arena a;
+  CHECK(arena_alloc_anon(&a, 2, 4096, "/r", SRC_SCAN) == 0);
+  CHECK_EQ_U(a.cap_nodes, 2);
+  CHECK_EQ_U(a.cap_names, 4096);
+  a.h->cap_nodes = 1u << 30;
+  a.h->cap_names = 1ull << 32;
+  name_chunk ck = {0, 0};
+  CHECK(arena_new_node(&a, &ck, ANCDU_NONE, "", 0, F_DIR) == 0);
+  CHECK(arena_new_node(&a, &ck, 0, "a", 1, 0) == 1);
+  CHECK(arena_new_node(&a, &ck, 0, "b", 1, 0) == ANCDU_NONE);
+  CHECK_EQ_U(atomic_load(&a.h->count), 2);
+  CHECK(arena_validate(&a) == 0);
+  atomic_store(&a.h->count, 3); /* «чужой» процесс записал count за ёмкость */
+  CHECK(arena_validate(&a) == -EINVAL);
+  atomic_store(&a.h->count, 2);
+  atomic_store(&a.h->names_used, 4097);
+  CHECK(arena_validate(&a) == -EINVAL);
+  arena_unmap(&a);
+}
+
 static void test_hints(void) {
   uint64_t cap = arena_cap_hint("/");
   CHECK(cap > 65536);
@@ -93,6 +117,7 @@ int main(void) {
   test_nodes_and_paths();
   test_capacity_full();
   test_attach_rejects_garbage();
+  test_caps_not_reread();
   test_hints();
   TEST_END();
 }

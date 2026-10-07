@@ -23,6 +23,30 @@ static void set_err(JNIEnv *e, jintArray err, int v) {
   if (err && (*e)->GetArrayLength(e, err) > 0) (*e)->SetIntArrayRegion(e, err, 0, 1, &v);
 }
 
+/* Путь из Kotlin — байты UTF-8 (String.toByteArray, как имена: символы вне BMP целы, без
+ * modified UTF-8 GetStringUTFChars) → копия с завершающим \0 (free — вызывающий). NULL —
+ * массива нет, \0 внутри (такого пути нет — отказ, не усечение) или нет памяти; *code —
+ * -EINVAL или -ENOMEM. */
+static char *cpath(JNIEnv *e, jbyteArray b, int *code) {
+  *code = -EINVAL;
+  if (!b) return NULL;
+  jsize n = (*e)->GetArrayLength(e, b);
+  if (n < 0) return NULL;
+  char *p = malloc((size_t)n + 1);
+  if (!p) {
+    *code = -ENOMEM;
+    return NULL;
+  }
+  if (n) (*e)->GetByteArrayRegion(e, b, 0, n, (jbyte *)p);
+  if ((*e)->ExceptionCheck(e) || memchr(p, 0, (size_t)n)) {
+    free(p);
+    return NULL;
+  }
+  p[n] = 0;
+  *code = 0;
+  return p;
+}
+
 /* Арена готовой сессии и проверка узла; NULL — нельзя. */
 static arena *tree(jlong h, jint node) {
   if (!h) return NULL;
@@ -31,35 +55,37 @@ static arena *tree(jlong h, jint node) {
   return a;
 }
 
-FN(jlong, scanStart)(JNIEnv *e, jclass c, jstring root, jboolean oneFs, jint threads, jintArray err) {
+FN(jlong, scanStartBytes)(JNIEnv *e, jclass c, jbyteArray root, jboolean oneFs, jint threads,
+                          jintArray err) {
   (void)c;
-  const char *r = (*e)->GetStringUTFChars(e, root, NULL);
-  int code = 0;
-  session *s = sess_scan_start(r, oneFs, threads, &code);
-  (*e)->ReleaseStringUTFChars(e, root, r);
+  int code;
+  char *r = cpath(e, root, &code);
+  session *s = r ? sess_scan_start(r, oneFs, threads, &code) : NULL;
+  free(r);
   set_err(e, err, code);
   return (jlong)(intptr_t)s;
 }
 
-FN(jlong, rootStart)(JNIEnv *e, jclass c, jstring helper, jstring root, jboolean oneFs,
-                     jboolean memfd, jintArray err) {
+FN(jlong, rootStartBytes)(JNIEnv *e, jclass c, jbyteArray helper, jbyteArray root, jboolean oneFs,
+                          jboolean memfd, jintArray err) {
   (void)c;
-  const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
-  const char *r = (*e)->GetStringUTFChars(e, root, NULL);
-  int code = 0;
-  session *s = sess_root_start(SU, hp, r, oneFs, memfd, &code);
-  (*e)->ReleaseStringUTFChars(e, root, r);
-  (*e)->ReleaseStringUTFChars(e, helper, hp);
+  int code, code2;
+  char *hp = cpath(e, helper, &code);
+  char *r = hp ? cpath(e, root, &code2) : NULL;
+  if (hp && !r) code = code2;
+  session *s = r ? sess_root_start(SU, hp, r, oneFs, memfd, &code) : NULL;
+  free(r);
+  free(hp);
   set_err(e, err, code);
   return (jlong)(intptr_t)s;
 }
 
-FN(jlong, indexBegin)(JNIEnv *e, jclass c, jstring root, jlong cap, jintArray err) {
+FN(jlong, indexBeginBytes)(JNIEnv *e, jclass c, jbyteArray root, jlong cap, jintArray err) {
   (void)c;
-  const char *r = (*e)->GetStringUTFChars(e, root, NULL);
-  int code = 0;
-  session *s = sess_index_begin(r, (uint64_t)cap, &code);
-  (*e)->ReleaseStringUTFChars(e, root, r);
+  int code;
+  char *r = cpath(e, root, &code);
+  session *s = r ? sess_index_begin(r, (uint64_t)cap, &code) : NULL;
+  free(r);
   set_err(e, err, code);
   return (jlong)(intptr_t)s;
 }
@@ -72,8 +98,13 @@ FN(jint, indexAdd)(JNIEnv *e, jclass c, jlong h, jbyteArray rel, jbyteArray name
   jsize rl = (*e)->GetArrayLength(e, rel), nl = (*e)->GetArrayLength(e, names);
   if ((*e)->GetArrayLength(e, sizes) < n) return -EINVAL;
   jbyte *rb = (*e)->GetByteArrayElements(e, rel, NULL);
-  jbyte *nb = (*e)->GetByteArrayElements(e, names, NULL);
-  jlong *sz = (*e)->GetLongArrayElements(e, sizes, NULL);
+  jbyte *nb = rb ? (*e)->GetByteArrayElements(e, names, NULL) : NULL;
+  jlong *sz = nb ? (*e)->GetLongArrayElements(e, sizes, NULL) : NULL;
+  if (!sz) { /* нет памяти: ничего не добавлено */
+    if (nb) (*e)->ReleaseByteArrayElements(e, names, nb, JNI_ABORT);
+    if (rb) (*e)->ReleaseByteArrayElements(e, rel, rb, JNI_ABORT);
+    return -ENOMEM;
+  }
   int result = 0;
   if (rl > 0 && nl > 0 && rb[rl - 1] == 0 && nb[nl - 1] == 0) {
     const char *rp = (const char *)rb, *np = (const char *)nb;
@@ -97,22 +128,23 @@ FN(jint, indexFinish)(JNIEnv *e, jclass c, jlong h) {
   return h ? sess_index_finish(SESS(h)) : -EINVAL;
 }
 
-FN(jlong, openCache)(JNIEnv *e, jclass c, jstring path, jintArray err) {
+FN(jlong, openCacheBytes)(JNIEnv *e, jclass c, jbyteArray path, jintArray err) {
   (void)c;
-  const char *p = (*e)->GetStringUTFChars(e, path, NULL);
-  int code = 0;
-  session *s = sess_open_cache(p, &code);
-  (*e)->ReleaseStringUTFChars(e, path, p);
+  int code;
+  char *p = cpath(e, path, &code);
+  session *s = p ? sess_open_cache(p, &code) : NULL;
+  free(p);
   set_err(e, err, code);
   return (jlong)(intptr_t)s;
 }
 
-FN(jint, saveCache)(JNIEnv *e, jclass c, jlong h, jstring path) {
+FN(jint, saveCacheBytes)(JNIEnv *e, jclass c, jlong h, jbyteArray path) {
   (void)c;
   if (!h) return -EINVAL;
-  const char *p = (*e)->GetStringUTFChars(e, path, NULL);
-  int r = sess_save_cache(SESS(h), p);
-  (*e)->ReleaseStringUTFChars(e, path, p);
+  int r;
+  char *p = cpath(e, path, &r);
+  if (p) r = sess_save_cache(SESS(h), p);
+  free(p);
   return r;
 }
 
@@ -180,6 +212,7 @@ FN(jint, children)(JNIEnv *e, jclass c, jlong h, jint node, jint sort, jboolean 
   jsize cap = (*e)->GetArrayLength(e, out);
   if ((uint32_t)cap < a->child_count[node]) return -1; /* массив мал */
   jint *o = (*e)->GetIntArrayElements(e, out, NULL);
+  if (!o) return -1;
   uint32_t k = csr_children(a, (uint32_t)node, sort, apparent, (uint32_t *)o, (uint32_t)cap);
   (*e)->ReleaseIntArrayElements(e, out, o, 0);
   return (jint)k;
@@ -192,7 +225,11 @@ FN(void, nodeInfo)(JNIEnv *e, jclass c, jlong h, jintArray nodes, jint n, jlongA
     return;
   uint64_t cnt = atomic_load(&a->h->count);
   jint *nd = (*e)->GetIntArrayElements(e, nodes, NULL);
-  jlong *o = (*e)->GetLongArrayElements(e, out, NULL);
+  jlong *o = nd ? (*e)->GetLongArrayElements(e, out, NULL) : NULL;
+  if (!o) {
+    if (nd) (*e)->ReleaseIntArrayElements(e, nodes, nd, JNI_ABORT);
+    return;
+  }
   for (jint i = 0; i < n; i++) {
     jint x = nd[i];
     if (x < 0 || (uint64_t)x >= cnt) {
@@ -243,14 +280,22 @@ FN(jint, source)(JNIEnv *e, jclass c, jlong h) {
 }
 
 /* Узел проверяет sess_delete (а не tree()): он же сбрасывает флаг стопа при любом исходе. */
-FN(jint, delete)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
+FN(jint, deleteBytes)(JNIEnv *e, jclass c, jlong h, jint node, jbyteArray helper) {
   (void)c;
   if (!h) return -EINVAL;
   if (node < 0) node = 0; /* 0 — корень, sess_delete отклонит */
   if (!helper) return sess_delete(SESS(h), (uint32_t)node, NULL, NULL);
-  const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
+  int code;
+  char *hp = cpath(e, helper, &code);
+  if (!hp) {
+    /* Путь хелпера не прочитан (нет памяти, \0 внутри): ни su, ни удаления. Флаг стопа
+     * сбрасывается, как при любом исходе удаления: sess_delete_media без хелпера только
+     * отклоняет (-EINVAL) и сбрасывает. */
+    sess_delete_media(SESS(h), (uint32_t)node, SU, NULL);
+    return code;
+  }
   int r = sess_delete(SESS(h), (uint32_t)node, SU, hp);
-  (*e)->ReleaseStringUTFChars(e, helper, hp);
+  free(hp);
   return r;
 }
 
@@ -275,24 +320,28 @@ FN(jint, markErr)(JNIEnv *e, jclass c, jlong h, jint node) {
 }
 
 /* Удаление в обход FUSE: узел /storage/emulated/<n>/X удаляется как /data/media/<n>/X под su. */
-FN(jint, deleteMedia)(JNIEnv *e, jclass c, jlong h, jint node, jstring helper) {
+FN(jint, deleteMediaBytes)(JNIEnv *e, jclass c, jlong h, jint node, jbyteArray helper) {
   (void)c;
   if (!h) return -EINVAL;
   if (node < 0) node = 0; /* 0 — корень, sess_delete_media отклонит */
-  if (!helper) return sess_delete_media(SESS(h), (uint32_t)node, SU, NULL); /* -EINVAL */
-  const char *hp = (*e)->GetStringUTFChars(e, helper, NULL);
+  int code;
+  char *hp = cpath(e, helper, &code);
+  /* hp NULL (нет хелпера, не прочитан) — sess_delete_media отклоняет -EINVAL и сбрасывает стоп */
   int r = sess_delete_media(SESS(h), (uint32_t)node, SU, hp);
-  (*e)->ReleaseStringUTFChars(e, helper, hp);
+  free(hp);
   return r;
 }
 
-FN(jint, statfs)(JNIEnv *e, jclass c, jstring path, jlongArray out) {
+FN(jint, statfsBytes)(JNIEnv *e, jclass c, jbyteArray path, jlongArray out) {
   (void)c;
-  const char *p = (*e)->GetStringUTFChars(e, path, NULL);
+  int code;
+  char *p = cpath(e, path, &code);
+  if (!p) return code;
   struct statvfs s;
   int r = statvfs(p, &s);
-  (*e)->ReleaseStringUTFChars(e, path, p);
-  if (r != 0) return -errno;
+  int en = errno;
+  free(p);
+  if (r != 0) return -en;
   jlong v[3] = {(jlong)s.f_blocks * (jlong)s.f_frsize, (jlong)s.f_bfree * (jlong)s.f_frsize,
                 (jlong)s.f_bavail * (jlong)s.f_frsize};
   if ((*e)->GetArrayLength(e, out) >= 3) (*e)->SetLongArrayRegion(e, out, 0, 3, v);

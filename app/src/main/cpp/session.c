@@ -40,8 +40,12 @@ void sess_finish(session *s, int state) {
 static void *scan_thread(void *p) {
   session *s = p;
   int st = scan_run(&s->a, &s->opts);
-  if (st == ST_DONE || st == ST_FULL) post_process(&s->a, s->opts.threads);
-  if (st == ST_FAILED) sess_set_error(s, "cannot open %s", s->a.h->root_path);
+  if ((st == ST_DONE || st == ST_FULL) && post_process(&s->a, s->opts.threads) != 0) {
+    sess_set_error(s, "%s", "invalid tree");
+    st = ST_FAILED;
+  } else if (st == ST_FAILED) {
+    sess_set_error(s, "cannot open %s", s->a.h->root_path);
+  }
   sess_finish(s, st);
   return NULL;
 }
@@ -85,7 +89,11 @@ int sess_index_finish(session *s) {
   if (!s->ib) return -EINVAL;
   index_end(s->ib);
   s->ib = NULL;
-  post_process(&s->a, scan_default_threads("/"));
+  if (post_process(&s->a, scan_default_threads("/")) != 0) {
+    sess_set_error(s, "%s", "invalid tree");
+    sess_finish(s, ST_FAILED);
+    return -EINVAL;
+  }
   sess_finish(s, atomic_load(&s->a.h->cancel) == ANCDU_CANCEL_FULL ? ST_FULL : ST_DONE);
   return 0;
 }

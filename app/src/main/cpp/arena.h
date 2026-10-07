@@ -69,6 +69,9 @@ typedef struct {
   char *names;
   void *base;
   size_t size;
+  /* Ёмкости, проверенные при attach. Заголовок может лежать в общей памяти (memfd, его пишет
+   * другой процесс): после attach ёмкости из него не перечитываются. */
+  uint64_t cap_nodes, cap_names;
   int owned; /* 1 — arena_unmap делает munmap */
 } arena;
 
@@ -95,7 +98,8 @@ static inline const char *arena_name(const arena *a, uint32_t n) {
 
 /* Полный путь узла; длина или -ENAMETOOLONG / -EINVAL. */
 int arena_path(const arena *a, uint32_t n, char *buf, size_t cap);
-/* O(n) проверка инвариантов; 0 или -EINVAL. */
+/* O(n) проверка инвариантов (count/names_used в пределах ёмкостей attach, parent < ребёнка,
+ * имена, дочерние массивы); 0 или -EINVAL. */
 int arena_validate(const arena *a);
 /* Согласованная копия текущего пути скана (seqlock); длина. */
 int arena_cur_path(const arena *a, char *out, size_t cap);

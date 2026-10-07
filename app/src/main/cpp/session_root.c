@@ -214,7 +214,15 @@ static void *memfd_thread(void *p) {
   session *s = p;
   int code = reap(s);
   int st = (int)atomic_load_explicit(&s->mem.h->state, memory_order_acquire);
-  if ((code == 0 || code == 3 || code == 4) && st != ST_RUNNING) {
+  if ((code == ANCDU_EXIT_OK || code == ANCDU_EXIT_FULL || code == ANCDU_EXIT_CANCELLED) &&
+      st != ST_RUNNING) {
+    /* Общую арену писал другой процесс: перед показом — те же проверки, что у дампа и кэша. */
+    if ((st == ST_DONE || st == ST_FULL) &&
+        (atomic_load(&s->mem.h->count) == 0 || arena_validate(&s->mem) != 0)) {
+      sess_set_error(s, "%s", "helper produced an invalid tree");
+      sess_finish(s, ST_FAILED);
+      return NULL;
+    }
     sess_finish(s, st);
     return NULL;
   }
@@ -373,24 +381,24 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
       s->del_in = -1;
       pthread_mutex_unlock(&s->mu);
     }
-    /* P7: exit_status не выдаёт сбой ожидания за 0. Коды:
+    /* P7: exit_status не выдаёт сбой ожидания за 0. Коды (enum ancdu_exit):
      * -EPERM — хелпер до rm_tree не дошёл, ничего не удалено: su не запустился (pid < 0),
-     * отказал или хелпер не нашёлся/не стартовал (выход не 0, 5, 6, < 128).
-     * -EINTR — выход 6: остановлен через stdin (sess_delete_stop), удалено частично.
-     * -ELOOP — выход 7: родитель пути проходит через симлинк, ничего не удалено.
-     * -EPERM — и выход 8: родителя пути не проверить (EACCES, ENAMETOOLONG…), ничего не удалено.
-     * -ESTALE — выход 9: вершина не тот объект, что видел скан (--expect), ничего не удалено.
-     * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
+     * отказал или хелпер не нашёлся/не стартовал (любой иной выход < 128).
+     * -EINTR — RM_STOPPED: остановлен через stdin (sess_delete_stop), удалено частично.
+     * -ELOOP — RM_SYMLINK: ссылка в родителе пути, ничего не удалено.
+     * -EPERM — и RM_UNCHECKED: родителя не открыть (EACCES, ENAMETOOLONG…), ничего не удалено.
+     * -ESTALE — RM_CHANGED: вершина не тот объект, что видел скан (--expect), ничего не удалено.
+     * -EIO — могло удалиться частично: RM_PARTIAL (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
     free(cmd);
-    gone = code == 0;
+    gone = code == ANCDU_EXIT_OK;
     if (gone) r = 0;
     else if (pid < 0) r = -EPERM;
-    else if (code == 6) r = -EINTR;
-    else if (code == 7) r = -ELOOP;
-    else if (code == 8) r = -EPERM;
-    else if (code == 9) r = -ESTALE;
-    else if (code < 0 || code == 5 || code >= 128) r = -EIO;
+    else if (code == ANCDU_EXIT_RM_STOPPED) r = -EINTR;
+    else if (code == ANCDU_EXIT_RM_SYMLINK) r = -ELOOP;
+    else if (code == ANCDU_EXIT_RM_UNCHECKED) r = -EPERM;
+    else if (code == ANCDU_EXIT_RM_CHANGED) r = -ESTALE;
+    else if (code < 0 || code == ANCDU_EXIT_RM_PARTIAL || code >= 128) r = -EIO;
     else r = -EPERM;
   }
   free(path);

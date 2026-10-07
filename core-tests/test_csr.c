@@ -116,7 +116,28 @@ static void test_big_random(void) {
   arena_unmap(&a);
 }
 
+/* Битый parent[] (недоверенная арена): post_process отказывает -EINVAL и ничего не пишет —
+ * ни за пределы массивов, ни в суммы. */
+static void test_bad_parent(void) {
+  uint32_t bad[] = {7, 1000, ANCDU_NONE, 4}; /* = count, далеко за count, «нет», сам себе */
+  for (size_t k = 0; k < sizeof bad / sizeof *bad; k++) {
+    arena a;
+    build(&a);
+    a.parent[4] = bad[k];
+    uint64_t d0 = a.disk[0];
+    CHECK(post_process(&a, 2) == -EINVAL);
+    CHECK_EQ_U(a.disk[0], d0);
+    CHECK_EQ_U(a.child_count[0], 0);
+    arena_unmap(&a);
+  }
+  arena a;
+  build(&a);
+  CHECK(post_process(&a, 2) == 0);
+  arena_unmap(&a);
+}
+
 int main(void) {
+  test_bad_parent();
   test_aggregate_and_sort(1);
   test_aggregate_and_sort(4);
   test_remove();

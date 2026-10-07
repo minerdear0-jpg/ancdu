@@ -112,6 +112,32 @@ class NativeTest {
         assertTrue(err[0] < 0)
     }
 
+    /**
+     * Пути — байты UTF-8: корень скана и файл кэша с символом вне BMP (🎉 — суррогатная пара в
+     * String; modified UTF-8 GetStringUTFChars дал бы 6 байт CESU-8 и «cannot open»).
+     * Путь с \u0000 ядро отклоняет, не усекает.
+     */
+    @Test fun nonBmpPaths() {
+        val root = File(dir, "🎉root").apply { assertTrue(mkdirs()) }
+        File(root, "a.bin").writeBytes(ByteArray(100))
+        val err = IntArray(1)
+        val h = Native.scanStart(root.path, true, 2, err)
+        assertNotEquals(0L, h)
+        assertEquals(ST_DONE, waitDone(h))
+        assertEquals(root.path, Native.str(Native.path(h, 0)))
+        assertEquals(listOf("a.bin"), childNames(h, 0))
+        val cache = File(root, "🎉.cache").path
+        assertEquals(0, Native.saveCache(h, cache))
+        Native.free(h)
+        assertTrue(File(cache).exists())
+        val c = Native.openCache(cache, err)
+        assertNotEquals(0L, c)
+        Native.free(c)
+        assertEquals(0L, Native.scanStart(root.path + "\u0000x", true, 1, err))
+        assertEquals(-22, err[0])                        // -EINVAL
+        assertEquals(-22, Native.statfs("/data\u0000", LongArray(3)))
+    }
+
     @Test fun statfsData() {
         val out = LongArray(3)
         assertEquals(0, Native.statfs("/data", out))

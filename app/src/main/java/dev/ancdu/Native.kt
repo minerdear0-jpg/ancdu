@@ -25,13 +25,21 @@ const val SRC_INDEX = 1
 object Native {
     init { System.loadLibrary("ancdu") }
 
-    @JvmStatic external fun scanStart(root: String, oneFs: Boolean, threads: Int, err: IntArray): Long
-    @JvmStatic external fun rootStart(helper: String, root: String, oneFs: Boolean, memfd: Boolean, err: IntArray): Long
-    @JvmStatic external fun indexBegin(root: String, capNodes: Long, err: IntArray): Long
+    // Пути — байты UTF-8, как имена (символы вне BMP не искажаются modified UTF-8 JNI);
+    // String-обёртки ниже. Путь с \u0000 ядро отклоняет (-EINVAL), не усекает.
+    @JvmStatic external fun scanStartBytes(root: ByteArray, oneFs: Boolean, threads: Int, err: IntArray): Long
+    @JvmStatic external fun rootStartBytes(helper: ByteArray, root: ByteArray, oneFs: Boolean, memfd: Boolean, err: IntArray): Long
+    @JvmStatic external fun indexBeginBytes(root: ByteArray, capNodes: Long, err: IntArray): Long
+    fun scanStart(root: String, oneFs: Boolean, threads: Int, err: IntArray): Long = scanStartBytes(b(root), oneFs, threads, err)
+    fun rootStart(helper: String, root: String, oneFs: Boolean, memfd: Boolean, err: IntArray): Long =
+        rootStartBytes(b(helper), b(root), oneFs, memfd, err)
+    fun indexBegin(root: String, capNodes: Long, err: IntArray): Long = indexBeginBytes(b(root), capNodes, err)
     @JvmStatic external fun indexAdd(h: Long, rel: ByteArray, names: ByteArray, sizes: LongArray, n: Int): Int
     @JvmStatic external fun indexFinish(h: Long): Int
-    @JvmStatic external fun openCache(path: String, err: IntArray): Long
-    @JvmStatic external fun saveCache(h: Long, path: String): Int
+    @JvmStatic external fun openCacheBytes(path: ByteArray, err: IntArray): Long
+    @JvmStatic external fun saveCacheBytes(h: Long, path: ByteArray): Int
+    fun openCache(path: String, err: IntArray): Long = openCacheBytes(b(path), err)
+    fun saveCache(h: Long, path: String): Int = saveCacheBytes(h, b(path))
     @JvmStatic external fun progress(h: Long, out: LongArray): ByteArray
     @JvmStatic external fun liveTop(h: Long, nodes: IntArray, disk: LongArray): Int
     @JvmStatic external fun liveName(h: Long, node: Int): ByteArray
@@ -47,18 +55,23 @@ object Native {
     /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; -ESTALE (-116) —
      *  узел подменён после скана ([NativeErr.changedSinceScan]), ничего не удалено, узел — F_ERR;
      *  иное <0 — ошибка. */
-    @JvmStatic external fun delete(h: Long, node: Int, rootHelper: String?): Int
+    @JvmStatic external fun deleteBytes(h: Long, node: Int, rootHelper: ByteArray?): Int
+    fun delete(h: Long, node: Int, rootHelper: String?): Int = deleteBytes(h, node, rootHelper?.let(::b))
     /** Как delete через root ([rootHelper] под su), но узел /storage/emulated/<n>/X удаляется
      *  как /data/media/<n>/X — в обход FUSE. Путь не сопоставляется — -EINVAL, ничего не запущено. */
-    @JvmStatic external fun deleteMedia(h: Long, node: Int, rootHelper: String): Int
+    @JvmStatic external fun deleteMediaBytes(h: Long, node: Int, rootHelper: ByteArray): Int
+    fun deleteMedia(h: Long, node: Int, rootHelper: String): Int = deleteMediaBytes(h, node, b(rootHelper))
     /** Сколько записей удалено идущим (или последним) delete. Параллельно с delete — можно. */
     @JvmStatic external fun deleteProgress(h: Long): Long
     /** Просит остановить идущий delete (он вернёт -EINTR). Параллельно с delete — можно. */
     @JvmStatic external fun deleteStop(h: Long)
     /** Узел — F_ERR (массовый шаг MediaStore удалил часть, ядро не вызывалось). На io, как delete. */
     @JvmStatic external fun markErr(h: Long, node: Int): Int
-    @JvmStatic external fun statfs(path: String, out: LongArray): Int
+    @JvmStatic external fun statfsBytes(path: ByteArray, out: LongArray): Int
+    fun statfs(path: String, out: LongArray): Int = statfsBytes(b(path), out)
     @JvmStatic external fun free(h: Long)
 
     fun str(b: ByteArray): String = String(b, Charsets.UTF_8)
+
+    private fun b(s: String): ByteArray = s.toByteArray(Charsets.UTF_8)
 }

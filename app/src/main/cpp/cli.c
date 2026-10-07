@@ -25,7 +25,7 @@ static int usage(void) {
         " [--watch-stdin]\n"
         "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin] [--expect DEV:INO]\n",
         stderr);
-  return 2;
+  return ANCDU_EXIT_USAGE;
 }
 
 static const char *state_name(int st) {
@@ -39,10 +39,10 @@ static const char *state_name(int st) {
 
 static int exit_code(int st) {
   switch (st) {
-    case ST_DONE: return 0;
-    case ST_FULL: return 3;
-    case ST_CANCELLED: return 4;
-    default: return 1;
+    case ST_DONE: return ANCDU_EXIT_OK;
+    case ST_FULL: return ANCDU_EXIT_FULL;
+    case ST_CANCELLED: return ANCDU_EXIT_CANCELLED;
+    default: return ANCDU_EXIT_FAILED;
   }
 }
 
@@ -103,8 +103,8 @@ static void *watch_stdin(void *p) {
  * уводит его в сторону.
  * --expect DEV:INO: вершина (lstat) должна быть этим объектом со скана, иначе выход 9 —
  * «изменилось после скана», ничего не удалено.
- * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — симлинк в родителе,
- * 8 — родителя не проверить, 9 — вершина подменена после скана. */
+ * Выход — enum ancdu_exit (helper_proto.h): OK, RM_PARTIAL, RM_STOPPED, RM_SYMLINK,
+ * RM_UNCHECKED, RM_CHANGED. */
 typedef struct {
   _Atomic uint64_t done;
   _Atomic int stop;
@@ -138,9 +138,9 @@ static int run_rm(const char *path, int threads, int watch, const rm_expect *wan
   int pfd = rm_open_parent(path, 1, last, sizeof last);
   if (pfd < 0) {
     fputs("progress 0\n", stderr);
-    if (pfd == -ENOENT) return 0; /* компонента родителя нет — пути тоже, уже удалён */
+    if (pfd == -ENOENT) return ANCDU_EXIT_OK; /* компонента родителя нет — пути тоже, уже удалён */
     fprintf(stderr, "rm: refused: %s\n", strerror(-pfd));
-    return pfd == -ELOOP ? 7 : 8;
+    return pfd == -ELOOP ? ANCDU_EXIT_RM_SYMLINK : ANCDU_EXIT_RM_UNCHECKED;
   }
   if (watch) {
     /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */
@@ -160,10 +160,10 @@ static int run_rm(const char *path, int threads, int watch, const rm_expect *wan
   struct stat st;
   int gone = r == 0 || (fstatat(pfd, last, &st, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT);
   close(pfd);
-  if (gone) return 0;
+  if (gone) return ANCDU_EXIT_OK;
   fprintf(stderr, "rm: %s\n", strerror(-r));
-  if (r == -ESTALE) return 9;
-  return r == -EINTR ? 6 : 5;
+  if (r == -ESTALE) return ANCDU_EXIT_RM_CHANGED;
+  return r == -EINTR ? ANCDU_EXIT_RM_STOPPED : ANCDU_EXIT_RM_PARTIAL;
 }
 
 int main(int argc, char **argv) {
@@ -197,33 +197,33 @@ int main(int argc, char **argv) {
     int fd = open(memfd, O_RDWR | O_CLOEXEC);
     if (fd < 0) {
       fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": open %s: %s\n", memfd, strerror(errno));
-      return 1;
+      return ANCDU_EXIT_FAILED;
     }
     struct stat st;
     if (fstat(fd, &st) != 0) {
       fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": fstat: %s\n", strerror(errno));
-      return 1;
+      return ANCDU_EXIT_FAILED;
     }
     void *base = mmap(NULL, (size_t)st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     int map_errno = errno;
     close(fd);
     if (base == MAP_FAILED) {
       fprintf(stderr, ANCDU_MEMFD_UNAVAILABLE ": mmap: %s\n", strerror(map_errno));
-      return 1;
+      return ANCDU_EXIT_FAILED;
     }
     if (arena_attach(&a, base, (size_t)st.st_size) != 0 || atomic_load(&a.h->count) != 0) {
       fputs("memfd: bad or non-empty arena\n", stderr);
-      return 2;
+      return ANCDU_EXIT_USAGE;
     }
     if (root && strcmp(root, a.h->root_path) != 0) {
       fputs("memfd: --root does not match arena root\n", stderr);
-      return 2;
+      return ANCDU_EXIT_USAGE;
     }
     root = a.h->root_path;
   } else {
     uint64_t cap = arena_cap_hint(root);
     int r = arena_alloc_anon(&a, cap, arena_names_hint(cap), root, SRC_SCAN);
-    if (r) { fprintf(stderr, "arena: %s\n", strerror(-r)); return 1; }
+    if (r) { fprintf(stderr, "arena: %s\n", strerror(-r)); return ANCDU_EXIT_FAILED; }
   }
 
   scan_opts o = {.one_fs = one_fs, .threads = threads > 0 ? threads : scan_default_threads(root)};
@@ -234,7 +234,10 @@ int main(int argc, char **argv) {
   pthread_t wth;
   if (watch && pthread_create(&wth, NULL, watch_stdin, &a) == 0) pthread_detach(wth);
   int st = scan_run(&a, &o);
-  if (st == ST_DONE || st == ST_FULL) post_process(&a, o.threads);
+  if ((st == ST_DONE || st == ST_FULL) && post_process(&a, o.threads) != 0) {
+    fputs("scan: invalid tree\n", stderr);
+    st = ST_FAILED;
+  }
   atomic_store(&a.h->finished_ns, ancdu_now_ns());
   atomic_store_explicit(&a.h->state, (uint32_t)st, memory_order_release);
 
@@ -245,7 +248,7 @@ int main(int argc, char **argv) {
   if (mode == MODE_SUMMARY) print_summary(&a, st);
   if (mode == MODE_DUMP) {
     int r = arena_write(&a, STDOUT_FILENO);
-    if (r) { fprintf(stderr, "dump: %s\n", strerror(-r)); return 1; }
+    if (r) { fprintf(stderr, "dump: %s\n", strerror(-r)); return ANCDU_EXIT_FAILED; }
   }
   return exit_code(st);
 }

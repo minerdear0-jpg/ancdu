@@ -68,19 +68,20 @@ int arena_attach(arena *a, void *base, size_t size) {
   if (size < ANCDU_HDR_SIZE || memcmp(h->magic, ANCDU_MAGIC, 8) != 0 ||
       h->version != ANCDU_VERSION)
     return -EINVAL;
-  if (h->cap_nodes >= ANCDU_NONE || h->cap_names > ANCDU_MAX_NAMES)
-    return -EINVAL;
+  /* Ёмкости читаются из заголовка один раз: проверка, раскладка и всё дальнейшее — по копии. */
+  uint64_t cn = *(volatile uint64_t *)&h->cap_nodes, cm = *(volatile uint64_t *)&h->cap_names;
+  if (cn >= ANCDU_NONE || cm > ANCDU_MAX_NAMES) return -EINVAL;
   /* Смещения берём из собственного расчёта, не из заголовка. */
   ancdu_hdr L;
-  if (layout(&L, h->cap_nodes, h->cap_names) > size) return -EINVAL;
-  if (atomic_load(&h->count) > h->cap_nodes ||
-      atomic_load(&h->names_used) > h->cap_names)
-    return -EINVAL;
+  if (layout(&L, cn, cm) > size) return -EINVAL;
+  if (atomic_load(&h->count) > cn || atomic_load(&h->names_used) > cm) return -EINVAL;
   char *b = base;
   memset(a, 0, sizeof *a);
   a->h = h;
   a->base = base;
   a->size = size;
+  a->cap_nodes = cn;
+  a->cap_names = cm;
   a->parent = (uint32_t *)(b + L.off_parent);
   a->disk = (uint64_t *)(b + L.off_disk);
   a->apparent = (uint64_t *)(b + L.off_apparent);
@@ -138,12 +139,12 @@ uint32_t arena_new_node(arena *a, name_chunk *ck, uint32_t parent,
   uint64_t need = len + 1, start, idx;
   if (ck->end - ck->pos < need) {
     uint64_t want = need > ANCDU_NAME_CHUNK ? need : ANCDU_NAME_CHUNK;
-    uint64_t got = reserve(&a->h->names_used, a->h->cap_names, want, need, &start);
+    uint64_t got = reserve(&a->h->names_used, a->cap_names, want, need, &start);
     if (!got) goto full;
     ck->pos = start;
     ck->end = start + got;
   }
-  if (!reserve(&a->h->count, a->h->cap_nodes, 1, 1, &idx)) goto full;
+  if (!reserve(&a->h->count, a->cap_nodes, 1, 1, &idx)) goto full;
   a->parent[idx] = parent;
   a->disk[idx] = 0;
   a->apparent[idx] = 0;
@@ -188,6 +189,7 @@ int arena_path(const arena *a, uint32_t n, char *buf, size_t cap) {
 
 int arena_validate(const arena *a) {
   uint64_t n = atomic_load(&a->h->count), nu = atomic_load(&a->h->names_used);
+  if (n > a->cap_nodes || nu > a->cap_names) return -EINVAL;
   if (n == 0) return 0;
   if (a->parent[0] != ANCDU_NONE) return -EINVAL;
   for (uint64_t i = 0; i < n; i++) {
