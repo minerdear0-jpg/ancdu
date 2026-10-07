@@ -11,6 +11,34 @@ import java.util.concurrent.Executors
 
 enum class Kind { SCAN, ROOT, INDEX, CACHE }
 
+/**
+ * Один объект удаления: узел [node] и путь его удаления — root ([helper]), быстрый путь
+ * /data/media ([media]), массовый шаг MediaStore до ядра ([bulk]) и шаг после ядра ([afterIo]).
+ * Собирается из дерева на месте (BrowserActivity.deleteItem); лямбды не держат Activity.
+ */
+class DeleteItem(
+    val node: Int,
+    val helper: String?,
+    val media: Boolean,
+    val name: String,
+    val dir: Boolean,
+    val disk: Long,
+    val bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)?,
+    val afterIo: ((Int) -> Unit)?,
+)
+
+/** Шаг группы, решённый на io к его началу: удалить [Go.item] или пропустить с итогом [Skip.result]. */
+sealed class Planned {
+    class Go(val item: DeleteItem) : Planned()
+    class Skip(val result: ItemResult) : Planned()
+}
+
+/**
+ * Объект группы: имя, каталог ли и размер на момент подтверждения (для итога, если он не
+ * начнётся) и [plan] — на io к его началу.
+ */
+class GroupJob(val name: String, val dir: Boolean, val disk: Long, val plan: () -> Planned)
+
 /** Текущее дерево процесса: переживает пересоздание Activity. */
 object Holder {
     @Volatile var h = 0L; private set
@@ -134,8 +162,17 @@ object Holder {
     var delDisk = 0L; private set
     /** Путь узла (байты имён от корня) — найти его в обновлённом дереве. Только главный поток. */
     var delNames: List<ByteArray> = emptyList(); private set
-    /** Удаляется каталог (не файл). Только главный поток. */
+    /**
+     * Удаляется каталог (не файл). У группы — к концу: есть каталог, удалённый частично
+     * ([GroupResult.needsRefresh]), — дерево обновится. Только главный поток.
+     */
     var delDir = true; private set
+    /** Объектов в удалении: 1 — одиночное, больше — группа (диалог «Удаление 3 объектов»). Только главный поток. */
+    var delCount = 1; private set
+    /** Итог каждого объекта последнего удаления (у одиночного — один). Только главный поток. */
+    var delResults: List<ItemResult> = emptyList(); private set
+    /** Для тестов: вызывается на io перед k-м объектом группы (k от 0). */
+    @Volatile var beforeItem: ((Int) -> Unit)? = null
 
     /*
      * Удаление в полёте. Под [delLock]: [delHandle] != 0 только пока на io идёт шаг ядра —
@@ -144,7 +181,8 @@ object Holder {
      * этого дескриптора, — поэтому Native.deleteProgress/deleteStop под замком никогда не видят
      * освобождённую сессию и не видят счётчик прошлого удаления. [delStopAsked] — «Стоп» нажат;
      * [delRows] — строк удалено массовым шагом; [delNative] — последний счётчик ядра;
-     * [delDone] — их сумма, последний прогресс.
+     * [delDone] — их сумма, последний прогресс. У группы [delRows]/[delNative] — текущего объекта,
+     * [delBase] — сумма уже законченных (у одиночного всегда 0).
      */
     private val delLock = Any()
     private var delHandle = 0L
@@ -152,6 +190,7 @@ object Holder {
     private var delRows = 0L
     private var delNative = 0L
     private var delDone = 0L
+    private var delBase = 0L
 
     /** Для тестов: строк MediaStore удалено массовым шагом последнего удаления (пишет io). */
     @Volatile var lastBulkRows = 0L; private set
@@ -163,7 +202,7 @@ object Holder {
      */
     fun deleteProgress(): Long = synchronized(delLock) {
         if (delHandle != 0L) delNative = Native.deleteProgress(delHandle)
-        delDone = DeleteSteps.done(delRows, delNative)
+        delDone = DeleteSteps.done(delBase, DeleteSteps.done(delRows, delNative))
         delDone
     }
 
@@ -191,69 +230,88 @@ object Holder {
     fun removeDeleteListener(l: (Int) -> Unit) { deleteListeners -= l }
 
     /**
-     * Только главный поток. Удаляет узел [node] сессии [handle] на [io]. По завершении на главном
-     * потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
-     * [name] и [total] — для диалога прогресса; [names] — путь узла (байты имён от корня); [dir] — узел-каталог.
-     * [bulk] — необязательный массовый шаг MediaStore на io ДО ядра (дескриптор он не трогает):
-     * получает «нажат ли Стоп» и счётчик удалённых строк. Затем ВСЕГДА Native.delete/deleteMedia
-     * на том же узле — кроме «Стопа» до этого момента (в том числе пока удаление ждало в
-     * очереди io): тогда ядро не вызывается, итог -EINTR (DeleteSteps); если массовый шаг уже
-     * что-то удалил — узел помечается F_ERR (Native.markErr), дерево не выдаёт его за целый.
-     * [media] — Native.deleteMedia (нужен [helper]): узел удаляется через /data/media в обход FUSE.
-     * [afterIo] — на io сразу после шага ядра с его кодом, если удаление не отменено
-     * (например, очистка строк MediaStore).
+     * Только главный поток. Удаляет узел [DeleteItem.node] сессии [handle] на [io]. По завершении на
+     * главном потоке снимает [deleting], уведомляет слушателей, затем вызывает [done].
+     * [total] — items узла для диалога прогресса; [names] — путь узла (байты имён от корня).
+     * [DeleteItem.bulk] — необязательный массовый шаг MediaStore на io ДО ядра (дескриптор он не
+     * трогает): получает «нажат ли Стоп» и счётчик удалённых строк. Затем ВСЕГДА
+     * Native.delete/deleteMedia на том же узле — кроме «Стопа» до этого момента (в том числе пока
+     * удаление ждало в очереди io): тогда ядро не вызывается, итог -EINTR (DeleteSteps); если
+     * массовый шаг уже что-то удалил — узел помечается F_ERR (Native.markErr), дерево не выдаёт его
+     * за целый. [DeleteItem.media] — Native.deleteMedia (нужен helper): узел удаляется через
+     * /data/media в обход FUSE. [DeleteItem.afterIo] — на io сразу после шага ядра с его кодом,
+     * если удаление не отменено (например, очистка строк MediaStore).
      */
-    fun delete(handle: Long, node: Int, helper: String?, done: (Int) -> Unit = {},
-               name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList(),
-               dir: Boolean = true, media: Boolean = false,
-               bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null,
-               afterIo: ((Int) -> Unit)? = null) {
+    fun delete(handle: Long, item: DeleteItem, done: (Int) -> Unit = {}, total: Long = 1L,
+               names: List<ByteArray> = emptyList()) {
         checkMain("Holder.delete")
         check(!deleting) { "a delete is already running" }
+        begin(item.name, total, item.disk, names, item.dir, root = item.helper != null, count = 1)
+        run(handle, listOf(GroupJob(item.name, item.dir, item.disk) { Planned.Go(item) }), group = false,
+            root = item.helper != null, done = done)
+    }
+
+    /**
+     * Только главный поток. Удаление группы: ТОТ ЖЕ путь, что [delete], — объекты по очереди на
+     * [io], общий [deleting], диалог и «Стоп». Каждый шаг [jobs] решается на io к своему началу
+     * (по имени в живом дереве, с повторной проверкой запрета) и пропускается, если нельзя.
+     * «Стоп» прерывает текущий объект, остальные не начинаются; su отказал ([root]) — остальные тоже.
+     * [name] — имя папки, [names] — её путь, [total] — сумма items, [disk] — сумма размеров.
+     */
+    fun deleteGroup(handle: Long, jobs: List<GroupJob>, root: Boolean, done: (Int) -> Unit = {},
+                    name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList()) {
+        checkMain("Holder.deleteGroup")
+        check(!deleting) { "a delete is already running" }
+        begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
+        run(handle, jobs, group = true, root = root, done = done)
+    }
+
+    private fun begin(name: String, total: Long, disk: Long, names: List<ByteArray>, dir: Boolean, root: Boolean, count: Int) {
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
-        delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = helper != null
-        delDisk = disk; delNames = names; delDir = dir
-        synchronized(delLock) { delHandle = 0L; delStopAsked = false; delRows = 0L; delNative = 0L; delDone = 0L }
+        delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = root
+        delDisk = disk; delNames = names; delDir = dir; delCount = count; delResults = emptyList()
+        synchronized(delLock) { delHandle = 0L; delStopAsked = false; delRows = 0L; delNative = 0L; delDone = 0L; delBase = 0L }
         lastBulkRows = 0L
         // Идущий фоновый скан и непоказанное дерево могли увидеть удаляемое — пересканировать.
         BgScan.deleteStarted()
+    }
+
+    /** На io: объекты по очереди; итог — на главный поток (и при исключении: deleting не останется true). */
+    private fun run(handle: Long, jobs: List<GroupJob>, group: Boolean, root: Boolean, done: (Int) -> Unit) {
         io.execute {
             var r = -1
-            var nativeRan = false
+            val results = ArrayList<ItemResult>()
             try {
-                r = DeleteSteps.run(
-                    bulk = bulk?.let { b -> {
-                        b({ synchronized(delLock) { delStopAsked } }) { n ->
-                            synchronized(delLock) { delRows = DeleteSteps.done(delRows, n) }
+                for ((k, job) in jobs.withIndex()) {
+                    if (group) {
+                        runCatching { beforeItem?.invoke(k) }
+                        // «Стоп» между объектами: остальные не начинаются (и не ищутся в дереве).
+                        if (synchronized(delLock) { delStopAsked }) {
+                            for (rest in jobs.subList(k, jobs.size)) results += skipped(rest, -DeleteProgress.EINTR)
+                            break
                         }
-                    } },
-                    arm = {
-                        synchronized(delLock) {
-                            if (delStopAsked) false else { delHandle = handle; nativeRan = true; true }
+                    }
+                    when (val plan = job.plan()) {
+                        is Planned.Skip -> results += plan.result
+                        is Planned.Go -> {
+                            val it = plan.item
+                            val (code, n) = runItem(handle, it)
+                            results += ItemResult(it.name, it.dir, it.disk, code, n)
+                            // su отказал: следующие тоже спросили бы su — не начинаются.
+                            if (group && it.helper != null && DeletePolicy.nothingDeleted(code, true) && k + 1 < jobs.size) {
+                                for (rest in jobs.subList(k + 1, jobs.size)) results += skipped(rest, code)
+                                break
+                            }
                         }
-                    },
-                    native = {
-                        if (media && helper != null) Native.deleteMedia(handle, node, helper)
-                        else Native.delete(handle, node, helper)
-                    },
-                    onBulkError = { Log.w("ancdu", "bulk delete failed, rm_tree continues", it) },
-                    bulkRows = { synchronized(delLock) { delRows } },
-                    // На io, ядро не вызывалось и deleteProgress/deleteStop ядро не трогают (delHandle 0).
-                    markPartial = { runCatching { Native.markErr(handle, node) } })
-            } finally {
-                synchronized(delLock) {
-                    // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.
-                    // Ядро не вызывалось — его счётчик относится к прошлому удалению, не берём.
-                    if (nativeRan) delNative = runCatching { Native.deleteProgress(handle) }.getOrDefault(delNative)
-                    delHandle = 0L
-                    delDone = DeleteSteps.done(delRows, delNative)
-                    lastBulkRows = delRows
+                    }
                 }
-                if (afterIo != null && !DeleteProgress.isCancelled(r, delDone)) runCatching { afterIo(r) }
-                // И при исключении: deleting не должен остаться true навсегда.
+                r = if (group) GroupResult.code(results, root) else results.single().r
+            } finally {
                 main.post {
                     deleting = false
+                    delResults = results
+                    if (group) delDir = GroupResult.needsRefresh(results, root)
                     // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.
                     BgScan.deleteFinished(r)
                     for (l in deleteListeners.toList()) l(r)
@@ -261,6 +319,52 @@ object Holder {
                 }
             }
         }
+    }
+
+    /** Не начатый объект группы. */
+    private fun skipped(j: GroupJob, r: Int) = ItemResult(j.name, j.dir, j.disk, r, 0L, attempted = false)
+
+    /** На io: один объект — массовый шаг, затем ядро (DeleteSteps). Код и сколько записей удалено им. */
+    private fun runItem(handle: Long, item: DeleteItem): Pair<Int, Long> {
+        var r = -1
+        var nativeRan = false
+        var itemDone = 0L
+        synchronized(delLock) { delHandle = 0L; delRows = 0L; delNative = 0L }
+        try {
+            r = DeleteSteps.run(
+                bulk = item.bulk?.let { b -> {
+                    b({ synchronized(delLock) { delStopAsked } }) { n ->
+                        synchronized(delLock) { delRows = DeleteSteps.done(delRows, n) }
+                    }
+                } },
+                arm = {
+                    synchronized(delLock) {
+                        if (delStopAsked) false else { delHandle = handle; nativeRan = true; true }
+                    }
+                },
+                native = {
+                    if (item.media && item.helper != null) Native.deleteMedia(handle, item.node, item.helper)
+                    else Native.delete(handle, item.node, item.helper)
+                },
+                onBulkError = { Log.w("ancdu", "bulk delete failed, rm_tree continues", it) },
+                bulkRows = { synchronized(delLock) { delRows } },
+                // На io, ядро не вызывалось и deleteProgress/deleteStop ядро не трогают (delHandle 0).
+                markPartial = { runCatching { Native.markErr(handle, item.node) } })
+        } finally {
+            synchronized(delLock) {
+                // Итог берётся здесь, на io, пока free этого дескриптора не мог начаться.
+                // Ядро не вызывалось — его счётчик относится к прошлому удалению, не берём.
+                if (nativeRan) delNative = runCatching { Native.deleteProgress(handle) }.getOrDefault(delNative)
+                delHandle = 0L
+                itemDone = DeleteSteps.done(delRows, delNative)
+                lastBulkRows = DeleteSteps.done(lastBulkRows, delRows)
+                delBase = DeleteSteps.done(delBase, itemDone)
+                delRows = 0L; delNative = 0L
+                delDone = delBase
+            }
+            if (item.afterIo != null && !DeleteProgress.isCancelled(r, itemDone)) runCatching { item.afterIo.invoke(r) }
+        }
+        return r to itemDone
     }
 
     fun progress(): LongArray = LongArray(6).also { if (h != 0L) Native.progress(h, it) }
