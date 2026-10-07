@@ -65,8 +65,10 @@ int post_process(arena *a, int threads) {
   if (n > a->cap_nodes) return -EINVAL;
   /* 0. Границы до любой записи: parent[i] индексирует массивы ниже. */
   if (a->parent[0] != ANCDU_NONE) return -EINVAL;
+  /* parent[i] < i — тот же инвариант, что у arena_validate: на нём держится однопроходная
+   * агрегация ниже (каждый ребёнок просуммирован раньше родителя). */
   for (uint64_t i = 1; i < n; i++)
-    if (a->parent[i] >= n || a->parent[i] == i) return -EINVAL;
+    if (a->parent[i] >= i) return -EINVAL;
   /* 1. Агрегация: родитель < ребёнок, значит обратный проход видит
    *    каждого ребёнка уже полностью просуммированным. */
   for (uint64_t i = n - 1; i >= 1; i--) {

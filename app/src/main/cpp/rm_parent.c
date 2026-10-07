@@ -36,7 +36,9 @@ static int seccomp_filtered(void) {
   if (n <= 0) return 1;
   buf[n] = 0;
   const char *p = strstr(buf, "\nSeccomp:");
-  if (!p) return 0; /* ядро без seccomp */
+  /* Строки нет: ядро без seccomp — или буфер заполнен и она дальше; тогда считаем фильтром
+   * (обход по компонентам безопасен всегда, SIGSYS — нет). */
+  if (!p) return n == (ssize_t)sizeof buf - 1;
   p += 9;
   while (*p == ' ' || *p == '\t') p++;
   return *p != '0';

@@ -5,7 +5,7 @@ enum { SORT_SIZE = 0, SORT_NAME = 1, SORT_ITEMS = 2 };
 
 /* Агрегация размеров снизу вверх + CSR-раскладка детей + сортировка
  * диапазонов по disk (убыв.). Вызывать ровно один раз. 0, или -EINVAL — parent[] битый
- * (parent[0] не ANCDU_NONE, у узла i > 0 родитель >= count или он сам): арена не тронута. */
+ * (parent[0] не ANCDU_NONE, у узла i > 0 родитель >= i): арена не тронута. */
 int post_process(arena *a, int threads);
 
 /* Дети узла без F_DELETED в порядке key (SORT_SIZE по disk либо apparent).

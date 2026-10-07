@@ -119,7 +119,8 @@ static void test_big_random(void) {
 /* Битый parent[] (недоверенная арена): post_process отказывает -EINVAL и ничего не пишет —
  * ни за пределы массивов, ни в суммы. */
 static void test_bad_parent(void) {
-  uint32_t bad[] = {7, 1000, ANCDU_NONE, 4}; /* = count, далеко за count, «нет», сам себе */
+  /* = count, далеко за count, «нет», сам себе, позже себя (5, 6 < count) */
+  uint32_t bad[] = {7, 1000, ANCDU_NONE, 4, 5, 6};
   for (size_t k = 0; k < sizeof bad / sizeof *bad; k++) {
     arena a;
     build(&a);
