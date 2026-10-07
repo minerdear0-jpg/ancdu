@@ -118,4 +118,53 @@ class PeekTest {
         assertFalse(Peek.rootOnly("/data/data/dev.ancdu/files/x", viaRoot = true, pkg = me))
         assertTrue(Peek.rootOnly("/data/data/dev.ancdu.evil/x", viaRoot = true, pkg = me))
     }
+
+    /** Узел дерева: каталог, ссылка, другая ФС — места под превью нет (решается до чтения). */
+    @Test fun treeFlagsGate() {
+        assertTrue(Peek.treeAllows(0))
+        assertTrue(Peek.treeAllows(F_HLDUP))
+        assertFalse(Peek.treeAllows(F_SYMLINK))
+        assertFalse(Peek.treeAllows(F_DIR))
+        assertFalse(Peek.treeAllows(F_OTHERFS))
+        assertFalse(Peek.treeAllows(F_SYMLINK or F_HLDUP))
+    }
+
+    /**
+     * Читается только обычный файл: ссылка — разрешается и цель проверяется ещё раз; FIFO,
+     * устройство, сокет, ссылка на них и битая ссылка — null (FileInputStream.read на FIFO
+     * висел бы вечно).
+     */
+    @Test fun regularFileGate() {
+        val fs = mapOf(
+            "/a/file.txt" to Peek.NodeType.REGULAR,
+            "/a/pipe" to Peek.NodeType.OTHER,
+            "/a/link-file" to Peek.NodeType.LINK,
+            "/a/link-pipe" to Peek.NodeType.LINK,
+            "/a/link-link" to Peek.NodeType.LINK,
+            "/a/broken" to Peek.NodeType.LINK,
+        )
+        val real = mapOf("/a/link-file" to "/a/file.txt", "/a/link-pipe" to "/a/pipe",
+            "/a/link-link" to "/a/link-file", "/a/broken" to "/a/nowhere")
+        val stat: (String) -> Peek.NodeType = { fs[it] ?: Peek.NodeType.MISSING }
+        val resolve: (String) -> String? = { real[it] }
+        fun gate(p: String) = Peek.regularTarget(p, stat, resolve)
+        assertEquals("/a/file.txt", gate("/a/file.txt"))
+        assertNull(gate("/a/pipe"))
+        assertEquals("/a/file.txt", gate("/a/link-file"))
+        assertNull(gate("/a/link-pipe"))
+        // разрешённая цель снова оказалась ссылкой (подменили между вызовами) — не доверяем
+        assertNull(gate("/a/link-link"))
+        assertNull(gate("/a/broken"))
+        assertNull(gate("/a/missing"))
+        assertNull(Peek.regularTarget("/a/link-file", stat) { null })
+    }
+
+    /** Подписи из чужих данных (APK, расширение): без C0 и переводов строк, bidi — видимыми. */
+    @Test fun untrustedLabels() {
+        assertEquals("EvilApp", Bidi.label("Evil\nApp\u0007"))
+        assertEquals("a⟨U+202E⟩b", Bidi.label("a\u202E\r\nb"))
+        assertEquals("ab", Bidi.label("a\u2028\u2029\u0085\u007Fb"))
+        assertEquals("FILE · .b⟨U+202E⟩n", Peek.typeLine(EN, PeekKind.NONE, "b\u202En", null, text = false))
+        assertEquals("IMAGE · J⟨U+202E⟩G", Peek.typeLine(EN, PeekKind.IMAGE, "j\u202Eg", null, text = false))
+    }
 }

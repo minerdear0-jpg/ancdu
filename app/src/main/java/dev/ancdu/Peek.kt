@@ -62,16 +62,38 @@ object Peek {
 
     /** Строка вида: «IMAGE · JPEG», «TEXT · UTF-8», «APK», «FILE · .bin». [text] — содержимое прошло [sniff]. */
     fun typeLine(t: Txt, kind: PeekKind, ext: String?, mime: String?, text: Boolean): String {
-        fun sub() = (mime?.substringAfter('/')?.removePrefix("x-")?.substringBefore('+') ?: ext.orEmpty())
-            .uppercase(Locale.ROOT)
+        // Расширение — из имени файла (чужие данные): одной строкой, bidi видимыми.
+        fun sub() = Bidi.label((mime?.substringAfter('/')?.removePrefix("x-")?.substringBefore('+') ?: ext.orEmpty())
+            .uppercase(Locale.ROOT))
         return when (kind) {
             PeekKind.IMAGE -> t.s(R.string.ql_image, sub())
             PeekKind.VIDEO -> t.s(R.string.ql_video, sub())
             PeekKind.TEXT -> if (ext != null || text) t.s(R.string.ql_text) else t.s(R.string.ql_file)
             PeekKind.APK -> t.s(R.string.ql_apk)
-            PeekKind.NONE -> if (ext != null) t.s(R.string.ql_file_ext, ext) else t.s(R.string.ql_file)
+            PeekKind.NONE -> if (ext != null) t.s(R.string.ql_file_ext, Bidi.label(ext)) else t.s(R.string.ql_file)
         }
     }
+
+    /**
+     * Узел дерева можно смотреть: не каталог, не символическая ссылка, не другая ФС. Иначе места
+     * под превью нет — решается по флагам дерева до чтения.
+     */
+    fun treeAllows(flags: Int): Boolean = flags and (F_DIR or F_SYMLINK or F_OTHERFS) == 0
+
+    /** Вид узла по lstat (без перехода по ссылке). */
+    enum class NodeType { REGULAR, LINK, OTHER, MISSING }
+
+    /**
+     * Путь, который можно читать, или null. Читается только обычный файл: FIFO, устройство,
+     * сокет блокируют чтение навсегда. Ссылка разрешается ([resolve] — полностью, как
+     * canonicalPath), и цель проверяется ещё раз [stat]: снова ссылка (подмена) — null.
+     */
+    fun regularTarget(path: String, stat: (String) -> NodeType, resolve: (String) -> String?): String? =
+        when (stat(path)) {
+            NodeType.REGULAR -> path
+            NodeType.LINK -> resolve(path)?.takeIf { stat(it) == NodeType.REGULAR }
+            else -> null
+        }
 
     /** Длительность видео: «0:42», «12:05», «1:02:03». */
     fun duration(ms: Long): String {

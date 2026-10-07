@@ -267,7 +267,7 @@ class BrowserActivity : LangActivity() {
         override fun click(index: Int) {
             if (busy) return
             // Файл — карточка быстрого просмотра (не удаление); долгое нажатие — лист удаления.
-            if (info[4 * index + 3].toInt() and F_DIR == 0) { openQuickLook(kids[index], value(index)); return }
+            if (info[4 * index + 3].toInt() and F_DIR == 0) { openQuickLook(kids[index], value(index), info[4 * index + 3].toInt()); return }
             scrollAt[node] = list.scroll
             load(kids[index], 0, dir = 1)
         }
@@ -759,7 +759,7 @@ class BrowserActivity : LangActivity() {
      * Карточка файла [target] дерева [h] ([size] — размер в показанном режиме). «Удалить…» открывает
      * обычный лист удаления того же узла, если дерево за это время не сменилось.
      */
-    private fun openQuickLook(target: Int, size: Long) {
+    private fun openQuickLook(target: Int, size: Long, flags: Int) {
         sheet?.dismiss()
         quickLook?.dismiss()
         cancelAsk()
@@ -767,7 +767,7 @@ class BrowserActivity : LangActivity() {
         val path = Native.str(Native.path(handle, target))
         val info = QuickLookInfo(name = nameOf(target), path = path,
             parent = Native.str(Native.path(handle, Native.parent(handle, target))), size = size,
-            owner = Owner.packageOf(path), rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName))
+            owner = Owner.packageOf(path), rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName), flags = flags)
         // Закрыта карточка — подставить дерево, если оно пришло, пока она была открыта.
         quickLook = QuickLook(this, info, onClose = { refreshPending() }) {
             if (!busy && h == handle && !isFinishing) ask(target)

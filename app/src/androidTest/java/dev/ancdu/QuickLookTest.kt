@@ -142,4 +142,47 @@ class QuickLookTest {
         }
         assertTrue(f.exists())
     }
+
+    /**
+     * FIFO (с расширением текста — место под превью резервируется по имени): карточка открывается,
+     * поток превью не висит на read() — «превью недоступно» сразу, не по таймауту; следующая
+     * карточка грузит превью как обычно. Символическая ссылка (флаг дерева) — без места под превью.
+     */
+    @Test fun fifoAndSymlinkNeverRead() {
+        val d = fixture()
+        val fifo = File(d, "pipe.txt")
+        android.system.Os.mkfifo(fifo.path, "600".toInt(8))
+        File(d, "real.txt").writeText("hello\n")
+        android.system.Os.symlink(File(d, "real.txt").path, File(d, "link.txt").path)
+        val a = browse(d)
+        var q = tap(a, "pipe.txt")
+        ins.runOnMainSync {
+            assertEquals(PeekKind.TEXT, q.kind)
+            assertNotNull(q.box)
+        }
+        assertTrue(waitFor(Peek.TIMEOUT_MS - 300) { q.noPreview != null })
+        ins.runOnMainSync {
+            assertFalse("ждали таймаута — read() висел", q.timedOut)
+            assertNull(q.previewText)
+            q.dismiss()
+        }
+        // Пул не занят: несколько FIFO-карточек подряд, затем обычный файл — превью есть.
+        repeat(3) {
+            q = tap(a, "pipe.txt")
+            assertTrue(waitFor { q.noPreview != null })
+            ins.runOnMainSync { q.dismiss() }
+        }
+        q = tap(a, "real.txt")
+        assertTrue(waitFor { q.previewText != null })
+        ins.runOnMainSync {
+            assertEquals("hello\n", q.previewText!!.text.toString())
+            q.dismiss()
+        }
+        q = tap(a, "link.txt")
+        ins.runOnMainSync {
+            assertEquals(PeekKind.NONE, q.kind)
+            assertNull(q.box)
+            q.dismiss()
+        }
+    }
 }

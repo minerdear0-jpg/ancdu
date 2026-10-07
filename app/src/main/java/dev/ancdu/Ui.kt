@@ -240,7 +240,8 @@ fun Context.ownerRow(pkg: String, t: Txt): LinearLayout = hbox(8).apply {
     var name = pkg
     try {
         val ai = pm.getApplicationInfo(pkg, 0)
-        name = ai.loadLabel(pm).toString()
+        // Метка — данные другого приложения: одной строкой, bidi видимыми.
+        name = Bidi.label(ai.loadLabel(pm).toString())
         addView(ImageView(context).apply {
             setImageDrawable(ai.loadIcon(pm))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO

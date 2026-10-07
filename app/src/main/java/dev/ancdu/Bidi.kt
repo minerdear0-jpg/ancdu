@@ -15,6 +15,14 @@ object Bidi {
         return sb.toString()
     }
 
+    /**
+     * Подпись из чужих данных (метка APK, приложения, расширение): без управляющих C0, DEL и
+     * переводов строк (U+0085, U+2028, U+2029) — одна строка; управляющие направления — видимыми.
+     */
+    fun label(s: String): String = visible(s.filterNot {
+        it < ' ' || it == '\u007F' || it == '\u0085' || it == '\u2028' || it == '\u2029'
+    })
+
     /** Без управляющих; без них — та же строка. */
     fun strip(s: String): String = if (s.none(::isControl)) s else s.filterNot(::isControl)
 }
