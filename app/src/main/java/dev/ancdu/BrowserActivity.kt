@@ -49,11 +49,8 @@ class BrowserActivity : LangActivity() {
     private var sizes = arrayOfNulls<String>(0)
     private var pcts = arrayOfNulls<String>(0)
     private var descs = arrayOfNulls<String>(0)
-    /** Метки безопасности строк ([Tag.of]): лениво, [tagDone] — уже посчитана (null — метки нет). */
-    private var tags = arrayOfNulls<TagText>(0)
-    private var tagDone = BooleanArray(0)
-    /** Путь корня дерева [h] (для меток: «<корень>/Download» и т. п.). */
-    private var treeRoot = ""
+    /** Метки безопасности строк текущей папки; пришла метка приложения — строки перерисовываются. */
+    private val rowTags by lazy { RowTags(this, txt) { descs = arrayOfNulls(n); list.invalidate() } }
     private var maxV = 0L
     private var parentV = 0L
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
@@ -319,21 +316,8 @@ class BrowserActivity : LangActivity() {
 
     private fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
 
-    /** Путь ребёнка текущей папки с именем [nm] (строкой: для меток и правил по пути). */
-    private fun childPath(nm: String): String = if (currentPath.endsWith("/")) currentPath + nm else "$currentPath/$nm"
-
-    /** Метка строки [index] (имя [nm], флаги [flags]) — один раз до следующего load(). */
-    private fun tagAt(index: Int, nm: String, flags: Int): TagText? {
-        if (tagDone[index]) return tags[index]
-        tagDone[index] = true
-        val path = childPath(nm)
-        return tagOf(path, flags, DeletePolicy.blockReason(path, false, node == 0, Holder.root, flags, Holder.kind))
-            .also { tags[index] = it }
-    }
-
     /** Метка пути [path] узла с флагами [flags] и запретом [block] дерева [h], уже для показа. */
-    private fun tagOf(path: String, flags: Int, block: Block?): TagText? =
-        Tag.of(path, flags, Owner.packageOf(path), block, treeRoot, packageName)?.let { AppLabels.resolve(this, txt, it) }
+    private fun tagOf(path: String, flags: Int, block: Block?): TagText? = rowTags.of(path, flags, block)
 
     private fun nameAt(index: Int): String =
         names[index] ?: Native.str(Native.name(h, kids[index])).also { names[index] = it }
@@ -352,7 +336,7 @@ class BrowserActivity : LangActivity() {
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
             row.barColor = if (dir) C.AMBER else C.BLUE
             row.nameColor = if (dir) C.TEXT else C.BLUE_HI
-            val tag = tagAt(index, nm, flags)
+            val tag = rowTags.at(index, nm, flags)
             row.tag = tag?.text
             if (tag != null) row.tagColor = tag.color
             when {
@@ -873,15 +857,14 @@ class BrowserActivity : LangActivity() {
         n = maxOf(0, Native.children(h, node, sort, apparent, kids))
         names = arrayOfNulls(n); shown = arrayOfNulls(n); sizes = arrayOfNulls(n)
         pcts = arrayOfNulls(n); descs = arrayOfNulls(n)
-        tags = arrayOfNulls(n); tagDone = BooleanArray(n)
         keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
-        treeRoot = rootPath()
         renderHeader()
+        rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind)
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
         summary.text = "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"

@@ -288,11 +288,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     }
 
     /** Метка приложения [pkg] (одной строкой, bidi видимыми); нет пакета — его имя. */
-    private fun label(pkg: String): String {
-        val pm = act.packageManager
-        return try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
-            catch (e: android.content.pm.PackageManager.NameNotFoundException) { pkg }
-    }
+    private fun label(pkg: String): String = AppLabels.get(act, pkg) ?: pkg
 
     /**
      * Владельцы группы: до трёх значков 20dp и [text] (по умолчанию «данные 5 приложений: A, B, C +2» —

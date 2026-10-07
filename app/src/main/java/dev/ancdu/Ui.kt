@@ -255,18 +255,52 @@ fun Context.ownerRow(pkg: String, t: Txt): LinearLayout = hbox(8).apply {
     contentDescription = t.s(R.string.owner_desc, name)
 }
 
-/** Метки приложений для меток «app:<Метка>»: одной строкой, bidi видимыми; кэш на процесс. Любой поток. */
+/**
+ * Метки приложений (для «app:<Метка>», владельцев в листе удаления): одной строкой, bidi видимыми;
+ * кэш на процесс. Найденная метка живёт до конца процесса; «не установлен» — [LabelPolicy.MISS_TTL_MS]
+ * (приложение могли поставить). [get] — блокирующий (io, открытие листа); с главного потока в
+ * отрисовке — [cached] и [fetch] на своём потоке.
+ */
 object AppLabels {
-    private val cache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private class Entry(val label: String?, val at: Long)
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Entry>()
+    private val pending = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val exec = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "ancdu-labels").apply { isDaemon = true }
+    }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** Метка установленного пакета [pkg] или null (не установлен, другой профиль). */
-    fun get(ctx: Context, pkg: String): String? = cache.getOrPut(pkg) {
-        val pm = ctx.packageManager
-        try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
-        catch (e: PackageManager.NameNotFoundException) { "" }
-    }.ifEmpty { null }
+    private fun now() = android.os.SystemClock.elapsedRealtime()
 
-    /** Метка [tag] для показа ([Tag.resolve]) с меткой приложения, если она есть. */
+    private fun fresh(e: Entry?): Boolean = e != null && !LabelPolicy.stale(e.label != null, now() - e.at)
+
+    /** Метка уже известна (есть или «не установлен», не устарело). Любой поток. */
+    fun known(pkg: String): Boolean = fresh(cache[pkg])
+
+    /** Известная метка или null (не установлен или ещё не искали — см. [known]). Любой поток. */
+    fun cached(pkg: String): String? = cache[pkg]?.takeIf(::fresh)?.label
+
+    /** Метка установленного пакета [pkg] или null (не установлен, другой профиль). Любой поток, блокирует. */
+    fun get(ctx: Context, pkg: String): String? {
+        cache[pkg]?.takeIf(::fresh)?.let { return it.label }
+        val pm = ctx.applicationContext.packageManager
+        val label = try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()).ifEmpty { null } }
+            catch (e: PackageManager.NameNotFoundException) { null }
+        cache[pkg] = Entry(label, now())
+        return label
+    }
+
+    /** Главный поток: искать [pkg] на своём потоке; найдено — [onReady] на главном. Уже ищется — не повторяет. */
+    fun fetch(ctx: Context, pkg: String, onReady: () -> Unit) {
+        if (!pending.add(pkg)) return
+        val app = ctx.applicationContext
+        exec.execute {
+            try { get(app, pkg) } finally { pending.remove(pkg) }
+            main.post(onReady)
+        }
+    }
+
+    /** Метка [tag] для показа ([Tag.resolve]) с меткой приложения, если она есть. Блокирует (см. [get]). */
     fun resolve(ctx: Context, t: Txt, tag: Tag): TagText = tag.resolve(t, tag.pkg?.let { get(ctx, it) })
 }
 

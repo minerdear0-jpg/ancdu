@@ -181,4 +181,11 @@ class TagTest {
         assertEquals(", downloads", p.topTags[1]!!.desc)
         assertNull(p.tag)
     }
+
+    /** Кэш меток приложений: найденная не устаревает, «не установлен» — через минуту. */
+    @Test fun labelMissExpires() {
+        assertEquals(false, LabelPolicy.stale(found = true, ageMs = 10 * LabelPolicy.MISS_TTL_MS))
+        assertEquals(false, LabelPolicy.stale(found = false, ageMs = LabelPolicy.MISS_TTL_MS - 1))
+        assertEquals(true, LabelPolicy.stale(found = false, ageMs = LabelPolicy.MISS_TTL_MS))
+    }
 }

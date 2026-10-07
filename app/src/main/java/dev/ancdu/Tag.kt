@@ -119,3 +119,11 @@ class TagText(val text: String, val color: Int, val desc: String)
 
 /** [label] — метка приложения владельца (у [TagKind.APP]) или null. */
 fun Tag.resolve(t: Txt, label: String?): TagText = TagText(text(label), kind.color, desc(t, label))
+
+/** Чистый Kotlin: когда метка приложения в кэше устарела. */
+object LabelPolicy {
+    /** «Не установлен» перепроверяется через минуту (приложение могли поставить); найденная — не устаревает. */
+    const val MISS_TTL_MS = 60_000L
+
+    fun stale(found: Boolean, ageMs: Long): Boolean = !found && ageMs >= MISS_TTL_MS
+}
