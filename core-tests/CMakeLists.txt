@@ -49,6 +49,9 @@ add_dependencies(test_root ancdu_scan)
 ancdu_test(test_rmtree_deep)
 target_compile_definitions(test_rmtree_deep PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
 add_dependencies(test_rmtree_deep ancdu_scan)
+ancdu_test(test_stale)
+target_compile_definitions(test_stale PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
+add_dependencies(test_stale ancdu_scan)
 
 # cwd каждого теста — пустой каталог песочницы (run_all.sh создаёт свежий mkdtemp на прогон):
 # даже ошибочный относительный путь не дотянется до дерева исходников.

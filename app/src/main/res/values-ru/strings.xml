@@ -144,6 +144,7 @@
     <string name="delete_failed">Не удалось удалить</string>
     <string name="delete_symlink">Путь проходит через символическую ссылку — ничего не удалено.</string>
     <string name="delete_no_root">Не удалось получить root — ничего не удалено.</string>
+    <string name="delete_changed">Изменилось после скана — ничего не удалено. Обновите список и повторите.</string>
     <string name="delete_cancelled_title">Удаление отменено</string>
     <string name="tree_changed">Дерево сменилось, пока был открыт диалог. Ничего не удалено.</string>
 
@@ -270,6 +271,7 @@
     <string name="fail_access">нет доступа</string>
     <string name="fail_busy">занят</string>
     <string name="fail_symlink">символьная ссылка</string>
+    <string name="fail_changed">изменилось после скана</string>
     <string name="fail_partial">удалено частично</string>
     <string name="fail_blocked">удаление запрещено</string>
     <string name="fail_error">ошибка</string>

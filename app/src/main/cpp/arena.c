@@ -37,6 +37,7 @@ static uint64_t layout(ancdu_hdr *h, uint64_t n, uint64_t names) {
   PLACE(off_child_start, 4);
   PLACE(off_child_count, 4);
   PLACE(off_order, 4);
+  PLACE(off_ino, 8);
 #undef PLACE
   if (h) h->off_names = o;
   o = ALIGN64(o + names);
@@ -90,6 +91,7 @@ int arena_attach(arena *a, void *base, size_t size) {
   a->child_start = (uint32_t *)(b + L.off_child_start);
   a->child_count = (uint32_t *)(b + L.off_child_count);
   a->order = (uint32_t *)(b + L.off_order);
+  a->ino = (uint64_t *)(b + L.off_ino);
   a->names = b + L.off_names;
   return 0;
 }
@@ -151,6 +153,7 @@ uint32_t arena_new_node(arena *a, name_chunk *ck, uint32_t parent,
   a->flags[idx] = flags;
   a->child_start[idx] = 0;
   a->child_count[idx] = 0;
+  a->ino[idx] = 0;
   memcpy(a->names + ck->pos, name, len);
   a->names[ck->pos + len] = 0;
   ck->pos += need;
@@ -302,6 +305,7 @@ int arena_write(const arena *a, int fd) {
   PUT(off_child_start, a->child_start, 4);
   PUT(off_child_count, a->child_count, 4);
   PUT(off_order, a->order, 4);
+  PUT(off_ino, a->ino, 8);
 #undef PUT
   if ((r = put(fd, &pos, h->off_names, a->names, (size_t)nu))) return r;
   return put(fd, &pos, total, "", 0);

@@ -44,7 +44,9 @@ object Native {
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int
     @JvmStatic external fun source(h: Long): Int
-    /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; иное <0 — ошибка. */
+    /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; -ESTALE (-116) —
+     *  узел подменён после скана ([NativeErr.changedSinceScan]), ничего не удалено, узел — F_ERR;
+     *  иное <0 — ошибка. */
     @JvmStatic external fun delete(h: Long, node: Int, rootHelper: String?): Int
     /** Как delete через root ([rootHelper] под su), но узел /storage/emulated/<n>/X удаляется
      *  как /data/media/<n>/X — в обход FUSE. Путь не сопоставляется — -EINVAL, ничего не запущено. */

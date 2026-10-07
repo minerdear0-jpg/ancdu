@@ -237,6 +237,8 @@ static void process_dir(scan_ctx *c, const work *w, char *buf, name_chunk *ck) {
         a->flags[idx] |= F_OTHERFS;
         continue;
       }
+      /* Идентичность для удаления: только на ФС корня (dev = root_dev). */
+      if (st.st_dev == c->root_dev) a->ino[idx] = (uint64_t)st.st_ino;
       set_sizes(c, idx, &st, slot);
       if (fl & F_DIR) {
         char *p = join(w->path, nm, nl);
@@ -312,6 +314,7 @@ int scan_run(arena *a, const scan_opts *o) {
   c.a = a;
   c.o = o;
   c.root_dev = st.st_dev;
+  h->root_dev = (uint64_t)st.st_dev;
   pthread_mutex_init(&c.mu, NULL);
   pthread_cond_init(&c.cv, NULL);
   for (int i = 0; i < HL_SHARDS; i++) pthread_mutex_init(&c.hl[i].mu, NULL);
@@ -322,6 +325,7 @@ int scan_run(arena *a, const scan_opts *o) {
     result = ST_FULL;
     goto done;
   }
+  a->ino[0] = (uint64_t)st.st_ino;
   set_sizes(&c, 0, &st, 0);
 
   /* Корень читает один поток: его дети получают индексы 1..k подряд. */

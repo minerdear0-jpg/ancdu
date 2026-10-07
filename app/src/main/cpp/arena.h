@@ -3,8 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ANCDU_MAGIC "ANCDU\0\0\2"
-#define ANCDU_VERSION 2u
+/* v3: ino[] узлов и root_dev (сверка «изменилось после скана»). Кэш v2 не открывается
+ * (-EINVAL) — приложение забывает его и сканирует заново. */
+#define ANCDU_MAGIC "ANCDU\0\0\3"
+#define ANCDU_VERSION 3u
 #define ANCDU_HDR_SIZE 4096u
 #define ANCDU_NONE 0xFFFFFFFFu
 #define ANCDU_LIVE_SLOTS 256u
@@ -41,9 +43,10 @@ typedef struct {
   char root_path[1024];
   char cur_path[512];
   _Atomic uint64_t live_disk[ANCDU_LIVE_SLOTS];
+  uint64_t root_dev; /* st_dev корня скана; 0 — неизвестно (индекс) */
   uint64_t off_parent, off_disk, off_apparent, off_items, off_name_off,
       off_name_len, off_flags, off_child_start, off_child_count, off_order,
-      off_names, total_size;
+      off_ino, off_names, total_size;
 } ancdu_hdr;
 
 _Static_assert(sizeof(ancdu_hdr) <= ANCDU_HDR_SIZE, "header must fit 4 KiB");
@@ -60,6 +63,9 @@ typedef struct {
   uint32_t *child_start;
   uint32_t *child_count;
   uint32_t *order;
+  /* st_ino узла на устройстве root_dev; 0 — неизвестно (индекс, другая ФС, ошибка stat):
+   * тогда удаление не сверяет объект, как до v3. */
+  uint64_t *ino;
   char *names;
   void *base;
   size_t size;

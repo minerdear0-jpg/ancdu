@@ -103,6 +103,8 @@ enum class Fail(val res: Int) {
     ACCESS(R.string.fail_access),
     BUSY(R.string.fail_busy),
     SYMLINK(R.string.fail_symlink),
+    /** Подменён после скана (-ESTALE): ничего не удалено. */
+    CHANGED(R.string.fail_changed),
     PARTIAL(R.string.fail_partial),
     BLOCKED(R.string.fail_blocked),
     ERROR(R.string.fail_error),
@@ -141,6 +143,7 @@ object GroupResult {
         deleted(x) -> null
         x.block != null -> Fail.BLOCKED
         !x.attempted -> Fail.NOT_STARTED
+        NativeErr.changedSinceScan(x.r) -> Fail.CHANGED
         x.dir && x.done > 0 -> Fail.PARTIAL
         // «Стоп» до ядра: ничего не тронуто.
         x.r == -DeleteProgress.EINTR -> Fail.NOT_STARTED

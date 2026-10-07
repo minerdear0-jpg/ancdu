@@ -60,9 +60,11 @@ object DeleteProgress {
     /**
      * Итог удаления [r] требует обновить дерево сканом: ядро записало в дерево не всё (частично,
      * остановлено после начала, ошибка). 0 — дерево уже точное (csr_remove). Ничего не удалено —
-     * обновлять нечего: su отказал через root (-EPERM), симлинк в пути (-ELOOP), «Стоп» до начала.
+     * обновлять нечего: su отказал через root (-EPERM), симлинк в пути (-ELOOP), «Стоп» до начала,
+     * «изменилось после скана» (-ESTALE: узел уже помечен ⚠, пользователь видит сообщение).
      * Файл ([dir] false) — не каталог: сканировать нечего, он удалён или нет целиком.
      */
     fun refreshAfter(r: Int, viaRoot: Boolean, done: Long, dir: Boolean): Boolean =
-        dir && r != 0 && r != -ELOOP && !DeletePolicy.nothingDeleted(r, viaRoot) && !isCancelled(r, done)
+        dir && r != 0 && r != -ELOOP && !NativeErr.changedSinceScan(r) && !DeletePolicy.nothingDeleted(r, viaRoot) &&
+            !isCancelled(r, done)
 }

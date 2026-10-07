@@ -26,6 +26,18 @@
  * создан — -errno pthread_create, ничего не тронуто. */
 int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop);
 
+/* Объект, который видел скан: st_dev/st_ino. ino == 0 — неизвестен, сверки нет. */
+typedef struct {
+  uint64_t dev, ino;
+} rm_expect;
+
+/* Как rm_tree_ex, но вершина path (fstatat без перехода по ссылке) должна быть объектом want,
+ * иначе -ESTALE — «изменилось после скана», ничего не тронуто (want NULL или ino 0 — без
+ * сверки). Сверка — в той же fstatat, по которой rm_tree_ex решает, что удалять; каталог
+ * дальше открывается с проверкой st_dev/st_ino против неё же. Пути нет — -ENOENT, как всегда. */
+int rm_tree_expect(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop,
+                   const rm_expect *want);
+
 /* Рабочих для rm_tree_ex по умолчанию: 1 вне FUSE (на tmpfs/f2fs unlink в одном каталоге
  * упирается в блокировку inode каталога — потоки только мешают), на FUSE — min(6, ядра)
  * (задержка запроса к демону FUSE). Подбирается по замерам на устройстве. */

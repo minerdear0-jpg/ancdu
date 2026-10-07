@@ -39,6 +39,7 @@ typedef struct {
 
 typedef struct {
   dev_t dev; /* устройство вершины: всё на другом — -EXDEV, частичное удаление */
+  const rm_expect *want; /* ожидаемый объект вершины (NULL или ino 0 — без сверки) */
   _Atomic uint64_t *done;
   _Atomic int *stop;
   _Atomic int err;  /* первая ошибка (-errno) */
@@ -142,6 +143,9 @@ static void rm_at(rm_ctx *c, rdir *parent, int dfd, const char *name, int depth)
   int e = 0;
   if (fstatat(dfd, name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
     e = -errno;
+  } else if (!parent && c->want && c->want->ino &&
+             ((uint64_t)st.st_dev != c->want->dev || (uint64_t)st.st_ino != c->want->ino)) {
+    e = -ESTALE; /* вершина — не тот объект, что видел скан: ничего не трогаем */
   } else if (st.st_dev != c->dev) {
     e = -EXDEV;
   } else if (!S_ISDIR(st.st_mode)) {
@@ -221,7 +225,7 @@ int rm_tree_target(const char *path, char *buf, size_t cap) {
 }
 
 static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
-                       _Atomic int *stop) {
+                       _Atomic int *stop, const rm_expect *want) {
   /* Отказ до любых lstat/open/unlink. */
   char buf[PATH_MAX];
   int v = rm_tree_target(path, buf, sizeof buf);
@@ -245,6 +249,7 @@ static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
   rm_ctx c;
   memset(&c, 0, sizeof c);
   c.dev = st.st_dev;
+  c.want = want;
   c.done = done;
   c.stop = stop;
   if (stopped(&c)) return -EINTR;
@@ -279,12 +284,13 @@ typedef struct {
   int threads;
   _Atomic uint64_t *done;
   _Atomic int *stop;
+  const rm_expect *want;
   int result;
 } rm_call;
 
 static void *rm_call_main(void *p) {
   rm_call *k = p;
-  k->result = rm_tree_run(k->path, k->threads, k->done, k->stop);
+  k->result = rm_tree_run(k->path, k->threads, k->done, k->stop, k->want);
   return NULL;
 }
 
@@ -303,10 +309,15 @@ static int on_big_stack(void *(*fn)(void *), void *arg) {
   return 0;
 }
 
-int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop) {
-  rm_call k = {path, threads, done, stop, 0};
+int rm_tree_expect(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop,
+                   const rm_expect *want) {
+  rm_call k = {path, threads, done, stop, want, 0};
   int e = on_big_stack(rm_call_main, &k);
   return e ? e : k.result;
+}
+
+int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop) {
+  return rm_tree_expect(path, threads, done, stop, NULL);
 }
 
 int rm_tree(const char *path) { return rm_tree_ex(path, 1, NULL, NULL); }

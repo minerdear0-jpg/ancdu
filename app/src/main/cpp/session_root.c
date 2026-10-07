@@ -327,9 +327,12 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     free(path);
     return -EINTR;
   }
+  /* Объект со скана: вершина подменена после него — -ESTALE, ничего не удалено. Для media
+   * сверки нет: /data/media/<n>/X — другая ФС (не FUSE), её st_dev не совпадёт с узлом. */
+  rm_expect want = {a->h->root_dev, media ? 0 : a->ino[node]};
   int gone;
   if (!prefix) {
-    r = rm_tree_ex(path, rm_default_threads(path), &s->del_done, &s->del_stop);
+    r = rm_tree_expect(path, rm_default_threads(path), &s->del_done, &s->del_stop, &want);
     struct stat st;
     gone = r == 0 || (lstat(path, &st) != 0 && errno == ENOENT);
   } else {
@@ -344,7 +347,11 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
       return -ENAMETOOLONG;
     }
     /* media: /data/media — не FUSE, один поток (явно, не полагаясь на statfs под su). */
-    snprintf(cmd, qcap, "%s --rm %s --watch-stdin%s", qh, qp, media ? " --threads 1" : "");
+    char ex[64] = "";
+    if (want.ino)
+      snprintf(ex, sizeof ex, " --expect %llu:%llu", (unsigned long long)want.dev,
+               (unsigned long long)want.ino);
+    snprintf(cmd, qcap, "%s --rm %s --watch-stdin%s%s", qh, qp, media ? " --threads 1" : "", ex);
     char *pfx[4] = {0};
     for (int i = 0; i < 3 && prefix[i]; i++) pfx[i] = (char *)prefix[i];
     int in_w = -1, err_r = -1;
@@ -372,6 +379,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
      * -EINTR — выход 6: остановлен через stdin (sess_delete_stop), удалено частично.
      * -ELOOP — выход 7: родитель пути проходит через симлинк, ничего не удалено.
      * -EPERM — и выход 8: родителя пути не проверить (EACCES, ENAMETOOLONG…), ничего не удалено.
+     * -ESTALE — выход 9: вершина не тот объект, что видел скан (--expect), ничего не удалено.
      * -EIO — могло удалиться частично: выход 5 (rm_tree не всё), убит сигналом (≥ 128)
      * или waitpid не удался (code < 0) — исход неизвестен. */
     free(cmd);
@@ -381,6 +389,7 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     else if (code == 6) r = -EINTR;
     else if (code == 7) r = -ELOOP;
     else if (code == 8) r = -EPERM;
+    else if (code == 9) r = -ESTALE;
     else if (code < 0 || code == 5 || code >= 128) r = -EIO;
     else r = -EPERM;
   }

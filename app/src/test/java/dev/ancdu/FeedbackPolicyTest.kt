@@ -154,6 +154,7 @@ class FeedbackPolicyTest {
         assertNull(FeedbackPolicy.afterDelete(-DeleteProgress.EINTR))
         assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-1))     // su отказал, ничего не удалено
         assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-DeleteProgress.ELOOP))
+        assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-NativeErr.ESTALE)) // изменилось после скана
         assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-5))     // -EIO, частично
     }
 

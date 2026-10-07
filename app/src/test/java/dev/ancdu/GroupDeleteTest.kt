@@ -51,12 +51,27 @@ class GroupResultTest {
         assertEquals(Fail.BUSY, GroupResult.fail(bad("a", -16)))       // EBUSY
         assertEquals(Fail.BUSY, GroupResult.fail(bad("a", -18)))       // EXDEV: rm_tree так отдаёт EBUSY точки монтирования
         assertEquals(Fail.SYMLINK, GroupResult.fail(bad("a", -40)))    // ELOOP
+        assertEquals(Fail.CHANGED, GroupResult.fail(bad("a", -116)))   // ESTALE: подменён после скана
+        assertEquals(Fail.CHANGED, GroupResult.fail(bad("d", -116, dir = true)))
         assertEquals(Fail.ERROR, GroupResult.fail(bad("a", -5)))       // EIO у файла
         assertEquals(Fail.PARTIAL, GroupResult.fail(bad("d", -5, dir = true)))
         // каталог, из которого что-то удалено, — «удалено частично», какой бы ни была ошибка
         assertEquals(Fail.PARTIAL, GroupResult.fail(bad("d", -13, dir = true, done = 3)))
         assertEquals(Fail.ACCESS, GroupResult.fail(bad("d", -13, dir = true, done = 0)))
         assertEquals(Fail.BLOCKED, GroupResult.fail(ItemResult("s", true, mib, -1, 0, attempted = false, block = Block.SYSTEM)))
+    }
+
+    /** «Изменилось после скана»: причина в сообщении, дерево не обновляется (ничего не удалено). */
+    @Test fun changedSinceScan() {
+        assertTrue(NativeErr.changedSinceScan(-NativeErr.ESTALE))
+        assertFalse(NativeErr.changedSinceScan(-DeleteProgress.ELOOP))
+        val res = listOf(ok("a"), bad("d", -NativeErr.ESTALE, dir = true))
+        val o = GroupResult.outcome(res) as GroupResult.Outcome.Partial
+        assertEquals("освобождено 1,0${Fmt.NBSP}МиБ\n\nНе удалено:\nd/ — изменилось после скана", GroupResult.alert(RU, o).second)
+        assertTrue(GroupResult.alert(EN, o).second.endsWith("d/ — changed since scan"))
+        assertFalse(GroupResult.needsRefresh(res, viaRoot = false))
+        assertFalse(GroupResult.needsRefresh(res, viaRoot = true))
+        assertEquals(-NativeErr.ESTALE, GroupResult.code(res, viaRoot = false))
     }
 
     @Test fun allDeleted() {

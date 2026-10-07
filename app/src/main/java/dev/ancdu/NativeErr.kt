@@ -10,6 +10,12 @@ data class ScanFail(val code: Int, val raw: String = "")
 
 /** Тексты ядра (C, английские) → ресурсы по виду сообщения. Чистый Kotlin, кроме [log]. */
 object NativeErr {
+    /** Код удаления: вершина не тот объект, что видел скан (rm_tree_expect, хелпер — выход 9). */
+    const val ESTALE = 116
+
+    /** Удаление отказано «изменилось после скана»: ничего не удалено, узел в дереве — ⚠ (F_ERR). */
+    fun changedSinceScan(r: Int): Boolean = r == -ESTALE
+
     private val CANNOT_OPEN = Regex("cannot open (.+)")
     private val HELPER_EXIT = Regex("helper failed \\(exit (-?[0-9]+)\\)")
 

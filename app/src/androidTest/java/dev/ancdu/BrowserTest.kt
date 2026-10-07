@@ -830,6 +830,55 @@ class BrowserTest {
     }
 
     /**
+     * Каталог подменён после скана (увезён, на его месте новый с другим содержимым): ядро сверяет
+     * st_dev/st_ino узла и отказывает (-ESTALE) — сообщение «изменилось после скана», новый каталог
+     * и увезённый целы, узел ⚠, дерево само не обновляется. Всё — в своём mkdtemp под cacheDir.
+     */
+    @Test fun replacedDirIsNotDeleted() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("chg")
+        val victim = File(dir, "victim").apply { mkdirs() }
+        File(victim, "orig.bin").writeBytes(ByteArray(50_000))
+        File(dir, "keep.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        // Песочница: только абсолютные пути строго внутри dir — проверено до подмены и удаления.
+        val aside = File(dir, "victim.old")
+        for (f in listOf(victim, aside)) assertTrue(f.path, dir.isAbsolute && f.path.startsWith(dir.path + "/"))
+        assertTrue(victim.renameTo(aside))
+        val fresh = File(dir, "victim").apply { assertTrue(mkdir()) }
+        File(fresh, "new.bin").writeBytes(ByteArray(10))
+        Perms.filesOverride = true
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            var h0 = 0L
+            ins.runOnMainSync { h0 = Holder.h }
+            val k = index(act, "victim/")
+            assertTrue(k >= 0)
+            assertEquals(-NativeErr.ESTALE, act.deleteBlocking(k))
+            assertTrue(waitFor { !act.busy && act.lastAlert != null })
+            ins.runOnMainSync {
+                assertEquals(act.getString(R.string.delete_failed) to act.getString(R.string.delete_changed), act.lastAlert)
+                assertEquals(h0, Holder.h)                                  // без автообновления
+                val c = IntArray(Native.childCount(Holder.h, act.node))
+                val n = Native.children(Holder.h, act.node, SORT_SIZE, false, c)
+                val v = (0 until n).first { Native.str(Native.name(Holder.h, c[it])) == "victim" }
+                val inf = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(c[v]), 1, it) }
+                assertTrue(inf[3].toInt() and F_ERR != 0)                  // узел ⚠: дерево устарело
+            }
+            assertTrue(File(fresh, "new.bin").exists())
+            assertTrue(File(aside, "orig.bin").exists())
+            assertFalse(BgScan.active)
+        } finally {
+            Perms.filesOverride = null
+            ins.runOnMainSync { act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * «Стоп» посреди удаления — без гонки: шаг перед ядром (шов bulk) сам удаляет K файлов,
      * сообщает add(K) и ждёт, пока тест нажмёт «Стоп»; ядро уже не вызывается, итог -EINTR при
      * done > 0. Никакого диалога; дерево обновляется само до настоящего остатка, путь сохраняется.

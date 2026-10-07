@@ -77,6 +77,9 @@ class DeleteProgressTest {
         assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = true, done = 0, dir = true))
         assertFalse(DeleteProgress.refreshAfter(eloop, viaRoot = false, done = 0, dir = true))
         assertFalse(DeleteProgress.refreshAfter(eintr, viaRoot = false, done = 0, dir = true))
+        // «изменилось после скана»: ничего не удалено, узел уже помечен ⚠
+        assertFalse(DeleteProgress.refreshAfter(-NativeErr.ESTALE, viaRoot = false, done = 0, dir = true))
+        assertFalse(DeleteProgress.refreshAfter(-NativeErr.ESTALE, viaRoot = true, done = 0, dir = true))
         // файл: удалён или нет — сканировать нечего
         for (r in listOf(eio, eacces, eperm, eintr))
             assertFalse("$r file", DeleteProgress.refreshAfter(r, viaRoot = false, done = 1, dir = false))

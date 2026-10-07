@@ -22,7 +22,7 @@ static int usage(void) {
         " [--watch-stdin]\n"
         "       libancdu_scan.so --memfd PATH [--root DIR] [--cross-fs] [--threads N]"
         " [--watch-stdin]\n"
-        "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin]\n",
+        "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin] [--expect DEV:INO]\n",
         stderr);
   return 2;
 }
@@ -98,8 +98,10 @@ static void *watch_stdin(void *p) {
  * Родитель пути не должен проходить через симлинк (rm_parent_real): иначе отказ до
  * удаления, выход 7. Родителя нет (ENOENT) и самого пути нет — уже удалён, выход 0.
  * Иная ошибка проверки (EACCES, ENAMETOOLONG…) — выход 8. В обоих отказах ничего не удалено.
+ * --expect DEV:INO: вершина (lstat) должна быть этим объектом со скана, иначе выход 9 —
+ * «изменилось после скана», ничего не удалено.
  * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — симлинк в родителе,
- * 8 — родителя не проверить. */
+ * 8 — родителя не проверить, 9 — вершина подменена после скана. */
 typedef struct {
   _Atomic uint64_t done;
   _Atomic int stop;
@@ -128,7 +130,7 @@ static void *rm_progress(void *p) {
   return NULL;
 }
 
-static int run_rm(const char *path, int threads, int watch) {
+static int run_rm(const char *path, int threads, int watch, const rm_expect *want) {
   int pr = rm_parent_real(path);
   if (pr) {
     struct stat st;
@@ -147,14 +149,15 @@ static int run_rm(const char *path, int threads, int watch) {
   }
   pthread_t pth;
   int have_progress = pthread_create(&pth, NULL, rm_progress, NULL) == 0;
-  int r = rm_tree_ex(path, threads > 0 ? threads : rm_default_threads(path), &rms.done,
-                     &rms.stop);
+  int r = rm_tree_expect(path, threads > 0 ? threads : rm_default_threads(path), &rms.done,
+                         &rms.stop, want);
   atomic_store(&rms.fin, 1);
   if (have_progress) pthread_join(pth, NULL);
   fprintf(stderr, "progress %llu\n", (unsigned long long)atomic_load(&rms.done));
   struct stat st;
   if (r == 0 || (lstat(path, &st) != 0 && errno == ENOENT)) return 0;
   fprintf(stderr, "rm: %s\n", strerror(-r));
+  if (r == -ESTALE) return 9;
   return r == -EINTR ? 6 : 5;
 }
 
@@ -162,6 +165,7 @@ int main(int argc, char **argv) {
   const char *root = NULL, *memfd = NULL;
   int mode = -1, one_fs = 1, threads = 0;
   int watch = 0;
+  rm_expect want = {0, 0};
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--summary")) mode = MODE_SUMMARY;
     else if (!strcmp(argv[i], "--dump")) mode = MODE_DUMP;
@@ -171,10 +175,17 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--threads") && i + 1 < argc) threads = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--rm") && i + 1 < argc) { mode = MODE_RM; root = argv[++i]; }
     else if (!strcmp(argv[i], "--watch-stdin")) watch = 1;
+    else if (!strcmp(argv[i], "--expect") && i + 1 < argc) {
+      unsigned long long d, n;
+      char tail;
+      if (sscanf(argv[++i], "%llu:%llu%c", &d, &n, &tail) != 2 || !n) return usage();
+      want.dev = d;
+      want.ino = n;
+    }
     else return usage();
   }
   if (mode < 0 || (mode != MODE_MEMFD && !root)) return usage();
-  if (mode == MODE_RM) return run_rm(root, threads, watch);
+  if (mode == MODE_RM) return run_rm(root, threads, watch, &want);
 
   arena a;
   if (mode == MODE_MEMFD) {

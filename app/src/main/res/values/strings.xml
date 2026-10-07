@@ -153,6 +153,7 @@
     <string name="delete_failed">Couldn\'t delete</string>
     <string name="delete_symlink">The path goes through a symbolic link — nothing was deleted.</string>
     <string name="delete_no_root">Couldn\'t get root — nothing was deleted.</string>
+    <string name="delete_changed">It changed since the scan — nothing was deleted. Refresh the list and try again.</string>
     <string name="delete_cancelled_title">Delete cancelled</string>
     <string name="tree_changed">The tree changed while the dialog was open. Nothing was deleted.</string>
 
@@ -279,6 +280,7 @@
     <string name="fail_access">no access</string>
     <string name="fail_busy">busy</string>
     <string name="fail_symlink">symbolic link</string>
+    <string name="fail_changed">changed since scan</string>
     <string name="fail_partial">partly deleted</string>
     <string name="fail_blocked">delete not allowed</string>
     <string name="fail_error">error</string>
