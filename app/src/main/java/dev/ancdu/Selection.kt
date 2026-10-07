@@ -2,11 +2,15 @@ package dev.ancdu
 
 /**
  * Имя ребёнка — байты (не строка: разные невалидные UTF-8 имена декодируются в одну строку с
- * U+FFFD). Равенство и хеш — по содержимому.
+ * U+FFFD). Равенство и хеш — по содержимому, массив копируется.
  */
-class NameKey(val bytes: ByteArray) {
-    override fun equals(other: Any?): Boolean = other is NameKey && bytes.contentEquals(other.bytes)
-    override fun hashCode(): Int = bytes.contentHashCode()
+class NameKey(bytes: ByteArray) {
+    /** Своя копия: чужой массив, изменённый после, ключ не портит. */
+    private val b = bytes.copyOf()
+    /** Копия байтов имени. */
+    val bytes: ByteArray get() = b.copyOf()
+    override fun equals(other: Any?): Boolean = other is NameKey && b.contentEquals(other.b)
+    override fun hashCode(): Int = b.contentHashCode()
 }
 
 /**
