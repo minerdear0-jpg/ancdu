@@ -7,6 +7,7 @@ import android.media.SoundPool
 import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -101,6 +102,8 @@ object Feedback {
         }
     }
 
+    // HAPTIC_FEEDBACK_ENABLED устарел с API 33, но это и есть системный «Виброотклик» из ТЗ.
+    @Suppress("DEPRECATION")
     private fun env(a: Context): FxEnv {
         val cr = a.contentResolver
         return FxEnv(mode,
@@ -129,6 +132,8 @@ object Feedback {
 
     private fun haptic(v: View?, h: Haptic) {
         // «Вкл» — вибрация и при выключенном системном виброотклике (SYSTEM его уже учёл).
+        // Ограничение платформы: с API 33 FLAG_IGNORE_GLOBAL_SETTING для обычных приложений
+        // игнорируется, и отклик view там всё равно следует системному переключателю.
         @Suppress("DEPRECATION")
         val flags = if (mode == FxMode.ON) HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING else 0
         fun perform(c: Int) { v?.performHapticFeedback(c, flags) }
@@ -137,26 +142,34 @@ object Feedback {
             Haptic.CONTEXT_CLICK -> perform(HapticFeedbackConstants.CONTEXT_CLICK)
             Haptic.CONFIRM -> perform(HapticFeedbackConstants.CONFIRM)
             Haptic.REJECT -> perform(HapticFeedbackConstants.REJECT)
-            Haptic.QUICK_RISE -> if (!compose(VibrationEffect.Composition.PRIMITIVE_QUICK_RISE to 0.6f))
+            // QUICK_RISE — API 30 (minSdk).
+            Haptic.QUICK_RISE -> if (!compose(30, VibrationEffect.Composition.PRIMITIVE_QUICK_RISE to 0.6f))
                 perform(HapticFeedbackConstants.CONTEXT_CLICK)
-            Haptic.CLICK -> vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
-            Haptic.CLICK_THUD -> if (!compose(VibrationEffect.Composition.PRIMITIVE_CLICK to 1f,
+            Haptic.CLICK -> vibrator?.let { vibrate(it, VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)) }
+            // THUD — только API 31+.
+            Haptic.CLICK_THUD -> if (!compose(31, VibrationEffect.Composition.PRIMITIVE_CLICK to 1f,
                     VibrationEffect.Composition.PRIMITIVE_THUD to 1f, delayMs = 70))
                 perform(HapticFeedbackConstants.CONFIRM)
         }
     }
 
+    /** API 33+: с USAGE_TOUCH — сила вибрации по системной «вибрации при касании». */
+    private fun vibrate(vib: Vibrator, e: VibrationEffect) {
+        if (Build.VERSION.SDK_INT >= 33) vib.vibrate(e, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH))
+        else vib.vibrate(e)
+    }
+
     /**
-     * Композиция примитивов (API 31+, если вибратор их все умеет): первый сразу, следующие —
-     * через [delayMs]. false — не сыграна, нужен запасной отклик.
+     * Композиция примитивов (с API [minApi] — самого нового из них, если вибратор их все умеет):
+     * первый сразу, следующие — через [delayMs]. false — не сыграна, нужен запасной отклик.
      */
-    private fun compose(vararg prims: Pair<Int, Float>, delayMs: Int = 0): Boolean {
+    private fun compose(minApi: Int, vararg prims: Pair<Int, Float>, delayMs: Int = 0): Boolean {
         val vib = vibrator ?: return false
-        if (Build.VERSION.SDK_INT < 31 || !vib.hasVibrator()) return false
+        if (Build.VERSION.SDK_INT < minApi || !vib.hasVibrator()) return false
         if (!vib.areAllPrimitivesSupported(*prims.map { it.first }.toIntArray())) return false
         val c = VibrationEffect.startComposition()
         for ((i, pr) in prims.withIndex()) c.addPrimitive(pr.first, pr.second, if (i == 0) 0 else delayMs)
-        vib.vibrate(c.compose())
+        vibrate(vib, c.compose())
         return true
     }
 }
