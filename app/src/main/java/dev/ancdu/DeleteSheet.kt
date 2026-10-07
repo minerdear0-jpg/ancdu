@@ -80,7 +80,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
         private set
-    /** Строка «Удаление от root · без корзины» (null — удаление не от root или запрещено). */
+    /** Предупреждение «⚠ Удаление от root · без корзины…» (null — удаление не от root или запрещено). */
     var rootText: TextView? = null
         private set
     /** Для тестов: показанные числа обратного отсчёта по порядку. */
@@ -157,10 +157,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             isFillViewport = false
             addView(body())
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
-        // Предупреждение — сразу над кнопками; от root — строка об этом прямо над ним.
-        if (p.block == null && p.viaRoot) addView(act.label(t.s(R.string.root_no_trash), 14f, C.DANGER_TEXT, bold = true)
-            .also { rootText = it })
-        if (p.block == null) addView(act.label("⚠ " + t.s(R.string.no_trash), 14f, C.DANGER_TEXT, bold = true))
+        // Предупреждение — сразу над кнопками; от root — одной строкой с ним.
+        if (p.block == null) addView(act.label("⚠ " + t.s(if (p.viaRoot) R.string.root_no_trash else R.string.no_trash),
+            14f, C.DANGER_TEXT, bold = true).also { if (p.viaRoot) rootText = it })
         addView(buttons())
     }
 

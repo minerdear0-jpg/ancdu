@@ -226,7 +226,7 @@ class DeleteSheetTest {
 
     /**
      * Данные приложения как root: кнопка выключена 2,5 с с отсчётом 3-2-1, затем включается;
-     * над «без корзины» — строка «Удаление от root».
+     * предупреждение — одной строкой «⚠ Удаление от root · без корзины. Отменить нельзя.».
      */
     @Test fun seriousDeleteCountsDown() {
         val dir = fixture("ds4")
@@ -242,13 +242,13 @@ class DeleteSheetTest {
             assertFalse(b.isEnabled)
             assertTrue(b.text.toString(), b.text.startsWith(a.prefixOf(R.string.delete_in)))
             b.performClick()                      // нажатие до конца паузы ничего не делает
+            // Одна строка-предупреждение (root вместе с «без корзины»), без повтора обычной.
             val root = s.rootText!!
-            assertEquals(a.getString(R.string.root_no_trash), root.text.toString())
+            assertEquals("⚠ " + a.getString(R.string.root_no_trash), root.text.toString())
             assertEquals(View.VISIBLE, root.visibility)
-            // Прямо над предупреждением «без корзины».
             val box = root.parent as android.view.ViewGroup
-            val warn = box.getChildAt(box.indexOfChild(root) + 1) as android.widget.TextView
-            assertEquals("⚠ " + a.getString(R.string.no_trash), warn.text.toString())
+            val texts = (0 until box.childCount).mapNotNull { (box.getChildAt(it) as? android.widget.TextView)?.text?.toString() }
+            assertFalse(texts.toString(), texts.contains("⚠ " + a.getString(R.string.no_trash)))
         }
         assertFalse(a.busy)
         assertTrue(waitFor(6_000) { s.deleteButton!!.isEnabled })

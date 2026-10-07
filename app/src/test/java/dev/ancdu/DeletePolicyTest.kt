@@ -225,4 +225,12 @@ class DeleteTierTest {
         assertEquals(listOf(2L, 1L), DeletePolicy.countdown(1500))
         assertEquals(emptyList<Long>(), DeletePolicy.countdown(0))
     }
+
+    /** Предупреждение root — одна строка: «от root · без корзины» и та же вторая фраза, что у обычного. */
+    @Test fun rootWarningText() {
+        assertEquals("Deleting as root · no trash. This can't be undone.", XmlTxt.EN.s(R.string.root_no_trash))
+        assertEquals("Удаление от root · без корзины. Отменить нельзя.", XmlTxt.RU.s(R.string.root_no_trash))
+        for (t in listOf(XmlTxt.EN, XmlTxt.RU))
+            assertTrue(t.s(R.string.root_no_trash).endsWith(t.s(R.string.no_trash).substringAfter(". ")))
+    }
 }
