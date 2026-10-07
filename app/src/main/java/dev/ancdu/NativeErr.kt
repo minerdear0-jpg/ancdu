@@ -13,6 +13,11 @@ object NativeErr {
     /** Код удаления: вершина не тот объект, что видел скан (rm_tree_expect, хелпер — выход 9). */
     const val ESTALE = 116
 
+    /** openCache: кэш другой версии формата (прошлой версии приложения) — не повреждён, устарел. */
+    const val ENOEXEC = 8
+
+    fun cacheOutdated(err: Int): Boolean = err == -ENOEXEC
+
     /** Удаление отказано «изменилось после скана»: ничего не удалено, узел в дереве — ⚠ (F_ERR). */
     fun changedSinceScan(r: Int): Boolean = r == -ESTALE
 

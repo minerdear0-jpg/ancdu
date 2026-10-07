@@ -215,6 +215,13 @@ class MainActivity : LangActivity() {
                     if (h != 0L) Holder.io.execute { Native.free(h) }
                     return@runOnUiThread
                 }
+                if (h == 0L && NativeErr.cacheOutdated(err[0])) {
+                    // Кэш прошлой версии формата: молча забыт, вместо него — тот же скан заново.
+                    renderLast()
+                    storage.render()
+                    startActivity(Intent(this, ScanActivity::class.java).putExtra(EXTRA_ROOT, root).putExtra(EXTRA_SU, su))
+                    return@runOnUiThread
+                }
                 if (h == 0L) {
                     showAlert(tx.s(R.string.cache_corrupt_title), tx.s(R.string.cache_corrupt_msg))
                     renderLast()

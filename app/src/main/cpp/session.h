@@ -13,6 +13,7 @@ session *sess_root_start(const char *const *prefix, const char *helper, const ch
 session *sess_index_begin(const char *root, uint64_t cap_nodes, int *err);
 int sess_index_add(session *s, const char *rel_dir, const char *name, uint64_t size);
 int sess_index_finish(session *s);
+/* *err: -ENOEXEC — кэш другой версии формата (забыть и сканировать заново), -EINVAL — негоден. */
 session *sess_open_cache(const char *path, int *err);
 int sess_save_cache(session *s, const char *path);
 

@@ -244,7 +244,13 @@ static void old_cache(const char *cache) {
   close(fd);
   int err = 0;
   CHECK(sess_open_cache(cache, &err) == NULL);
-  CHECK(err == -EINVAL);
+  CHECK(err == -ENOEXEC); /* другая версия — не «повреждён» */
+  fd = open(cache, O_RDWR);
+  CHECK(fd >= 0);
+  CHECK(pwrite(fd, "XNCDU", 5, 0) == 5);
+  close(fd);
+  CHECK(sess_open_cache(cache, &err) == NULL);
+  CHECK(err == -EINVAL); /* чужой файл — негоден */
 }
 
 int main(void) {

@@ -65,9 +65,13 @@ void arena_format(void *base, uint64_t cap_nodes, uint64_t cap_names,
 
 int arena_attach(arena *a, void *base, size_t size) {
   ancdu_hdr *h = base;
-  if (size < ANCDU_HDR_SIZE || memcmp(h->magic, ANCDU_MAGIC, 8) != 0 ||
-      h->version != ANCDU_VERSION)
-    return -EINVAL;
+  if (size < ANCDU_HDR_SIZE) return -EINVAL;
+  /* Наш формат, но другой версии (кэш прошлой версии приложения) — -ENOEXEC: его молча
+   * забывают и сканируют заново, а не показывают «кэш повреждён». */
+  if (memcmp(h->magic, ANCDU_MAGIC, 7) == 0 &&
+      (h->magic[7] != ANCDU_MAGIC[7] || h->version != ANCDU_VERSION))
+    return -ENOEXEC;
+  if (memcmp(h->magic, ANCDU_MAGIC, 8) != 0 || h->version != ANCDU_VERSION) return -EINVAL;
   /* Ёмкости читаются из заголовка один раз: проверка, раскладка и всё дальнейшее — по копии. */
   uint64_t cn = *(volatile uint64_t *)&h->cap_nodes, cm = *(volatile uint64_t *)&h->cap_names;
   if (cn >= ANCDU_NONE || cm > ANCDU_MAX_NAMES) return -EINVAL;

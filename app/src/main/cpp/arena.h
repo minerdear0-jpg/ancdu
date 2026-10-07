@@ -83,6 +83,7 @@ typedef struct {
 size_t arena_bytes(uint64_t cap_nodes, uint64_t cap_names);
 void arena_format(void *base, uint64_t cap_nodes, uint64_t cap_names,
                   const char *root, uint32_t source);
+/* 0; -ENOEXEC — заголовок ancdu другой версии; -EINVAL — не арена или негодная. */
 int arena_attach(arena *a, void *base, size_t size);
 int arena_alloc_anon(arena *a, uint64_t cap_nodes, uint64_t cap_names,
                      const char *root, uint32_t source);

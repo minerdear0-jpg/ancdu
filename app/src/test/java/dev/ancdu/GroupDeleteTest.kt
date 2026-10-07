@@ -66,6 +66,9 @@ class GroupResultTest {
     /** «Изменилось после скана»: причина в сообщении, дерево не обновляется (ничего не удалено). */
     @Test fun changedSinceScan() {
         assertTrue(NativeErr.changedSinceScan(-NativeErr.ESTALE))
+        // кэш прошлой версии формата (-ENOEXEC) — «устарел», а не «повреждён» (-EINVAL)
+        assertTrue(NativeErr.cacheOutdated(-8))
+        assertFalse(NativeErr.cacheOutdated(-22))
         assertFalse(NativeErr.changedSinceScan(-DeleteProgress.ELOOP))
         val res = listOf(ok("a"), bad("d", -NativeErr.ESTALE, dir = true))
         val o = GroupResult.outcome(res) as GroupResult.Outcome.Partial
