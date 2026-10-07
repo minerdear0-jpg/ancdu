@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.StaticLayout
 import android.text.TextUtils
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
@@ -154,7 +155,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     }
 
     private fun body(): View = act.vbox(10).apply {
-        val title = t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, p.name)
+        val title = t.s(if (p.block == null) R.string.sheet_title else R.string.sheet_title_blocked, Bidi.visible(p.name))
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
@@ -166,7 +167,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             })
         })
         // Путь целиком, с переносами.
-        addView(act.label(p.path, 12f, C.MUTED, mono = true).apply {
+        addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
             contentDescription = t.s(R.string.path_desc, p.path)
         })
         p.owner?.let { addView(ownerRow(it)) }
@@ -246,7 +247,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
 
     private fun children(): View = act.vbox(4).apply {
         val barMax = act.dp(56)
-        for ((nm, size) in p.top) {
+        for ((raw, size) in p.top) {
+            val nm = Bidi.visible(raw)
             childNames += nm
             addView(act.hbox(8).apply {
                 // Мини-полоса в контуре 1dp FRAME, заполнение > 0 — не меньше 1px.
@@ -259,8 +261,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                         FrameLayout.LayoutParams(w, act.dp(8) - 2 * one).apply { setMargins(one, one, 0, 0) })
                 }
                 addView(frame, LinearLayout.LayoutParams(barMax, act.dp(8)))
-                addView(act.label(nm, 13f, C.TEXT, mono = true).apply {
-                    setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
+                // До двух строк, дальше — многоточие посередине (конец имени и «/» видны).
+                addView(MiddleLines(act, nm, 2).apply {
+                    textSize = 13f; setTextColor(C.TEXT); typeface = Fonts.get(act, mono = true, bold = false)
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
                 addView(act.label(Fmt.size(size, t), 13f, C.MUTED, mono = true))
                 contentDescription = "$nm, ${Fmt.size(size, t)}"
@@ -319,6 +322,30 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     companion object {
         /** Нажатая «Удалить»: темнее DANGER_FILL (белый текст на нём контрастнее). */
         private const val DANGER_PRESSED = 0xFF8C1D17.toInt()
+    }
+}
+
+/**
+ * Текст [full] не длиннее [lines] строк: не влезает — самая длинная форма с «…» посередине
+ * ([Ellipsis.middleFit]), проверка — StaticLayout с параметрами этого TextView.
+ */
+private class MiddleLines(ctx: Context, private val full: String, private val lines: Int) : TextView(ctx) {
+    private var fitW = -1
+
+    init { text = full }
+
+    override fun onMeasure(ws: Int, hs: Int) {
+        val w = MeasureSpec.getSize(ws) - compoundPaddingLeft - compoundPaddingRight
+        if (MeasureSpec.getMode(ws) != MeasureSpec.UNSPECIFIED && w > 0 && w != fitW) {
+            fitW = w
+            val fit = Ellipsis.middleFit(full) { s ->
+                StaticLayout.Builder.obtain(s, 0, s.length, paint, w).setIncludePad(includeFontPadding)
+                    .setBreakStrategy(breakStrategy).setHyphenationFrequency(hyphenationFrequency)
+                    .build().lineCount <= lines
+            }
+            if (fit != text.toString()) text = fit
+        }
+        super.onMeasure(ws, hs)
     }
 }
 

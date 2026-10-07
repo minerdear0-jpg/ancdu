@@ -241,7 +241,8 @@ class BrowserActivity : LangActivity() {
             val flags = info[4 * index + 3].toInt()
             val dir = flags and F_DIR != 0
             val nm = nameAt(index)
-            row.name = shown[index] ?: (if (dir) "$nm/" else nm).also { shown[index] = it }
+            // Управляющие направления текста — видимыми («⟨U+202E⟩»): имя не переставляется.
+            row.name = shown[index] ?: Bidi.visible(if (dir) "$nm/" else nm).also { shown[index] = it }
             row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
             row.bar = ListMath.bar(v, maxV)
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
@@ -332,7 +333,7 @@ class BrowserActivity : LangActivity() {
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
         top.addView(chips, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label) }
+        list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label); keepExt = true }
         empty = label("", 15f, C.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(dp(24), 0, dp(24), 0)
@@ -701,9 +702,9 @@ class BrowserActivity : LangActivity() {
         chain += 0
         chain.reverse()
         crumbNodes = chain.toIntArray()
-        title.text = if (node == 0) PathText.rootTitle(rootPath(), txt.s(R.string.internal_storage)) else nameOf(node)
+        title.text = Bidi.visible(if (node == 0) PathText.rootTitle(rootPath(), txt.s(R.string.internal_storage)) else nameOf(node))
         currentPath = Native.str(Native.path(h, node))
-        pathRow.path = currentPath
+        pathRow.path = Bidi.visible(currentPath)
         pathRow.contentDescription = txt.s(R.string.path_row_desc, currentPath)
     }
 
@@ -712,8 +713,8 @@ class BrowserActivity : LangActivity() {
         if (busy || h == 0L) return
         pathPanel?.dismiss()
         val root = rootPath()
-        val rows = crumbNodes.map { nd -> nd to (if (nd == 0) root else nameOf(nd)) }
-        pathPanel = PathPanel(this, currentPath, rows, node,
+        val rows = crumbNodes.map { nd -> nd to Bidi.visible(if (nd == 0) root else nameOf(nd)) }
+        pathPanel = PathPanel(this, Bidi.visible(currentPath), rows, node,
             onCopy = { pathPanel?.dismiss(); copyPath() },
             onJump = { nd -> pathPanel?.dismiss(); jumpTo(nd) }).also { it.show() }
     }

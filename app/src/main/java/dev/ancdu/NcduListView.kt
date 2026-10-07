@@ -50,6 +50,12 @@ class NcduListView(ctx: Context) : View(ctx) {
     var withSub = false
         set(v) { field = v; requestLayout(); invalidate() }
 
+    /**
+     * Имена — файлы и каталоги: не влезающее имя режется в конце основы, расширение и «/»
+     * остаются ([Ellipsis.stemKeepExt]); иначе — обычное многоточие в конце.
+     */
+    var keepExt = false
+
     /** TalkBack: подпись действия «долгое нажатие» на строках; null — без подписи. */
     var longClickLabel: CharSequence? = null
 
@@ -210,11 +216,13 @@ class NcduListView(ctx: Context) : View(ctx) {
         // процент (по правому краю колонки)
         c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
         x += pctW + gap
-        // имя: метка не режется, имя — до конца строки с многоточием в конце
+        // имя: метка не режется, имя — до конца строки с многоточием (у файлов — в конце основы)
         mono.color = row.nameColor
         val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
-        val avail = (w - pad - x).toFloat() - mono.measureText(mark)
-        c.drawText(mark + TextUtils.ellipsize(row.name, mono, maxOf(avail, 0f), TextUtils.TruncateAt.END), x.toFloat(), base, mono)
+        val avail = maxOf((w - pad - x).toFloat() - mono.measureText(mark), 0f)
+        val name = if (keepExt) Ellipsis.stemKeepExt(row.name, avail, mono::measureText)
+            else TextUtils.ellipsize(row.name, mono, avail, TextUtils.TruncateAt.END).toString()
+        c.drawText(mark + name, x.toFloat(), base, mono)
         if (sub != null) {
             val sb = (blockTop + mainH + subGap - small.fontMetricsInt.ascent).toFloat()
             c.drawText(Ellipsis.middle(sub, (w - pad - x).toFloat(), small::measureText), x.toFloat(), sb, small)
