@@ -97,7 +97,7 @@ object Lang {
         }
     }
 
-    /** Диалог «Системный / English / Русский» (пункт меню «⋯»; звук и вибрация — свой пункт). */
+    /** Диалог «Системный / English / Русский» (пункт меню «···»; звук и вибрация — свой пункт). */
     fun ask(a: Activity): AlertDialog {
         val all = LangChoice.entries
         val cur = choice(a)

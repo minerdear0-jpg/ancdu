@@ -41,7 +41,7 @@ private fun Activity.sheetDialog(title: String, body: View): Dialog =
     }
 
 /**
- * Меню «⋯» главного экрана: «Язык: …», «Звук и вибрация: …», «О приложении» — строки 48dp.
+ * Меню «···» главного экрана: «Язык: …», «Звук и вибрация: …», «О приложении» — строки 48dp.
  * Пункт закрывает меню и открывает свой выбор.
  */
 class MenuSheet(private val act: Activity, onLang: () -> Unit, onFx: () -> Unit, onAbout: () -> Unit) {

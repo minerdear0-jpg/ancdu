@@ -30,10 +30,10 @@ class MainActivity : LangActivity() {
     var opening = false
         private set
     private var dialog: AlertDialog? = null
-    /** Кнопка меню «⋯» в шапке: язык, звук и вибрация, о приложении. */
+    /** Кнопка меню «···» в шапке: язык, звук и вибрация, о приложении. */
     lateinit var menuButton: TextView
         private set
-    /** Для тестов: открытое меню «⋯» и лист «О приложении». */
+    /** Для тестов: открытое меню «···» и лист «О приложении». */
     var menu: MenuSheet? = null
         private set
     var about: AboutSheet? = null
@@ -125,7 +125,8 @@ class MainActivity : LangActivity() {
     private fun header() = hbox(8).apply {
         addView(label("ANCDU", 20f, mono = true, bold = true).apply { letterSpacing = 0.18f })
         addView(label("v" + versionName(), 12f, C.MUTED, mono = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        menuButton = label("⋯", 18f, C.TEXT, mono = true, bold = true).apply {
+        // «···» (U+00B7 ×3) — есть в шрифте; U+22EF «⋯» в подмножестве шрифта нет.
+        menuButton = label("···", 18f, C.TEXT, mono = true, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44); minWidth = dp(44)
             background = pressable(C.BG, C.FRAME)
@@ -138,7 +139,7 @@ class MainActivity : LangActivity() {
         rootPanel.pill?.let { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)) }
     }
 
-    /** Меню «⋯»: каждый пункт закрывает его и открывает свой выбор (один диалог за раз). */
+    /** Меню «···»: каждый пункт закрывает его и открывает свой выбор (один диалог за раз). */
     fun openMenu() {
         dialog?.dismiss()
         menu?.dismiss(); about?.dismiss()

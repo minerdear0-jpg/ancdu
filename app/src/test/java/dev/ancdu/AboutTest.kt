@@ -5,7 +5,7 @@ import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** «О приложении» и пункты меню «⋯». */
+/** «О приложении» и пункты меню «···». */
 class AboutTest {
     @Test fun fingerprint() {
         assertEquals("", About.hex(ByteArray(0)))

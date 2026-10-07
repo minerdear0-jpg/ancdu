@@ -156,7 +156,7 @@ class LangTest {
         assertEquals("63${Fmt.NBSP}761 файл", ResTxt(r).q(R.plurals.files, 63_761, Fmt.count(63_761, Locale.forLanguageTag("ru"))))
     }
 
-    /** Меню «⋯»: пункт [k] (0 — язык, 1 — звук, 2 — о приложении); меню закрывается. */
+    /** Меню «···»: пункт [k] (0 — язык, 1 — звук, 2 — о приложении); меню закрывается. */
     private fun pick(a: MainActivity, k: Int, text: String) {
         ins.runOnMainSync { a.menuButton.performClick() }
         ins.waitForIdleSync()
@@ -172,12 +172,12 @@ class LangTest {
         ins.waitForIdleSync()
     }
 
-    /** «⋯» → «Язык» → «Русский»: экран пересоздан по-русски; после перезапуска — всё ещё русский. */
+    /** «···» → «Язык» → «Русский»: экран пересоздан по-русски; после перезапуска — всё ещё русский. */
     @Test fun switchPersistsAcrossRestart() {
         setLang("en")
         val a = main()
         ins.runOnMainSync {
-            assertEquals("⋯", a.menuButton.text.toString())
+            assertEquals("···", a.menuButton.text.toString())
             assertTrue(a.menuButton.height >= a.dp(44) && a.menuButton.width >= a.dp(44))
         }
         pick(a, 0, "Language: English")
@@ -207,7 +207,7 @@ class LangTest {
         }
     }
 
-    /** «Звук и вибрация» — пункт меню «⋯»: по умолчанию «как в системе», выбор сохраняется в prefs. */
+    /** «Звук и вибрация» — пункт меню «···»: по умолчанию «как в системе», выбор сохраняется в prefs. */
     @Test fun fxSettingInMenu() {
         setLang("en")
         val prevFx = ui.getString(FxPrefs.KEY, null)
@@ -237,7 +237,7 @@ class LangTest {
         }
     }
 
-    /** «⋯» → «О приложении»: версия, адрес исходников (выделяемый текст), SHA-256 сертификата подписи. */
+    /** «···» → «О приложении»: версия, адрес исходников (выделяемый текст), SHA-256 сертификата подписи. */
     @Test fun menuOpensAbout() {
         setLang("en")
         val a = main()
