@@ -579,6 +579,7 @@ class BrowserActivity : LangActivity() {
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
+        if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
     }
 
