@@ -100,12 +100,27 @@ class FeedbackPolicyTest {
     @Test fun burstMutesUntilQuiet() {
         val taps = (0 until 20).map { it * 70L }
         assertEquals((0 until 6).map { it * 70L }, played(taps))
-        // После паузы ≥ 400 мс после последнего касания звук возвращается.
-        val lim = TickLimiter()
-        for (t in taps) FeedbackPolicy.decide(Cue.TAP, on, lim, t)
+        // Тишина кончается ровно через 400 мс без касаний (история всплеска сбрасывается).
         val last = taps.last()
-        assertNull(FeedbackPolicy.decide(Cue.TAP, on, lim, last + 399).sound)   // касание продлевает тишину
-        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, lim, last + 399 + 2000).sound)
+        fun afterBurst(): TickLimiter = TickLimiter().also { l -> for (t in taps) FeedbackPolicy.decide(Cue.TAP, on, l, t) }
+        assertNull(FeedbackPolicy.decide(Cue.TAP, on, afterBurst(), last + 399).sound)
+        val lim = afterBurst()
+        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, lim, last + 400).sound)
+        // После сброса обычный темп снова звучит (история не тянет старый всплеск).
+        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, lim, last + 470).sound)
+        // Касание внутри тишины продлевает её: от него снова отсчитываются 400 мс.
+        val ext = afterBurst()
+        assertNull(FeedbackPolicy.decide(Cue.TAP, on, ext, last + 300).sound)
+        assertNull(FeedbackPolicy.decide(Cue.TAP, on, ext, last + 600).sound)
+        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, ext, last + 1000).sound)
+    }
+
+    /** TalkBack и тихий ringer вместе: итоговые события — только вибрация, остальные — ничего. */
+    @Test fun talkBackAndSilentRinger() {
+        val env = on.copy(touchExploration = true, ringerNormal = false)
+        for (c in listOf(Cue.TAP, Cue.BACK, Cue.ARM, Cue.ARM_ROOT, Cue.COUNT, Cue.READY))
+            assertEquals("$c", Decision(null, null), d(c, env))
+        for (c in listOf(Cue.COMMIT, Cue.COMMIT_ROOT, Cue.DONE, Cue.REFUSE)) assertEquals("$c", Decision(null, d(c).haptic), d(c, env))
     }
 
     /** Ограничитель — только звук tick/tock: вибрация остаётся, остальные звуки не задерживаются. */
