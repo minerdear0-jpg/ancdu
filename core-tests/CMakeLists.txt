@@ -46,3 +46,14 @@ ancdu_test(test_shq)
 ancdu_test(test_root)
 target_compile_definitions(test_root PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
 add_dependencies(test_root ancdu_scan)
+ancdu_test(test_rmtree_deep)
+target_compile_definitions(test_rmtree_deep PRIVATE ANCDU_CLI="$<TARGET_FILE:ancdu_scan>")
+add_dependencies(test_rmtree_deep ancdu_scan)
+
+# cwd каждого теста — пустой каталог песочницы (run_all.sh создаёт свежий mkdtemp на прогон):
+# даже ошибочный относительный путь не дотянется до дерева исходников.
+set(ANCDU_TEST_CWD "" CACHE PATH "Working directory for every test (fresh empty dir)")
+if(ANCDU_TEST_CWD)
+  get_property(ancdu_all_tests DIRECTORY PROPERTY TESTS)
+  set_tests_properties(${ancdu_all_tests} PROPERTIES WORKING_DIRECTORY "${ANCDU_TEST_CWD}")
+endif()

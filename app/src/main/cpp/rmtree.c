@@ -12,6 +12,10 @@
 #include <unistd.h>
 
 #define RM_MAX_DEPTH 4096
+/* Стек потока удаления. Рекурсия rm_at↔walk берёт ~350–450 Б на уровень (с ASan больше),
+ * на RM_MAX_DEPTH это ~1,5–2 МБ, а у вызывающего (Java-поток ancdu-io) ~1 МБ: обход идёт
+ * на собственном потоке с этим стеком, вызывающий его ждёт. */
+#define RM_STACK_SIZE (8u << 20)
 #define RM_MAX_THREADS 64
 /* Очередь мала намеренно: каталог с заданиями в очереди держит открытый fd. */
 #define RM_QUEUE 256
@@ -216,7 +220,8 @@ int rm_tree_target(const char *path, char *buf, size_t cap) {
   return 0;
 }
 
-int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop) {
+static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
+                       _Atomic int *stop) {
   /* Отказ до любых lstat/open/unlink. */
   char buf[PATH_MAX];
   int v = rm_tree_target(path, buf, sizeof buf);
@@ -267,6 +272,41 @@ int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic in
   }
   if (atomic_load(&c.intr)) return -EINTR;
   return atomic_load(&c.err);
+}
+
+typedef struct {
+  const char *path;
+  int threads;
+  _Atomic uint64_t *done;
+  _Atomic int *stop;
+  int result;
+} rm_call;
+
+static void *rm_call_main(void *p) {
+  rm_call *k = p;
+  k->result = rm_tree_run(k->path, k->threads, k->done, k->stop);
+  return NULL;
+}
+
+/* fn(arg) на новом потоке со стеком RM_STACK_SIZE; ждёт его. 0 или -errno (поток не создан —
+ * fn не вызывалась, ничего не тронуто). */
+static int on_big_stack(void *(*fn)(void *), void *arg) {
+  pthread_attr_t at;
+  pthread_t th;
+  int e = pthread_attr_init(&at);
+  if (e) return -e;
+  e = pthread_attr_setstacksize(&at, RM_STACK_SIZE);
+  if (!e) e = pthread_create(&th, &at, fn, arg);
+  pthread_attr_destroy(&at);
+  if (e) return -e;
+  pthread_join(th, NULL);
+  return 0;
+}
+
+int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop) {
+  rm_call k = {path, threads, done, stop, 0};
+  int e = on_big_stack(rm_call_main, &k);
+  return e ? e : k.result;
 }
 
 int rm_tree(const char *path) { return rm_tree_ex(path, 1, NULL, NULL); }

@@ -82,6 +82,26 @@ static char *mk_tmp(void) {
   return p;
 }
 
+/* Перед любым удалением: sandbox — абсолютный путь от mk_tmp(), target лежит строго внутри
+ * него, и ни один его компонент после sandbox не пуст, не «.» и не «..». Иначе — немедленный
+ * выход, без единого удаления. */
+static void sandbox_guard(const char *sandbox, const char *target) {
+  size_t n = strlen(sandbox);
+  int ok = sandbox[0] == '/' && strstr(sandbox, "/ancdu-test-") && strncmp(target, sandbox, n) == 0 &&
+           target[n] == '/';
+  for (const char *c = target + n + 1; ok;) {
+    const char *e = strchr(c, '/');
+    size_t k = e ? (size_t)(e - c) : strlen(c);
+    if (k == 0 || (k == 1 && c[0] == '.') || (k == 2 && c[0] == '.' && c[1] == '.')) ok = 0;
+    if (!e) break;
+    c = e + 1;
+  }
+  if (!ok) {
+    fprintf(stderr, "sandbox_guard: refusing \"%s\" (sandbox \"%s\")\n", target, sandbox);
+    exit(3);
+  }
+}
+
 #include "rmtree.h"
 static void rm_dir_tree_for_tests(const char *p) {
   if (rm_tree(p) != 0) fprintf(stderr, "cleanup failed: %s\n", p);
