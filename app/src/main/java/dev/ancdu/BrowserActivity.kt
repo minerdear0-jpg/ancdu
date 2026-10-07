@@ -725,7 +725,8 @@ class BrowserActivity : LangActivity() {
         val rows = crumbNodes.map { nd -> nd to Bidi.visible(if (nd == 0) root else nameOf(nd)) }
         pathPanel = PathPanel(this, Bidi.visible(currentPath), rows, node,
             onCopy = { pathPanel?.dismiss(); copyPath() },
-            onJump = { nd -> pathPanel?.dismiss(); jumpTo(nd) }).also { it.show() }
+            onJump = { nd -> pathPanel?.dismiss(); jumpTo(nd) },
+            onClose = { refreshPending() }).also { it.show() }
     }
 
     /** Полный путь текущей папки — в буфер обмена; в подвале «Путь скопирован» на 4 с. */

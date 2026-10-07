@@ -18,7 +18,9 @@ import android.widget.TextView
  * Текущая папка — PANEL2 с «· здесь», не касаемая. [crumbs] — (узел, подпись) от корня до текущей.
  */
 class PathPanel(private val act: Activity, val path: String, private val crumbs: List<Pair<Int, String>>,
-                private val current: Int, private val onCopy: () -> Unit, private val onJump: (Int) -> Unit) {
+                private val current: Int, private val onCopy: () -> Unit, private val onJump: (Int) -> Unit,
+                /** Панель закрыта любым путём: отложенная подстановка дерева перепроверяется. */
+                private val onClose: () -> Unit = {}) {
     private val t: Txt = act.tx
     val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
     lateinit var pathText: TextView
@@ -34,6 +36,7 @@ class PathPanel(private val act: Activity, val path: String, private val crumbs:
         dialog.setContentView(build())
         dialog.bottomSheet()
         dialog.setTitle(t.s(R.string.path_caps))
+        dialog.setOnDismissListener { onClose() }
     }
 
     fun show() = dialog.show()
