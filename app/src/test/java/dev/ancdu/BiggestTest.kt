@@ -77,5 +77,7 @@ class BiggestTest {
     @Test fun captionInBothLanguages() {
         assertEquals("Biggest files", EN.s(R.string.big_title))
         assertEquals("Самые крупные файлы", RU.s(R.string.big_title))
+        assertEquals("File no longer exists", EN.s(R.string.big_gone))
+        assertEquals("Файла уже нет", RU.s(R.string.big_gone))
     }
 }

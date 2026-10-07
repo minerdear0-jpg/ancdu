@@ -144,6 +144,9 @@ object Holder {
     fun addSessionListener(l: () -> Unit) { sessionListeners += l }
     fun removeSessionListener(l: () -> Unit) { sessionListeners -= l }
 
+    /** Сколько удалений (одиночных и групп) закончилось в процессе: дерево могло измениться. Только главный поток. */
+    var deletes = 0L; private set
+
     /** Идёт удаление (на любом дескрипторе). Только главный поток. Пока true — никаких чтений дерева. */
     var deleting = false; private set
 
@@ -310,6 +313,7 @@ object Holder {
             } finally {
                 main.post {
                     deleting = false
+                    deletes++
                     delResults = results
                     if (group) delDir = GroupResult.needsRefresh(results, root)
                     // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.

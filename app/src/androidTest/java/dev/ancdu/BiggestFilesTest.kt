@@ -99,6 +99,19 @@ class BiggestFilesTest {
         assertTrue("крупнейшие файлы не появились за 5 с", waitFor { a.biggest.rows.size == Biggest.K })
         assertTrue(waitFor { a.biggest.rowViews[0].height > 0 })
         ins.runOnMainSync {
+            // Тот же источник (поколение дерева, удалений не было) — строки не пересчитываются.
+            val n = a.biggest.loads
+            a.biggest.refresh()
+            assertEquals(n, a.biggest.loads)
+            a.biggest.refresh(force = true)
+            assertEquals(n + 1, a.biggest.loads)
+            // Волосяные линии только между строками: после последней — ничего.
+            val list = a.biggest.rowViews.last().parent as android.view.ViewGroup
+            assertEquals(a.biggest.rowViews.last(), list.getChildAt(list.childCount - 1))
+            assertEquals(2 * Biggest.K - 1, list.childCount)
+        }
+        assertTrue(waitFor { a.biggest.rows.size == Biggest.K && a.biggest.rowViews[0].height > 0 })
+        ins.runOnMainSync {
             val rows = a.biggest.rows
             assertEquals(View.VISIBLE, a.biggest.box.visibility)
             assertEquals(listOf("big.bin", "v.mp4", "notes.txt", "s7.txt", "s6.txt"), rows.map { it.name })

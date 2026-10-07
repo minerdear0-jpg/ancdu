@@ -34,6 +34,15 @@ class BiggestSection(private val a: MainActivity) {
     /** Для тестов: сколько ответов показано. */
     var shown = 0
         private set
+    /**
+     * Ключ источника последнего запроса: дерево Holder — его поколение и счётчик удалений; кэш — время
+     * записи «caches», длина и mtime файла. Тот же ключ — строки не пересчитываются (кэш не
+     * открывается и не проверяется заново на каждом onResume и тике скана). null — пересчитать.
+     */
+    private var key: String? = null
+    /** Для тестов: сколько раз строки считались на io. */
+    var loads = 0
+        private set
 
     init {
         box.addView(a.hbox(8).apply {
@@ -48,16 +57,21 @@ class BiggestSection(private val a: MainActivity) {
     /**
      * Главный поток. Пересчитать по текущему дереву карточки: дерево общего хранилища в Holder
      * (как есть, его время — в строке свежести), иначе кэш общего хранилища (открывается на io и
-     * сразу освобождается). Во время удаления — ничего (дерево меняется на io).
+     * сразу освобождается). Во время удаления — ничего (дерево меняется на io). Источник тот же
+     * ([key]) — ничего, кроме [force] (новое дерево, конец удаления).
      */
-    fun refresh() {
+    fun refresh(force: Boolean = false) {
         if (!Perms.files()) { hide(); return }
         if (Holder.deleting) return
-        val my = ++seq
         val app = a.applicationContext
         val self = a.packageName
         val txt = t
         if (a.storage.storageShown()) {
+            val k = "tree:${Holder.gen}:${Holder.deletes}"
+            if (!force && k == key) return
+            key = k
+            loads++
+            val my = ++seq
             val h = Holder.h
             val kind = Holder.kind
             val time = Holder.time
@@ -69,6 +83,11 @@ class BiggestSection(private val a: MainActivity) {
         }
         val meta = Scans.meta(a, Scans.STORAGE, false) ?: run { hide(); return }
         val file = Holder.cacheFile(a, Scans.STORAGE, false)
+        val k = "cache:${meta.time}:${file.length()}:${file.lastModified()}"
+        if (!force && k == key) return
+        key = k
+        loads++
+        val my = ++seq
         Holder.io.execute {
             val r = runCatching {
                 val h = Native.openCache(file.path, IntArray(1))
@@ -78,7 +97,14 @@ class BiggestSection(private val a: MainActivity) {
         }
     }
 
+    /** Нечего показать (нет доступа, нет дерева): секции нет, следующий [refresh] считает заново. */
     private fun hide() {
+        key = null
+        clear()
+    }
+
+    /** Секция пуста (ответ io: файлов нет); ключ остаётся — тот же источник не перечитывается. */
+    private fun clear() {
         seq++
         rows = emptyList()
         list.removeAllViews(); rowViews.clear()
@@ -88,7 +114,7 @@ class BiggestSection(private val a: MainActivity) {
     private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long) {
         if (my != seq || a.isDestroyed) return
         shown++
-        if (r.isEmpty()) { hide(); return }
+        if (r.isEmpty()) { clear(); return }
         rows = r
         list.removeAllViews(); rowViews.clear()
         fresh.text = when (kind) {
@@ -100,8 +126,9 @@ class BiggestSection(private val a: MainActivity) {
         for (f in r) {
             val v = BigRow(a, f, t).apply { feedbackClick { a.openFocused(f.names) } }
             rowViews += v
+            // Волосяные линии — только между строками.
+            if (rowViews.size > 1) list.hairline()
             list.addView(v, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            list.hairline()
         }
         box.visibility = View.VISIBLE
     }

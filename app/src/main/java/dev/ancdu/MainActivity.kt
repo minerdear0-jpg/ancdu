@@ -46,11 +46,11 @@ class MainActivity : LangActivity() {
         private set
 
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
-    private val onBg: () -> Unit = { BgScan.promoteOnMain(); storage.render() }
+    private val onBg: () -> Unit = { BgScan.promoteOnMain(); storage.render(); biggest.refresh() }
     private val onRoot: () -> Unit = { rootPanel.render() }
     /** Новое дерево (фоновый скан, подстановка ждущего) или конец удаления: пересчитать крупнейшие. */
-    private val onTree: () -> Unit = { biggest.refresh() }
-    private val onDeleted: (Int) -> Unit = { biggest.refresh() }
+    private val onTree: () -> Unit = { biggest.refresh(force = true) }
+    private val onDeleted: (Int) -> Unit = { biggest.refresh(force = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -245,6 +245,7 @@ class MainActivity : LangActivity() {
                     // Кэш прошлой версии формата: молча забыт, вместо него — тот же скан заново.
                     renderLast()
                     storage.render()
+                    biggest.refresh(force = true)
                     startActivity(Intent(this, ScanActivity::class.java).putExtra(EXTRA_ROOT, root).putExtra(EXTRA_SU, su))
                     return@runOnUiThread
                 }
@@ -252,6 +253,7 @@ class MainActivity : LangActivity() {
                     showAlert(tx.s(R.string.cache_corrupt_title), tx.s(R.string.cache_corrupt_msg))
                     renderLast()
                     storage.render()
+                    biggest.refresh(force = true)
                     return@runOnUiThread
                 }
                 Holder.set(h, Kind.CACHE, root, su, time)
@@ -274,6 +276,9 @@ class MainActivity : LangActivity() {
         if (shown && Holder.kind != Kind.INDEX) { startActivity(browser); return }
         val meta = Scans.meta(this, Scans.STORAGE, false)
         if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus); return }
-        if (shown) startActivity(browser)
+        if (shown) { startActivity(browser); return }
+        // Ни дерева, ни записи кэша (её забыли, пока строки были на экране): строки — заново, и сказать.
+        biggest.refresh(force = true)
+        android.widget.Toast.makeText(this, tx.s(R.string.big_gone), android.widget.Toast.LENGTH_SHORT).show()
     }
 }
