@@ -129,18 +129,32 @@ class SheetPreviewTest {
         ins.runOnMainSync { assertTrue(slot(s.childThumbs[pipe]).failed) }
         assertTrue("превью картинки", waitFor { slot(s.childThumbs[big]).bmp != null })
         assertTrue("превью в контактном листе", waitFor { slot(s.contactRows[subRow]!!.getChildAt(0)).bmp != null })
+        var b: android.graphics.Bitmap? = null
         ins.runOnMainSync {
-            val b = slot(s.childThumbs[big]).bmp!!
-            assertTrue("уменьшено: ${b.width}×${b.height}", maxOf(b.width, b.height) <= 2 * a.dp(SheetPeek.THUMB_DP))
+            b = slot(s.childThumbs[big]).bmp!!
+            assertTrue("уменьшено: ${b!!.width}×${b!!.height}", maxOf(b!!.width, b!!.height) <= 2 * a.dp(SheetPeek.THUMB_DP))
             s.dismiss()
-            assertTrue("битмапы освобождены", b.isRecycled)
         }
+        // Битмапы освобождает обработчик закрытия диалога — он приходит отдельным сообщением.
+        assertTrue("битмапы освобождены", waitFor { b!!.isRecycled })
     }
 
     /**
      * Тап по строке-файлу — карточка ПОВЕРХ листа, без «УДАЛИТЬ…»/«ВЫБРАТЬ»; «Назад» закрывает
      * только карточку — лист открыт, отсчёт не сброшен.
      */
+    /** Каталог с детьми больше KIDS_CAP (как DCIM/Camera) — контактный лист не пустеет (JNI требует полный массив). */
+    @Test fun contactSheetInHugeDir() {
+        val d = fixture()
+        val cam = File(d, "cam").apply { mkdir() }
+        for (i in 0 until ContactSheet.KIDS_CAP + 44) File(cam, "f%03d.bin".format(i)).writeBytes(ByteArray(1))
+        TestMedia.jpeg(File(cam, "shot.jpg"), 800, 600)
+        val a = browse(d)
+        val s = sheetOf(a, "cam/")
+        ins.runOnMainSync { assertEquals("контактный лист большого каталога", 1, s.selfContactRow!!.childCount) }
+        ins.runOnMainSync { s.dismiss() }
+    }
+
     @Test fun rowTapOpensCardOverSheet() {
         val d = fixture()
         val album = File(d, "album").apply { mkdir() }
@@ -166,6 +180,8 @@ class SheetPreviewTest {
             assertNull("карточка браузера не открывалась", a.quickLook)
             label = s.deleteButton!!.text.toString()
         }
+        // «Назад» уходит окну в фокусе: дождаться, пока его получит окно карточки.
+        assertTrue(waitFor { s.card?.dialog?.window?.decorView?.hasWindowFocus() == true })
         ins.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         assertTrue(waitFor { s.card?.dialog?.isShowing != true })
         ins.runOnMainSync {

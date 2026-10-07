@@ -1359,9 +1359,10 @@ class BrowserActivity : LangActivity() {
     private fun contactSheet(handle: Long, dir: Int, path: String): List<QuickLookInfo> {
         if (dir < 0 || Peek.rootOnly(path, Holder.viaRoot, packageName)) return emptyList()
         val picked = ContactSheet.pick(dir, { nd ->
-            // Порядок SORT_SIZE по диску — уже готовый: короткий массив — крупнейшие дети.
-            val ch = IntArray(minOf(Native.childCount(handle, nd), ContactSheet.KIDS_CAP))
-            val n = maxOf(0, Native.children(handle, nd, SORT_SIZE, false, ch))
+            // JNI требует массив на всех детей (меньший — отказ, -1); порядок SORT_SIZE по диску —
+            // готовый, так что сведения читаем только о первых KIDS_CAP — крупнейших.
+            val ch = IntArray(Native.childCount(handle, nd))
+            val n = minOf(maxOf(0, Native.children(handle, nd, SORT_SIZE, false, ch)), ContactSheet.KIDS_CAP)
             val inf = LongArray(4 * maxOf(n, 1)).also { if (n > 0) Native.nodeInfo(handle, ch, n, it) }
             (0 until n).map { ContactSheet.Kid(ch[it], inf[4 * it], inf[4 * it + 3].toInt()) }
         }, { nd -> Native.str(Native.name(handle, nd)) }, { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) })
