@@ -349,7 +349,8 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     struct stat st;
     gone = r == 0 || (lstat(path, &st) != 0 && errno == ENOENT);
   } else {
-    size_t qcap = (size_t)PCAP * 4 + 2200;
+    /* Путь в кавычках (до 4×PCAP) + хелпер и флаги + ex (--expect/--anchor, до 4400 Б). */
+    size_t qcap = (size_t)PCAP * 4 + 2200 + 4400;
     char *cmd = malloc(qcap * 2);
     if (!cmd) { free(path); return -ENOMEM; }
     char *qp = cmd + qcap;

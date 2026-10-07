@@ -108,7 +108,7 @@ static void *watch_stdin(void *p) {
  * якорь сверки (rm_expect): dev сменился при перемонтировании — сверка только ino, корень
  * другой — без сверки.
  * Выход — enum ancdu_exit (helper_proto.h): OK, RM_PARTIAL, RM_STOPPED, RM_SYMLINK,
- * RM_UNCHECKED, RM_CHANGED. */
+ * RM_UNCHECKED, RM_CHANGED, RM_NO_PARENT. */
 typedef struct {
   _Atomic uint64_t done;
   _Atomic int stop;
