@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Пиктограмма сортировки перед [РАЗМЕР|ИМЯ]: три убывающие строки и стрелка вниз. Не касаемая. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#9AA7B2"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:pathData="M3,6.75H13M3,12H10M3,17.25H7M18,6.75V16M15,14L18,17L21,14" />
+</vector>

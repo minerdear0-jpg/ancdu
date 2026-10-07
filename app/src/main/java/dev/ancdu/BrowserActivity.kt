@@ -14,6 +14,7 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -288,7 +289,7 @@ class BrowserActivity : LangActivity() {
             setOnClickListener { promotePending() }
             visibility = View.GONE
         }
-        // «СОРТИРОВКА [РАЗМЕР|ИМЯ]» и справа [НА ДИСКЕ|ВИДИМЫЙ]; не влезают в строку — переносятся.
+        // «⇣ [РАЗМЕР|ИМЯ]» и справа [ДИСК|ВИДИМЫЙ]; не влезают в строку — переносятся.
         chips = Flow(this, dp(12), dp(8), endLast = true)
         top.addView(vbox().apply {
             setPadding(dp(8), 0, 0, 0)
@@ -535,10 +536,19 @@ class BrowserActivity : LangActivity() {
         val sizes = segmented(listOf(txt.s(R.string.size_disk), txt.s(R.string.size_apparent)),
             if (apparent) 1 else 0, amber = false) { setApparent(it == 1) }
         sortSeg = sorts; sizeSeg = sizes
-        sizes.contentDescription = txt.s(R.string.size_mode_desc, txt.s(if (apparent) R.string.size_apparent else R.string.size_disk))
-        // Подпись и сегменты — отдельные дети Flow: при крупном шрифте переносятся, не сжимаются.
-        chips.addView(caps(txt.s(R.string.sort_label)).apply { minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL })
-        chips.addView(sorts)
+        // Смысл пиктограммы — в описаниях сегментов сортировки.
+        sorts.getChildAt(0).contentDescription = txt.s(R.string.sort_size_desc)
+        sorts.getChildAt(1).contentDescription = txt.s(R.string.sort_name_desc)
+        sizes.contentDescription = txt.s(R.string.size_mode_desc, txt.s(if (apparent) R.string.size_apparent else R.string.size_disk_desc))
+        // Пиктограмма и сегменты сортировки — один ребёнок Flow (не разрываются при переносе);
+        // группы при крупном шрифте переносятся, не сжимаются.
+        chips.addView(hbox(6).apply {
+            addView(ImageView(this@BrowserActivity).apply {
+                setImageResource(R.drawable.ic_sort)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(24), dp(24)))
+            addView(sorts)
+        })
         chips.addView(sizes)
     }
 

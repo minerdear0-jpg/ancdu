@@ -135,10 +135,10 @@ class LangTest {
     }
 
     @Test fun englishScreens() =
-        check("en", listOf("Shared storage", "EN ▾", "scan", "folder"), listOf("size", "name", "on disk", "apparent"), "KiB")
+        check("en", listOf("Shared storage", "EN ▾", "scan", "folder"), listOf("size", "name", "disk", "apparent"), "KiB")
 
     @Test fun russianScreens() =
-        check("ru", listOf("Общее хранилище", "RU ▾", "скан", "каталог"), listOf("размер", "имя", "на диске", "видимый"), "КиБ")
+        check("ru", listOf("Общее хранилище", "RU ▾", "скан", "каталог"), listOf("размер", "имя", "диск", "видимый"), "КиБ")
 
     /** RU: одна/несколько/много для 1, 2, 5, 21, 761 (ICU устройства, не JVM-правила). */
     @Test fun russianPlurals() {
@@ -211,7 +211,7 @@ class LangTest {
                 assertEquals(h, Holder.h)
                 assertEquals(node, n.node)
                 assertEquals("sub", n.title.text.toString())
-                assertEquals(listOf("размер", "имя", "на диске", "видимый"), chips(n))
+                assertEquals(listOf("размер", "имя", "диск", "видимый"), chips(n))
                 val row = Row().also { n.list.source!!.bind(0, it) }
                 assertEquals("a.bin", row.name)       // по имени: a.bin < deep/
                 n.finish()

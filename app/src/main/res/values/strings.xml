@@ -120,11 +120,13 @@
     <string name="newer_desc">A newer tree is ready — refresh</string>
     <string name="long_click_label">Delete or details</string>
     <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
-    <string name="sort_label">Sort</string>
     <string name="sort_size">size</string>
     <string name="sort_name">name</string>
+    <string name="sort_size_desc">Sort by size</string>
+    <string name="sort_name_desc">Sort by name</string>
     <string name="size_apparent">apparent</string>
-    <string name="size_disk">on disk</string>
+    <string name="size_disk">disk</string>
+    <string name="size_disk_desc">on disk</string>
     <string name="size_mode_desc">Size: %1$s</string>
     <string name="folder_empty">empty</string>
     <string name="folder_no_access">⚠ no access</string>

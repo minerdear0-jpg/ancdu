@@ -12,6 +12,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -282,6 +283,40 @@ class BrowserTest {
     /** Свежий каталог теста (mkdtemp) под cacheDir приложения — абсолютный путь. */
     private fun tmpDir(prefix: String): File =
         java.nio.file.Files.createTempDirectory(ins.targetContext.cacheDir.toPath(), prefix).toFile()
+
+    /**
+     * Пиктограмма сортировки и [РАЗМЕР|ИМЯ] — один ребёнок Flow: при переносе не разрываются.
+     * Пиктограмма не касаемая; смысл — в описаниях сегментов.
+     */
+    @Test fun sortIconAndSegmentAreOneFlowChild() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("sorti")
+        File(dir, "a.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        try {
+            ins.runOnMainSync {
+                assertEquals(2, act.chips.childCount)
+                val segs = act.segments()
+                assertEquals(4, segs.size)
+                val sortSeg = segs[0].parent as View
+                val group = sortSeg.parent as android.widget.LinearLayout
+                assertSame(act.chips, group.parent)
+                val icon = group.getChildAt(0)
+                assertTrue(icon is android.widget.ImageView)
+                assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, icon.importantForAccessibility)
+                assertSame(sortSeg, group.getChildAt(1))
+                assertEquals(act.getString(R.string.sort_size_desc), segs[0].contentDescription)
+                assertEquals(act.getString(R.string.sort_name_desc), segs[1].contentDescription)
+            }
+        } finally {
+            ins.runOnMainSync { act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
 
     /**
      * Высота шапки не зависит от сортировки, режима размера («на диске»/«видимый»), плашки и чипа
