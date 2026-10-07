@@ -33,6 +33,9 @@ class MainActivity : LangActivity() {
     /** Для тестов: открытый диалог выбора языка. */
     var langDialog: AlertDialog? = null
         private set
+    /** Для тестов: открытый диалог «Звук и вибрация». */
+    var fxDialog: AlertDialog? = null
+        private set
 
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
     private val onBg: () -> Unit = { BgScan.promoteOnMain(); storage.render() }
@@ -106,7 +109,10 @@ class MainActivity : LangActivity() {
             background = pressable(C.BG, C.FRAME)
             isClickable = true; isFocusable = true
             contentDescription = tx.s(R.string.lang_button_desc, tx.s(Lang.choice(this@MainActivity).label))
-            setOnClickListener { dialog?.dismiss(); dialog = Lang.ask(this@MainActivity).also { langDialog = it } }
+            feedbackClick {
+                dialog?.dismiss()
+                dialog = Lang.ask(this@MainActivity) { fx -> dialog = fx; fxDialog = fx }.also { langDialog = it }
+            }
         }
         addView(langButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         // Только когда su есть: без него пилюли нет совсем.

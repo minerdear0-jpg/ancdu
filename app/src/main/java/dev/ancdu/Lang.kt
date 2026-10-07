@@ -97,8 +97,11 @@ object Lang {
         }
     }
 
-    /** Диалог «Системный / English / Русский». */
-    fun ask(a: Activity): AlertDialog {
+    /**
+     * Диалог «Системный / English / Русский»; под списком — пункт «Звук и вибрация: …»
+     * (открывает свой выбор, [onFx] получает его диалог).
+     */
+    fun ask(a: Activity, onFx: (AlertDialog) -> Unit = {}): AlertDialog {
         val all = LangChoice.entries
         val cur = choice(a)
         return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -106,6 +109,20 @@ object Lang {
             .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
                 d.dismiss()
                 if (all[which] != cur) set(a, all[which])
+            }
+            .setNeutralButton(a.tx.s(R.string.fx_item, a.tx.s(Feedback.mode.label))) { _, _ -> onFx(askFx(a)) }
+            .show()
+    }
+
+    /** Диалог «Звук и вибрация: Как в системе / Вкл / Выкл». */
+    fun askFx(a: Activity): AlertDialog {
+        val all = FxMode.entries
+        val cur = Feedback.mode
+        return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle(a.tx.s(R.string.fx_title))
+            .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
+                d.dismiss()
+                FxPrefs.set(a, all[which])
             }
             .show()
     }

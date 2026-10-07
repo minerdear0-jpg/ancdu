@@ -71,6 +71,13 @@ class FeedbackPolicyTest {
         assertEquals(Decision(null, null), d(Cue.TAP, sys.copy(touchExploration = true)))
     }
 
+    @Test fun modeLabels() {
+        assertEquals(listOf("System", "On", "Off"), FxMode.entries.map { XmlTxt.EN.s(it.label) })
+        assertEquals(listOf("Как в системе", "Вкл", "Выкл"), FxMode.entries.map { XmlTxt.RU.s(it.label) })
+        assertEquals("Sound & haptics: On", XmlTxt.EN.s(R.string.fx_item, XmlTxt.EN.s(FxMode.ON.label)))
+        assertEquals("Звук и вибрация: Выкл", XmlTxt.RU.s(R.string.fx_item, XmlTxt.RU.s(FxMode.OFF.label)))
+    }
+
     @Test fun modeTags() {
         assertEquals(FxMode.SYSTEM, FxMode.of(null))
         assertEquals(FxMode.SYSTEM, FxMode.of("junk"))

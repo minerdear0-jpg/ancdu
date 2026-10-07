@@ -42,6 +42,11 @@
     <string name="lang_button_desc">Язык: %1$s</string>
     <string name="lang_title">Язык</string>
     <string name="lang_system">Как в системе</string>
+    <string name="fx_title">Звук и вибрация</string>
+    <string name="fx_item">Звук и вибрация: %1$s</string>
+    <string name="fx_system">Как в системе</string>
+    <string name="fx_on">Вкл</string>
+    <string name="fx_off">Выкл</string>
 
     <string name="back">Назад</string>
     <string name="cancel">Отмена</string>

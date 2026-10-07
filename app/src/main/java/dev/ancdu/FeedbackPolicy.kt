@@ -33,9 +33,9 @@ enum class Sound(val src: String, val rate: Float) {
  */
 enum class Haptic { CLOCK_TICK, CONTEXT_CLICK, QUICK_RISE, CLICK, CLICK_THUD, CONFIRM, REJECT }
 
-/** Настройка «Звук и вибрация»; [tag] — значение в prefs. */
-enum class FxMode(val tag: String) {
-    SYSTEM("system"), ON("on"), OFF("off");
+/** Настройка «Звук и вибрация»; [tag] — значение в prefs, [label] — подпись в меню. */
+enum class FxMode(val tag: String, val label: Int) {
+    SYSTEM("system", R.string.fx_system), ON("on", R.string.fx_on), OFF("off", R.string.fx_off);
 
     companion object {
         fun of(stored: String?): FxMode = entries.firstOrNull { it.tag == stored } ?: SYSTEM

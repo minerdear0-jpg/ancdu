@@ -186,6 +186,44 @@ class LangTest {
         }
     }
 
+    /** «Звук и вибрация» — пункт меню языка: по умолчанию «как в системе», выбор сохраняется в prefs. */
+    @Test fun fxSettingInLangMenu() {
+        setLang("en")
+        val prevFx = ui.getString(FxPrefs.KEY, null)
+        val prevMode = Feedback.mode
+        ui.edit().remove(FxPrefs.KEY).commit()
+        try {
+            assertEquals(FxMode.SYSTEM, FxPrefs.load(ctx))
+            Feedback.mode = FxPrefs.load(ctx)
+            val a = main()
+            ins.runOnMainSync { a.langButton.performClick() }
+            ins.waitForIdleSync()
+            ins.runOnMainSync {
+                val d = a.langDialog!!
+                val fx = d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)
+                assertEquals("Sound & haptics: System", fx.text.toString())
+                fx.performClick()
+            }
+            ins.waitForIdleSync()
+            ins.runOnMainSync {
+                val d = a.fxDialog!!
+                assertTrue(d.isShowing)
+                val list = d.listView
+                assertEquals(listOf("System", "On", "Off"), (0 until list.count).map { list.adapter.getItem(it).toString() })
+                assertEquals(0, list.checkedItemPosition)
+                list.performItemClick(list.getChildAt(2), 2, list.adapter.getItemId(2))
+            }
+            ins.waitForIdleSync()
+            assertEquals("off", ui.getString(FxPrefs.KEY, null))
+            assertEquals(FxMode.OFF, Feedback.mode)
+            assertEquals(FxMode.OFF, FxPrefs.load(ctx))
+            ins.runOnMainSync { a.finish() }
+        } finally {
+            if (prevFx == null) ui.edit().remove(FxPrefs.KEY).commit() else ui.edit().putString(FxPrefs.KEY, prevFx).commit()
+            Feedback.mode = prevMode
+        }
+    }
+
     /** Смена языка пересоздаёт браузер: то же дерево, та же папка и сортировка — уже по-русски. */
     @Test fun switchKeepsTreeAndPath() {
         setLang("en")
