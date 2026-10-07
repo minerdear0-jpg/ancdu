@@ -1,4 +1,25 @@
+import java.util.Properties
+
 plugins { id("com.android.application") }
+
+// Release-подпись: ANCDU_SIGNING (путь к .properties: storeFile, storePassword, keyAlias,
+// keyPassword), по умолчанию ~/.android/ancdu-release.properties; либо переменные
+// ANCDU_KEYSTORE / ANCDU_KEYSTORE_PASSWORD / ANCDU_KEY_ALIAS / ANCDU_KEY_PASSWORD.
+// Без них release подписывается debug-ключом (для локальной проверки, не для публикации).
+val signing: Map<String, String>? = run {
+    val env = System.getenv()
+    env["ANCDU_KEYSTORE"]?.let { ks ->
+        return@run mapOf(
+            "storeFile" to ks,
+            "storePassword" to env["ANCDU_KEYSTORE_PASSWORD"].orEmpty(),
+            "keyAlias" to (env["ANCDU_KEY_ALIAS"] ?: "ancdu"),
+            "keyPassword" to (env["ANCDU_KEY_PASSWORD"] ?: env["ANCDU_KEYSTORE_PASSWORD"].orEmpty()))
+    }
+    val f = file(env["ANCDU_SIGNING"] ?: "${System.getProperty("user.home")}/.android/ancdu-release.properties")
+    if (!f.isFile) return@run null
+    val p = Properties().apply { f.inputStream().use { load(it) } }
+    p.stringPropertyNames().associateWith { p.getProperty(it) }
+}
 
 val abis = listOf("arm64-v8a", "x86_64")
 val jniOut = layout.buildDirectory.dir("generated/ancduJni")
@@ -26,17 +47,27 @@ android {
         applicationId = "dev.ancdu"
         minSdk = 30
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 100
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += abis }
+    }
+    signingConfigs {
+        if (signing != null) create("release") {
+            storeFile = file(signing.getValue("storeFile"))
+            storePassword = signing.getValue("storePassword")
+            keyAlias = signing.getValue("keyAlias")
+            keyPassword = signing.getValue("keyPassword")
+        }
     }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug") // личное использование
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug").also {
+                logger.warn("ancdu: release-ключ не найден — release подписан debug-ключом")
+            }
         }
     }
     sourceSets["main"].jniLibs.srcDir(jniOut.get().asFile)
