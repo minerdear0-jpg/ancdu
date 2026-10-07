@@ -1,13 +1,11 @@
 package dev.ancdu
 
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 
 /**
@@ -36,7 +34,7 @@ class StorageCard(private val a: MainActivity) {
     lateinit var freshTxt: TextView
         private set
     private lateinit var deltaTxt: TextView
-    private lateinit var scanLine: ProgressBar
+    private lateinit var scanLine: ScanLine
     /** Без доступа ко всем файлам: объяснение и «Открыть настройки» (раскрывается тапом). */
     lateinit var permBox: LinearLayout
         private set
@@ -96,12 +94,7 @@ class StorageCard(private val a: MainActivity) {
         addView(cats, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(14) })
         hairline(topDp = 14)
         // Под линией 2dp амберная полоса, пока идёт скан.
-        scanLine = ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(C.AMBER)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            visibility = View.INVISIBLE
-        }
+        scanLine = ScanLine(a)
         addView(scanLine, LinearLayout.LayoutParams(MATCH_PARENT, a.dp(2)))
         addView(a.vbox().apply {
             minimumHeight = a.dp(56)
@@ -194,7 +187,7 @@ class StorageCard(private val a: MainActivity) {
             storeArrow.setTextColor(C.AMBER)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
-            scanLine.visibility = View.INVISIBLE
+            scanLine.hide()
             view.contentDescription = t.s(R.string.card_desc_need_access, t.s(R.string.card_desc))
             return
         }
@@ -231,7 +224,11 @@ class StorageCard(private val a: MainActivity) {
         }
         // Только скан общего хранилища (идёт или в очереди за обновлением другого корня).
         val running = BgScan.storageActive
-        scanLine.visibility = if (running) View.VISIBLE else View.INVISIBLE
+        // Доля — от items последнего кэша хранилища; без него (и в очереди) — неопределённая.
+        if (running) scanLine.show(if (BgScan.storageRunning) ScanProgress.fraction(BgScan.p[1],
+                Scans.meta(a, Scans.STORAGE, false)?.items) else null)
+        else if (BgScan.failure != null) scanLine.hide()
+        else scanLine.finish()
         val line = Freshness.line(t, running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
             System.currentTimeMillis())
         freshTxt.visibility = View.VISIBLE

@@ -115,6 +115,113 @@ class Sweep(ctx: Context) : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
+/**
+ * Полоса 2dp фонового скана (шапка браузера, карточка главного экрана); всегда держит место
+ * (INVISIBLE, не GONE). Есть доля — определённая (заполнение слева, к новой доле — за 100 мс), нет —
+ * неопределённая (амберный отрезок бежит по кругу). Без анимаций ([Motion]) определённая двигается
+ * шагами, неопределённая — статичная линия с альфой 40%. Для доступности её нет.
+ */
+class ScanLine(ctx: Context) : View(ctx) {
+    /** Показанная доля; null — неопределённая. */
+    var fraction: Float? = null
+        private set
+    /** Для тестов: идущая анимация (бег отрезка или переход к новой доле); null — нет. */
+    var animator: ValueAnimator? = null
+        private set
+    private var looping = false
+    /** Ждёт скрытия после [finish]. */
+    private var finishing = false
+    /** Нарисованная доля (определённая) или фаза бега 0..1 (неопределённая). */
+    private var pos = 0f
+    private val paint = Paint()
+    private val hideNow = Runnable { finishing = false; stopAnim(); visibility = INVISIBLE }
+
+    init {
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        visibility = INVISIBLE
+    }
+
+    /** Показать долю [f] (null — неопределённая). */
+    fun show(f: Float?) {
+        removeCallbacks(hideNow); finishing = false
+        val wasShown = visibility == VISIBLE
+        val prev = fraction
+        visibility = VISIBLE
+        fraction = f
+        if (f == null) {
+            if (!Motion.on()) stopAnim()
+            else if (!looping) loop()
+        } else if (Motion.on() && wasShown && prev != null && f != prev) {
+            stopAnim()
+            animator = ValueAnimator.ofFloat(pos, f).apply {
+                duration = 100
+                interpolator = LinearInterpolator()
+                addUpdateListener { pos = it.animatedValue as Float; invalidate() }
+                start()
+            }
+        } else if (animator == null || looping || f != prev) {
+            stopAnim(); pos = f
+        }
+        invalidate()
+    }
+
+    /** Скан закончился: полоса сразу на 100%, через 300 мс скрывается (без анимаций — сразу). */
+    fun finish() {
+        if (visibility != VISIBLE || finishing) return
+        stopAnim()
+        fraction = 1f; pos = 1f
+        invalidate()
+        if (Motion.on()) { finishing = true; postDelayed(hideNow, 300) } else hideNow.run()
+    }
+
+    /** Скрыть сразу (скан не удался, нет доступа). */
+    fun hide() {
+        removeCallbacks(hideNow)
+        hideNow.run()
+    }
+
+    private fun loop() {
+        stopAnim()
+        looping = true
+        animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1200
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { pos = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    private fun stopAnim() {
+        animator?.cancel()
+        animator = null
+        looping = false
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(hideNow); finishing = false
+        stopAnim()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        paint.color = C.AMBER
+        val f = fraction
+        when {
+            f != null -> c.drawRect(0f, 0f, w * pos.coerceIn(0f, 1f), h, paint)
+            looping -> {
+                // Отрезок в 30% ширины входит слева и уходит вправо.
+                val seg = w * 0.3f
+                val x = pos * (w + seg) - seg
+                c.drawRect(maxOf(x, 0f), 0f, minOf(x + seg, w), h, paint)
+            }
+            else -> { paint.alpha = 102; c.drawRect(0f, 0f, w, h, paint) }
+        }
+    }
+}
+
 /** Галочка 20dp: контур амбером; отмечена — амберная заливка и тёмная «✓». */
 class Check(ctx: Context) : Drawable() {
     private val size = ctx.dp(20)

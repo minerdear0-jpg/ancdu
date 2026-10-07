@@ -53,6 +53,12 @@ object BgScan {
     val storageActive: Boolean get() = queue.active(STORAGE, if (running) cur else null)
     /** Идёт скан или ждёт пересканирование после удаления. */
     val active: Boolean get() = h != 0L || !queue.isEmpty
+    /** Для тестов: состояние для любого дерева вместо настоящего ([stateFor]). */
+    @Volatile var stateOverride: ScanState? = null
+
+    /** Скан дерева [root] в режиме [su] (оба совпадают) идёт, ждёт в очереди или его нет. */
+    fun stateFor(root: String, su: Boolean): ScanState =
+        stateOverride ?: queue.state(ScanTarget(root, su), if (running) cur else null)
 
     /** MainActivity между onResume и onPause. */
     var mainResumed = false

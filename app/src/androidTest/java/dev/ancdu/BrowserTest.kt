@@ -382,6 +382,97 @@ class BrowserTest {
     }
 
     /**
+     * Фоновое обновление показанного дерева: полоса 2dp под линией шапки и «обновление · N» на
+     * плашке. Высота шапки и верх списка не меняются (место полосы держится всегда); плашка — в
+     * одну строку и при шрифте 200%. Счёт — не чаще раза в секунду и молча; начало, ожидание и
+     * конец — голосом (live region). Кончился с новым деревом — полоса на 100% и скрывается,
+     * без нового дерева — скрывается сразу; плашка снова показывает вид дерева.
+     */
+    @Test fun refreshProgressInHeader() {
+        val ctx = ins.targetContext
+        // Настоящий скан писал бы в BgScan.p поверх подставленного счёта.
+        assertTrue(waitFor(30_000) { !BgScan.active })
+        val dir = tmpDir("prog")
+        File(dir, "sub").mkdirs()
+        File(dir, "sub/a.bin").writeBytes(ByteArray(1000))
+        scan(dir)
+        for (scale in listOf(1f, 2f)) {
+            Lang.fontScale = scale
+            val act = ins.startActivitySync(
+                Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+            fun geo(): Pair<Int, Int> {
+                ins.waitForIdleSync()
+                var g = 0 to 0
+                ins.runOnMainSync { g = act.header.height to IntArray(2).also { act.list.getLocationOnScreen(it) }[1] }
+                return g
+            }
+            fun state(st: ScanState?, files: Long = BgScan.p[1]) =
+                ins.runOnMainSync { BgScan.p[1] = files; BgScan.stateOverride = st; BgScan.changed() }
+            try {
+                val idle = geo()
+                var source = ""
+                ins.runOnMainSync {
+                    assertEquals(View.INVISIBLE, act.scanLine.visibility)
+                    source = act.badge.text.toString()
+                }
+                state(ScanState.RUNNING, 1_234_567)
+                assertEquals("scale=$scale: идёт", idle, geo())
+                ins.runOnMainSync {
+                    assertEquals(View.VISIBLE, act.scanLine.visibility)
+                    assertEquals(ScanProgress.CAP, act.scanLine.fraction!!, 0f)   // files > items корня
+                    assertEquals(ScanProgress.badge(act.tx, ScanState.RUNNING, 1_234_567), act.badge.text.toString())
+                    assertEquals("scale=$scale: ${act.badge.text}", 1, act.badge.lineCount)
+                    assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, act.badge.accessibilityLiveRegion)
+                }
+                state(ScanState.RUNNING, 1_234_999)   // тот же тик секунды — плашка прежняя
+                ins.runOnMainSync {
+                    assertEquals(ScanProgress.badge(act.tx, ScanState.RUNNING, 1_234_567), act.badge.text.toString())
+                }
+                Thread.sleep(ScanProgress.BADGE_MS + 100)
+                state(ScanState.RUNNING)
+                ins.runOnMainSync {
+                    assertEquals(ScanProgress.badge(act.tx, ScanState.RUNNING, 1_234_999), act.badge.text.toString())
+                    assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, act.badge.accessibilityLiveRegion)
+                }
+                state(ScanState.QUEUED)
+                assertEquals("scale=$scale: ждёт", idle, geo())
+                ins.runOnMainSync {
+                    assertEquals(View.VISIBLE, act.scanLine.visibility)
+                    assertNull(act.scanLine.fraction)
+                    assertEquals(ScanProgress.badge(act.tx, ScanState.QUEUED, 0), act.badge.text.toString())
+                    assertEquals(1, act.badge.lineCount)
+                    assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, act.badge.accessibilityLiveRegion)
+                }
+                // Кончился без нового дерева (не удался): полоса скрыта сразу.
+                state(null)
+                ins.runOnMainSync {
+                    assertEquals(View.INVISIBLE, act.scanLine.visibility)
+                    assertEquals(source, act.badge.text.toString())
+                }
+                assertEquals("scale=$scale: конец", idle, geo())
+                if (scale == 1f) {
+                    // Кончился с новым деревом: 100%, затем скрыта; чип «новее» на месте.
+                    state(ScanState.RUNNING, 0)
+                    val h2 = scanned(dir)
+                    ins.runOnMainSync {
+                        Holder.offer(h2, Kind.SCAN, dir.path, false)
+                        BgScan.stateOverride = null; BgScan.changed()
+                        assertEquals(1f, act.scanLine.fraction!!, 0f)
+                        assertEquals(View.VISIBLE, act.newer.visibility)
+                        assertEquals(source, act.badge.text.toString())
+                    }
+                    assertTrue(waitFor(2000) { act.scanLine.visibility == View.INVISIBLE })
+                }
+            } finally {
+                ins.runOnMainSync { BgScan.stateOverride = null; BgScan.p[1] = 0; Holder.dropPending(); act.finish() }
+                Lang.fontScale = null
+            }
+        }
+        forgetCache(dir)
+        dir.deleteRecursively()
+    }
+
+    /**
      * Ждущее дерево: offer не трогает экран, чип «новее · обновить» виден; тап подставляет его и
      * открывает тот же путь по именам; пропавший путь — ближайший существующий предок.
      */
@@ -544,7 +635,7 @@ class BrowserTest {
     }
 
     /**
-     * Кэш: долгий тап по каталогу — листа сразу нет, подвал «обновляю дерево…»; экран сам
+     * Кэш: долгий тап по каталогу — листа сразу нет, в шапке «обновление · …»; экран сам
      * сканирует корень и открывает лист того же каталога со свежими числами.
      */
     @Test fun cacheDirLongPressRefreshesThenSheet() {
@@ -565,7 +656,9 @@ class BrowserTest {
             ins.runOnMainSync {
                 act.list.source!!.longClick(i)
                 assertTrue(act.sheet?.dialog?.isShowing != true)
-                assertEquals(DeleteProgress.refreshing(act.tx), act.footerText.toString())
+                // Ход обновления — в шапке: полоса и «обновление · …» (идёт или ждёт).
+                assertEquals(View.VISIBLE, act.scanLine.visibility)
+                assertTrue(act.badge.text.toString(), act.badge.text.startsWith(act.prefixOf(R.string.refresh_count)))
             }
             assertTrue(waitFor(30_000) { act.sheet?.dialog?.isShowing == true })
             ins.runOnMainSync {

@@ -108,6 +108,8 @@
     <string name="desc_dir">каталог</string>
     <string name="desc_incomplete">неполные данные</string>
     <string name="newer_chip">новее · обновить</string>
+    <string name="refresh_count">обновление · %1$s</string>
+    <string name="refresh_waiting">обновление · ждёт</string>
     <string name="newer_desc">Есть более новое дерево — обновить</string>
     <string name="long_click_label">Удалить или подробнее</string>
     <string name="gallery_cleaning">галерея: очистка %1$s…</string>
@@ -138,7 +140,6 @@
     <string name="progress_cancelled">Удаление отменено — ничего не удалено.</string>
     <string name="freed">освобождено %1$s</string>
     <string name="freed_left">%1$s · остаток в списке</string>
-    <string name="refreshing">обновляю дерево…</string>
     <string name="gone">“%1$s” уже нет на диске</string>
 
     <string name="block_system">системный путь — удаление отключено</string>

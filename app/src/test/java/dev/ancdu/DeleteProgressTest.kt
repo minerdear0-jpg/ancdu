@@ -52,8 +52,6 @@ class DeleteProgressTest {
         assertEquals(69_370L, DeleteProgress.total(69_370))
         assertEquals("Удаление «DCIM»", DeleteProgress.title(RU, "DCIM"))
         assertEquals("Deleting “DCIM”", DeleteProgress.title(EN, "DCIM"))
-        assertEquals("обновляю дерево…", DeleteProgress.refreshing(RU))
-        assertEquals("refreshing tree…", DeleteProgress.refreshing(EN))
         assertEquals("освобождено 1,5${Fmt.NBSP}МиБ · остаток в списке", DeleteProgress.freedLeft(RU, 3L shl 19))
         assertEquals("“DCIM” уже нет на диске", DeleteProgress.gone(RU, "DCIM"))
     }

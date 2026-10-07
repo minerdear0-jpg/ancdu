@@ -1,6 +1,7 @@
 package dev.ancdu
 
 import android.content.Intent
+import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
@@ -175,7 +176,7 @@ class DeleteSheetTest {
     }
 
     /**
-     * Индекс: долгий тап по каталогу — «обновляю дерево…», экран сам сканирует корень и открывает
+     * Индекс: долгий тап по каталогу — в шапке «обновление · …», экран сам сканирует корень и открывает
      * лист того же каталога уже в свежем дереве (с кнопкой «Удалить»); файл — лист сразу.
      */
     @Test fun indexDirRefreshesThenSheet() {
@@ -196,7 +197,9 @@ class DeleteSheetTest {
             val i = indexOf(a, "photos/")
             ins.runOnMainSync {
                 a.list.source!!.longClick(i)
-                assertEquals(DeleteProgress.refreshing(a.tx), a.footerText.toString())
+                // Ход обновления — в шапке: полоса и «обновление · …» (идёт или ждёт).
+                assertEquals(View.VISIBLE, a.scanLine.visibility)
+                assertTrue(a.badge.text.toString(), a.badge.text.startsWith(a.prefixOf(R.string.refresh_count)))
             }
             assertTrue(waitFor(30_000) { Holder.kind == Kind.SCAN && a.sheet?.dialog?.isShowing == true })
             s = a.sheet!!

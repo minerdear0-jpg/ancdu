@@ -1,8 +1,10 @@
 package dev.ancdu
 
+import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -39,6 +41,40 @@ class MotionTest {
             bar.fill!!.end()
             // Второй экран того же процесса — без анимации.
             assertNull(SegBar(ins.targetContext).also { it.used = 0.5f }.fill)
+        }
+    }
+
+    /**
+     * Полоса скана без анимаций: неопределённая — статичная (без бега), определённая — шагами,
+     * конец — скрыта сразу. С анимациями: бег по кругу, конец — 100% и скрытие через 300 мс.
+     */
+    @Test fun scanLineWithoutMotion() {
+        Motion.override = false
+        ins.runOnMainSync {
+            val l = ScanLine(ins.targetContext)
+            l.show(null)
+            assertEquals(View.VISIBLE, l.visibility)
+            assertNull(l.animator)
+            l.show(0.2f); l.show(0.5f)
+            assertNull(l.animator)
+            l.finish()
+            assertEquals(View.INVISIBLE, l.visibility)
+        }
+    }
+
+    @Test fun scanLineWithMotion() {
+        Motion.override = true
+        ins.runOnMainSync {
+            val l = ScanLine(ins.targetContext)
+            l.show(null)
+            assertNotNull(l.animator)
+            l.show(0.2f)
+            l.finish()
+            assertNull(l.animator)
+            assertEquals(1f, l.fraction!!, 0f)
+            assertEquals("скрывается через 300 мс", View.VISIBLE, l.visibility)
+            l.hide()
+            assertEquals(View.INVISIBLE, l.visibility)
         }
     }
 }

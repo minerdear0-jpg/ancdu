@@ -78,4 +78,23 @@ class ScanQueueTest {
         q += data
         assertEquals(data, q.next(rootDenied = false))
     }
+
+    /**
+     * Состояние скана дерева браузера (BgScan.stateFor): тот же корень И тот же режим su — идёт
+     * или ждёт; другой режим или другой корень — NONE.
+     */
+    @Test fun stateForTarget() {
+        val q = ScanQueue()
+        val dataNoSu = ScanTarget("/data", false)
+        assertEquals(ScanState.NONE, q.state(data, running = null))
+        assertEquals(ScanState.RUNNING, q.state(data, running = data))
+        assertEquals("другой режим su", ScanState.NONE, q.state(dataNoSu, running = data))
+        assertEquals(ScanState.NONE, q.state(fixture, running = data))
+        q += fixture
+        assertEquals(ScanState.QUEUED, q.state(fixture, running = data))
+        assertEquals(ScanState.QUEUED, q.state(fixture, running = null))
+        assertEquals(ScanState.NONE, q.state(ScanTarget(fixture.root, true), running = data))
+        q.remove(fixture)
+        assertEquals(ScanState.NONE, q.state(fixture, running = data))
+    }
 }

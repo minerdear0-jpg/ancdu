@@ -115,7 +115,24 @@ class BrowserActivity : LangActivity() {
     /** Идёт [promotePending]: смену сессии экран обрабатывает сам, без recreate. */
     private var promoting = false
     /** Фоновый скан мог положить дерево в Holder.offer (тот слушателей не зовёт). */
-    private val onBg: () -> Unit = { refreshPending() }
+    private val onBg: () -> Unit = {
+        val finished = renderProgress()
+        refreshPending()
+        // Обновлённое дерево ждёт тапа по чипу «новее» — сказать об этом.
+        if (finished && newer.visibility == View.VISIBLE && newer.a11yOn())
+            newer.announceForAccessibility(txt.s(R.string.newer_desc))
+    }
+    /** Полоса 2dp под линией шапки: фоновое обновление показанного дерева. */
+    lateinit var scanLine: ScanLine
+        private set
+    /** Состояние фонового скана показанного дерева при последнем [renderProgress]. */
+    private var scanState = ScanState.NONE
+    /** Когда плашка последний раз показала счёт (uptime). */
+    private var badgeAt = 0L
+    /** Оценка для доли полосы: items корня показанного дерева на старте скана. */
+    private var estimate: Long? = null
+    /** Обычный текст плашки — вид дерева (load). */
+    private var sourceBadge = ""
     /** «Обновить сам, сохранив путь»: ждёт обновлённое дерево после удаления или перед листом. */
     private val auto = AutoPromote()
     /** Обычная подсказка подвала текущего уровня (load); без жестов после первых сессий. */
@@ -164,8 +181,8 @@ class BrowserActivity : LangActivity() {
                     // запустилось — сразу итог по прежнему дереву (refreshFailed).
                     else -> {
                         auto.afterDelete(Holder.delNames, Holder.delName, Holder.delDisk)
-                        if (BgScan.active) setFooter(DeleteProgress.refreshing(txt))
-                        else refreshFailed(auto.take()!!)
+                        // Ход обновления — в шапке (renderProgress).
+                        if (!BgScan.active) refreshFailed(auto.take()!!)
                     }
                 }
                 Log.i("ancdu", "delete r=$r done=$doneN refresh=${auto.request != null}")
@@ -187,7 +204,7 @@ class BrowserActivity : LangActivity() {
         ui.postDelayed(restoreFooter, 4000)
     }
 
-    private fun idleFooter(): String = if (auto.request != null) DeleteProgress.refreshing(txt) else hint
+    private fun idleFooter(): String = hint
 
     private var restoreFooter = Runnable {}
 
@@ -308,6 +325,7 @@ class BrowserActivity : LangActivity() {
             setPadding(dp(24), 0, dp(24), 0)
             visibility = View.GONE
         }
+        scanLine = ScanLine(this)
         footer = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), dp(10), dp(16), dp(10))
             visibility = View.INVISIBLE
@@ -320,6 +338,8 @@ class BrowserActivity : LangActivity() {
             setBackgroundColor(C.BG)
             addView(top)
             hairline()
+            // Вне шапки: её высота и верх списка от полосы не зависят (место держится всегда).
+            addView(scanLine, LinearLayout.LayoutParams(MATCH_PARENT, dp(2)))
             addView(FrameLayout(this@BrowserActivity).apply {
                 addView(list, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
                 addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -354,6 +374,7 @@ class BrowserActivity : LangActivity() {
             list.source = src
             load(node, keepScroll)
         }
+        renderProgress()
     }
 
     override fun onSaveInstanceState(out: Bundle) {
@@ -394,6 +415,43 @@ class BrowserActivity : LangActivity() {
             if (!Holder.deleting && auto.failed(nw, BgScan.active)) refreshFailed(auto.take()!!)
         }
         newer.visibility = if (hasNewer() && h != 0L) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Полоса и плашка фонового обновления показанного дерева (тот же корень и режим su). Идёт —
+     * доля files / items корня (не больше 0.97), плашка «обновление · N» раз в секунду; ждёт в
+     * очереди — неопределённая полоса и «обновление · ждёт». Кончился — полоса на 100% и
+     * скрывается, плашка снова показывает вид дерева; не удался (нового дерева нет) — полоса
+     * скрывается сразу. Голосом — только начало, ожидание и конец. true — скан только что кончился.
+     */
+    private fun renderProgress(): Boolean {
+        if (!::scanLine.isInitialized || h == 0L || isDestroyed) return false
+        val st = BgScan.stateFor(Holder.root, Holder.viaRoot)
+        val was = scanState
+        scanState = st
+        if (st == ScanState.NONE) {
+            if (was == ScanState.NONE) return false
+            if (hasNewer()) scanLine.finish() else scanLine.hide()
+            setBadge(sourceBadge, polite = true)
+            return true
+        }
+        val files = BgScan.p[1]
+        // Во время удаления дерево не читается: без оценки — неопределённая полоса.
+        if (st == ScanState.RUNNING && was != ScanState.RUNNING)
+            estimate = if (busy) null else LongArray(4).also { Native.nodeInfo(h, intArrayOf(0), 1, it) }[2]
+        scanLine.show(if (st == ScanState.RUNNING) ScanProgress.fraction(files, estimate) else null)
+        val now = SystemClock.uptimeMillis()
+        if (ScanProgress.badgeDue(st != was, now, badgeAt)) {
+            setBadge(ScanProgress.badge(txt, st, files), polite = st != was)
+            badgeAt = now
+        }
+        return false
+    }
+
+    /** [polite] — TalkBack прочтёт (начало, ожидание, конец); тики счёта — молча. */
+    private fun setBadge(text: String, polite: Boolean) {
+        badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
+        badge.text = text
     }
 
     /** Обновлённое дерево готово: подставить (путь сохраняется) и показать итог запроса [r]. */
@@ -576,7 +634,8 @@ class BrowserActivity : LangActivity() {
         summary.text = "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        badge.text = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
+        sourceBadge = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
+        if (scanState == ScanState.NONE) badge.text = sourceBadge
         hint = listOfNotNull(if (showHint) txt.s(R.string.browser_hint) else null,
             if (p[3] > 0) "⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else null).joinToString("   ")
         setFooter(idleFooter())
@@ -662,7 +721,8 @@ class BrowserActivity : LangActivity() {
         }
         if (blockReason(h, t, Native.str(Native.path(h, t))) == Block.REFRESH_FAILED) {
             auto.beforeDelete(pathNames(h, t), nameOf(t), ScanTarget(Holder.root, Holder.viaRoot))
-            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { setFooter(DeleteProgress.refreshing(txt)); return }
+            // Встать в очередь за сканом другого корня BgScan молча: «ждёт» показывает renderProgress.
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { renderProgress(); return }
             auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
         }

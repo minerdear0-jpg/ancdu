@@ -8,6 +8,9 @@ data class ScanTarget(val root: String, val su: Boolean) {
     }
 }
 
+/** Фоновый скан цели: идёт, ждёт в очереди или его нет. */
+enum class ScanState { RUNNING, QUEUED, NONE }
+
 /**
  * Чистый Kotlin: очередь сканов BgScan — FIFO без повторов. Постановка не вытесняет ждущие цели
  * (обновление после удаления не теряется из-за второго удаления или скана главного экрана);
@@ -35,4 +38,11 @@ class ScanQueue {
 
     /** Скан цели [t] идёт ([running] — цель идущего скана или null) или ждёт в очереди. */
     fun active(t: ScanTarget, running: ScanTarget?): Boolean = running == t || t in q
+
+    /** То же, что [active], с различением «идёт» и «ждёт». */
+    fun state(t: ScanTarget, running: ScanTarget?): ScanState = when {
+        running == t -> ScanState.RUNNING
+        t in q -> ScanState.QUEUED
+        else -> ScanState.NONE
+    }
 }

@@ -117,6 +117,8 @@
     <string name="desc_dir">folder</string>
     <string name="desc_incomplete">incomplete data</string>
     <string name="newer_chip">newer · refresh</string>
+    <string name="refresh_count">refresh · %1$s</string>
+    <string name="refresh_waiting">refresh · waiting</string>
     <string name="newer_desc">A newer tree is ready — refresh</string>
     <string name="long_click_label">Delete or details</string>
     <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
@@ -148,7 +150,6 @@
     <string name="progress_cancelled">Delete cancelled — nothing was deleted.</string>
     <string name="freed">freed %1$s</string>
     <string name="freed_left">%1$s · the rest is still listed</string>
-    <string name="refreshing">refreshing tree…</string>
     <string name="gone">“%1$s” is no longer on disk</string>
 
     <!-- Delete policy. -->

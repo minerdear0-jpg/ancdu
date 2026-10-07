@@ -59,10 +59,18 @@ object Lang {
         if (Build.VERSION.SDK_INT >= 33) ctx.getSystemService(LocaleManager::class.java)?.applicationLocales?.toLanguageTags() else null,
         stored(ctx))
 
+    /** Для тестов: масштаб шрифта экранов, создаваемых дальше (null — системный). */
+    @Volatile var fontScale: Float? = null
+
     /** attachBaseContext каждой Activity на API 30–32: ресурсы в выбранном языке. */
     fun wrap(base: Context): Context {
-        val loc = LangPrefs.wrapLocale(Build.VERSION.SDK_INT, stored(base)) ?: return base
-        return withLocale(base, loc)
+        val scale = fontScale
+        val loc = LangPrefs.wrapLocale(Build.VERSION.SDK_INT, stored(base))
+        if (scale == null) return if (loc == null) base else withLocale(base, loc)
+        val cfg = Configuration(base.resources.configuration)
+        if (loc != null) cfg.setLocales(LocaleList(loc))
+        cfg.fontScale = scale
+        return base.createConfigurationContext(cfg)
     }
 
     fun withLocale(base: Context, loc: Locale): Context {

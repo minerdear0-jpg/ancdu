@@ -50,9 +50,6 @@ object DeleteProgress {
     /** «освобождено …» и хвост: узел после обновления ещё на диске (удалён не весь). */
     fun freedLeft(t: Txt, disk: Long): String = t.s(R.string.freed_left, freed(t, disk))
 
-    /** Подвал, пока экран сам обновляет дерево. */
-    fun refreshing(t: Txt): String = t.s(R.string.refreshing)
-
     /** Узла запроса нет в обновлённом дереве. */
     fun gone(t: Txt, name: String): String = t.s(R.string.gone, name)
 
