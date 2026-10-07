@@ -54,22 +54,23 @@ data class Decision(val sound: Sound?, val haptic: Haptic?)
 
 /**
  * Частота tick/tock (общая): между звуками не меньше 60 мс; больше 6 касаний за 1,5 с — тишина,
- * пока не будет 400 мс без касаний. В историю идёт каждое касание, как в утверждённом превью;
- * когда тишина кончается, история всплеска сбрасывается — иначе заглушённые касания держали бы
- * её до 1,5 с.
+ * пока не будет 400 мс без касаний или пока не пройдёт окно 1,5 с с её начала (иначе ровный темп
+ * ~4 касаний/с, где пауза 400 мс не наступает, глушил бы навсегда). В историю идёт каждое
+ * касание, как в утверждённом превью; когда тишина кончается, история всплеска сбрасывается.
  */
 class TickLimiter {
     private var last = Long.MIN_VALUE / 2
     private var lastTap = Long.MIN_VALUE / 2
     private var muted = false
+    private var mutedAt = 0L
     private val hist = ArrayDeque<Long>()
 
     fun allow(now: Long): Boolean {
-        if (muted && now - lastTap >= QUIET_MS) { muted = false; hist.clear() }
+        if (muted && (now - lastTap >= QUIET_MS || now - mutedAt >= WINDOW_MS)) { muted = false; hist.clear() }
         lastTap = now
         hist.addLast(now)
         while (now - hist.first() > WINDOW_MS) hist.removeFirst()
-        if (hist.size > BURST) muted = true
+        if (!muted && hist.size > BURST) { muted = true; mutedAt = now }
         val ok = !muted && now - last >= GAP_MS
         if (ok) last = now
         return ok

@@ -2,6 +2,7 @@ package dev.ancdu
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FeedbackPolicyTest {
@@ -108,11 +109,23 @@ class FeedbackPolicyTest {
         assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, lim, last + 400).sound)
         // После сброса обычный темп снова звучит (история не тянет старый всплеск).
         assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, lim, last + 470).sound)
-        // Касание внутри тишины продлевает её: от него снова отсчитываются 400 мс.
+        // Касание внутри тишины продлевает её: от него снова отсчитываются 400 мс…
         val ext = afterBurst()
         assertNull(FeedbackPolicy.decide(Cue.TAP, on, ext, last + 300).sound)
-        assertNull(FeedbackPolicy.decide(Cue.TAP, on, ext, last + 600).sound)
-        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, ext, last + 1000).sound)
+        assertNull(FeedbackPolicy.decide(Cue.TAP, on, ext, last + 580).sound)
+        // …но не дольше окна 1,5 с с начала тишины (она началась на 7-м касании, t = 420).
+        assertEquals(Sound.TICK, FeedbackPolicy.decide(Cue.TAP, on, ext, 420 + 1500).sound)
+    }
+
+    /** Ровный темп без пауз ≥ 400 мс (230 мс ≈ 4,3 касания/с) не глушит навсегда. */
+    @Test fun steadyTappingNeverMutesForGood() {
+        val taps = (0 until 40).map { it * 230L }
+        val got = played(taps)
+        assertEquals(taps.take(6), got.take(6))
+        val gaps = (listOf(0L) + got + listOf(taps.last())).zipWithNext { a, b -> b - a }
+        // Пауза не длиннее окна плюс по касанию с каждой стороны тишины.
+        assertTrue("longest silence ${gaps.max()} ms", gaps.max() <= 1500 + 2 * 230)
+        assertTrue(got.size >= 15)
     }
 
     /** TalkBack и тихий ringer вместе: итоговые события — только вибрация, остальные — ничего. */

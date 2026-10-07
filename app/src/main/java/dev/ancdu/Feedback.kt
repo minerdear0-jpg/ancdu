@@ -133,7 +133,9 @@ object Feedback {
     private fun haptic(v: View?, h: Haptic) {
         // «Вкл» — вибрация и при выключенном системном виброотклике (SYSTEM его уже учёл).
         // Ограничение платформы: с API 33 FLAG_IGNORE_GLOBAL_SETTING для обычных приложений
-        // игнорируется, и отклик view там всё равно следует системному переключателю.
+        // игнорируется, и отклик view там всё равно следует системному переключателю; вибрации
+        // через Vibrator с USAGE_TOUCH тоже. Итог на 33+: при выключенном системном виброотклике
+        // «Вкл» может не дать вибрации вовсе.
         @Suppress("DEPRECATION")
         val flags = if (mode == FxMode.ON) HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING else 0
         fun perform(c: Int) { v?.performHapticFeedback(c, flags) }
