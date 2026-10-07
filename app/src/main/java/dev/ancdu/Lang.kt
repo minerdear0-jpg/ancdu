@@ -126,6 +126,7 @@ abstract class LangActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         lang = Lang.stored(this)
         super.onCreate(savedInstanceState)
+        Feedback.init(this)
         if (Build.VERSION.SDK_INT >= 34) {
             Motion.transition(open = true).let { (e, x) -> overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, e, x) }
             Motion.transition(open = false).let { (e, x) -> overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, e, x) }

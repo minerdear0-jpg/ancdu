@@ -152,7 +152,7 @@ fun Context.chip(text: String, selected: Boolean, onClick: () -> Unit): TextView
         setPadding(dp(12), 0, dp(12), 0)
         background = if (selected) box(C.AMBER) else pressable(C.BG, C.FRAME)
         isClickable = true; isFocusable = true
-        setOnClickListener { onClick() }
+        feedbackClick { onClick() }
     }
 
 /**
@@ -178,13 +178,13 @@ fun Context.segmented(options: List<String>, selected: Int, amber: Boolean, onPi
                 background = if (on) box(if (amber) C.AMBER else C.PANEL2) else pressable(Color.TRANSPARENT)
                 isSelected = on
                 isClickable = true; isFocusable = true
-                setOnClickListener { onPick(i) }
+                feedbackClick { onPick(i) }
             }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         }
     }
 
-/** Кнопка 56dp: основная — амберная заливка, иначе контур FRAME. */
-fun Context.action(title: String, sub: String?, primary: Boolean, onClick: () -> Unit): LinearLayout =
+/** Кнопка 56dp: основная — амберная заливка, иначе контур FRAME. [cue] — звук касания. */
+fun Context.action(title: String, sub: String?, primary: Boolean, cue: Cue = Cue.TAP, onClick: () -> Unit): LinearLayout =
     vbox().apply {
         tag = ACTION_TAG
         minimumHeight = dp(56)
@@ -203,7 +203,7 @@ fun Context.action(title: String, sub: String?, primary: Boolean, onClick: () ->
         })
         isClickable = true; isFocusable = true
         contentDescription = if (sub != null) "$title, $sub" else title
-        setOnClickListener { onClick() }
+        feedbackClick(cue) { onClick() }
     }
 
 /**
@@ -222,7 +222,7 @@ fun Context.navRow(head: String, body: CharSequence, desc: String, bodyColor: In
     addView(label("›", 18f, C.MUTED))
     isClickable = true; isFocusable = true
     contentDescription = desc
-    setOnClickListener { onClick() }
+    feedbackClick { onClick() }
 }
 
 fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply {
@@ -231,7 +231,7 @@ fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply 
     background = pressable(Color.TRANSPARENT)
     contentDescription = tx.s(R.string.back)
     isClickable = true; isFocusable = true
-    setOnClickListener { onClick() }
+    feedbackClick(Cue.BACK) { onClick() }
 }
 
 fun Activity.darkBars() {

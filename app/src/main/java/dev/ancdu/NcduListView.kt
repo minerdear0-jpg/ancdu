@@ -130,7 +130,7 @@ class NcduListView(ctx: Context) : View(ctx) {
             val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
             // Короткий тап: нажатие видно ещё 100 мс после отпускания (см. onTouchEvent).
             if (i >= 0) pressed = i
-            if (i >= 0) { playSoundEffect(android.view.SoundEffectConstants.CLICK); source?.click(i) }
+            if (i >= 0) { Feedback.cue(this@NcduListView, Cue.TAP); source?.click(i) }
             return i >= 0
         }
         override fun onLongPress(e: MotionEvent) {

@@ -169,9 +169,11 @@ class BrowserActivity : LangActivity() {
         } else {
             list.source = src
             load(node, keepScroll)
-            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk))
+            if (r == 0) { note(DeleteProgress.freed(txt, Holder.delDisk)); Feedback.cue(list, Cue.DONE) }
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
+                // Отказ и ошибка — refuse; «Стоп» до начала пользователь уже услышал (tock).
+                if (!DeleteProgress.isCancelled(r, doneN)) Feedback.cue(list, Cue.REFUSE)
                 when {
                     // «Стоп» до начала: пользователь сам остановил — без диалога.
                     DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.cancelled(txt))
@@ -307,7 +309,7 @@ class BrowserActivity : LangActivity() {
                 intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER, C.AMBER, C.INK)))
             isClickable = true; isFocusable = true
             contentDescription = txt.s(R.string.newer_desc)
-            setOnClickListener { promotePending() }
+            feedbackClick { promotePending() }
             visibility = View.GONE
         }
         // «⇣ [РАЗМЕР|ИМЯ]» и справа [ДИСК|ВИДИМЫЙ]; не влезают в строку — переносятся.
@@ -704,7 +706,7 @@ class BrowserActivity : LangActivity() {
                 setPadding(dp(4), 0, dp(4), 0)
                 isClickable = true; isFocusable = true
                 contentDescription = txt.s(R.string.crumb_go, text)
-                setOnClickListener { jumpTo(nd) }
+                feedbackClick(Cue.BACK) { jumpTo(nd) }
             })
         }
         crumbScroll.visibility = if (node == 0) View.GONE else View.VISIBLE
@@ -837,7 +839,7 @@ class BrowserActivity : LangActivity() {
             setTextColor(android.content.res.ColorStateList(
                 arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(C.MUTED, C.TEXT)))
             background = pressable(android.graphics.Color.TRANSPARENT, C.FRAME)
-            setOnClickListener { stopDelete() }
+            feedbackClick(Cue.BACK) { stopDelete() }
         }
         val body = vbox(12).apply {
             setPadding(dp(20), dp(20), dp(20), dp(16))

@@ -160,8 +160,8 @@ class ScanActivity : LangActivity() {
         }
         cur = label("", 12f, C.MUTED, mono = true).apply { setSingleLine(true); ellipsize = TextUtils.TruncateAt.START }
         live = NcduListView(this).apply { source = liveSrc }
-        val cancel = if (attach) action(t.s(R.string.close), t.s(R.string.scan_continues), false) { finished = true; finish() }
-                     else action(t.s(R.string.stop), null, false) { abort(true) }
+        val cancel = if (attach) action(t.s(R.string.close), t.s(R.string.scan_continues), false, Cue.BACK) { finished = true; finish() }
+                     else action(t.s(R.string.stop), null, false, Cue.BACK) { abort(true) }
         cancel.minimumHeight = dp(48)
         setContentView(vbox(16).apply {
             setBackgroundColor(C.BG)

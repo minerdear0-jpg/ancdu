@@ -125,6 +125,11 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     fun show() {
         dialog.show()
         cancelButton.requestFocus()
+        Feedback.cue(cancelButton, when {
+            p.block != null -> Cue.REFUSE
+            p.viaRoot -> Cue.ARM_ROOT
+            else -> Cue.ARM
+        })
         if (pause) {
             enableAt = SystemClock.uptimeMillis() + PAUSE_MS
             tick.run()
@@ -279,10 +284,14 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             blockText = act.label(b, 14f, C.MUTED).apply { contentDescription = b }
             addView(blockText)
         }
-        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), null, C.TEXT) { dialog.dismiss() }
+        cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), null, C.TEXT, Cue.BACK) { dialog.dismiss() }
         if (b != null) { addView(cancelButton, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)); return@apply }
-        val del = button(readyLabel, C.DANGER_FILL, Color.WHITE) {
-            if (deleteButton?.isEnabled == true) { dialog.dismiss(); onDelete(fastBox?.isChecked == true) }
+        val del = button(readyLabel, C.DANGER_FILL, Color.WHITE, cue = null) {
+            val b = deleteButton
+            if (b?.isEnabled == true) {
+                Feedback.cue(b, if (p.viaRoot) Cue.COMMIT_ROOT else Cue.COMMIT)
+                dialog.dismiss(); onDelete(fastBox?.isChecked == true)
+            }
         }.apply {
             contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
             if (pause) { isEnabled = false; alpha = 0.5f }
@@ -292,8 +301,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
-    /** Кнопка 56dp: [bg] — заливка, null — контур FRAME. */
-    private fun button(text: String, bg: Int?, fg: Int, onClick: () -> Unit): TextView =
+    /** Кнопка 56dp: [bg] — заливка, null — контур FRAME. [cue] — звук касания (null — его даёт [onClick]). */
+    private fun button(text: String, bg: Int?, fg: Int, cue: Cue?, onClick: () -> Unit): TextView =
         act.label(text, 15f, fg, bold = true).apply {
             gravity = Gravity.CENTER
             minHeight = act.dp(56)
@@ -304,7 +313,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 addState(intArrayOf(), act.box(bg))
             }
             isClickable = true; isFocusable = true
-            setOnClickListener { onClick() }
+            isSoundEffectsEnabled = false
+            setOnClickListener { if (cue != null) Feedback.cue(this, cue); onClick() }
         }
 
     companion object {
