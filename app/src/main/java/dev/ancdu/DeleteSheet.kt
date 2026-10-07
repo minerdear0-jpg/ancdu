@@ -5,7 +5,6 @@ import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
@@ -22,7 +21,6 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
-import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -121,16 +119,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     init {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(build())
-        dialog.setCanceledOnTouchOutside(true)
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setLayout(MATCH_PARENT, WRAP_CONTENT)
-            setGravity(Gravity.BOTTOM)
-            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            setDimAmount(0.6f)
-            // Въезд снизу 160 мс, уход 120 мс; затемнение — вместе с окном. Без анимаций — 0.
-            setWindowAnimations(Motion.sheet())
-        }
+        // Въезд снизу 160 мс, уход 120 мс; затемнение 60% — вместе с окном. Без анимаций — 0.
+        dialog.bottomSheet()
         dialog.setOnDismissListener { ui.removeCallbacks(tick); onClose() }
     }
 

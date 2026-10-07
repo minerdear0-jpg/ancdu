@@ -1,6 +1,8 @@
 package dev.ancdu
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.media.MediaScannerConnection
 import android.os.Bundle
 import android.os.Handler
@@ -14,7 +16,6 @@ import android.view.animation.AnimationUtils
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.Button
 import android.widget.LinearLayout
@@ -79,13 +80,19 @@ class BrowserActivity : LangActivity() {
     var sheet: DeleteSheet? = null
         private set
     private val scrollAt = HashMap<Int, Int>()
-    /** Заголовок: имя текущей папки (на верхнем уровне — путь корня). */
+    /** Заголовок: имя текущей папки (на корне — PathText.rootTitle). */
     lateinit var title: TextView
         private set
-    /** Крошки пути: сегмент i ведёт к узлу crumbNodes[i]. */
-    private lateinit var crumbs: LinearLayout
-    private lateinit var crumbScroll: HorizontalScrollView
-    /** Для тестов: узлы сегментов крошек от корня до текущей папки. */
+    /** Строка пути над заголовком (всегда, и на корне): тап — панель пути, долгое — копировать. */
+    lateinit var pathRow: PathRow
+        private set
+    /** Полный путь текущей папки (его копирует «Копировать путь»). */
+    var currentPath = ""
+        private set
+    /** Для тестов: открытая панель пути. */
+    var pathPanel: PathPanel? = null
+        private set
+    /** Узлы пути от корня до текущей папки (строки панели пути). */
     var crumbNodes = IntArray(0)
         private set
     /** Пустая папка: сообщение по центру вместо списка. */
@@ -103,8 +110,8 @@ class BrowserActivity : LangActivity() {
     lateinit var chips: Flow
         private set
     /**
-     * Шапка целиком: её высота не зависит от сортировки, режима размера и чипа «новее»; на корне
-     * (без строки крошек) она ниже, во всех вложенных папках — одна и та же.
+     * Шапка целиком: её высота не зависит от сортировки, режима размера и чипа «новее» и одна и
+     * та же на корне и во вложенных папках (строка пути есть всегда).
      */
     lateinit var header: LinearLayout
         private set
@@ -275,17 +282,17 @@ class BrowserActivity : LangActivity() {
         title = label("", 22f, C.TEXT, bold = true).apply {
             setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
         }
-        crumbs = hbox()
-        // Путь предков (mono 12sp). На корне путь — в заголовке: строка крошек схлопывается (GONE).
-        crumbScroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(crumbs)
+        // Путь — одна строка над заголовком и на корне: высота шапки везде одна.
+        pathRow = PathRow(this).apply {
+            longClickLabel = txt.s(R.string.copy_path)
+            feedbackClick { openPathPanel() }
+            setOnLongClickListener { Feedback.cue(this, Cue.TAP); copyPath(); true }
         }
         top.addView(hbox(4).apply {
             addView(backButton { onBackPressed() })
             addView(vbox().apply {
+                addView(pathRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
                 addView(title)
-                addView(crumbScroll, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
         summary = label("", 13f, C.MUTED, mono = true).apply {
@@ -581,6 +588,7 @@ class BrowserActivity : LangActivity() {
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
+        pathPanel?.dismiss(); pathPanel = null
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
     }
@@ -631,7 +639,7 @@ class BrowserActivity : LangActivity() {
     fun setSort(k: Int) { if (busy) return; sort = k; load(node, 0) }
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
 
-    /** [dir] — переход по дереву: +1 вглубь, −1 назад или по крошкам, 0 — тот же уровень (без анимации). */
+    /** [dir] — переход по дереву: +1 вглубь, −1 назад или к предку из панели пути, 0 — тот же уровень (без анимации). */
     private fun load(target: Int, restore: Int, dir: Int = 0) {
         // Любая навигация отменяет ждущий лист (подстановка дерева при этом всё равно будет).
         cancelAsk()
@@ -680,8 +688,10 @@ class BrowserActivity : LangActivity() {
 
     private val enterCurve by lazy { AnimationUtils.loadInterpolator(this, R.interpolator.motion_enter) }
 
+    private fun rootPath(): String = Native.str(Native.path(h, 0)).ifEmpty { Holder.root }
+
     /**
-     * Заголовок — текущая папка (на корне — путь корня), крошки — её предки: путь виден один раз.
+     * Строка пути — полный путь текущей папки, заголовок — её имя (на корне — PathText.rootTitle).
      * Главный поток, чтения дерева — с [h].
      */
     private fun renderHeader() {
@@ -691,31 +701,33 @@ class BrowserActivity : LangActivity() {
         chain += 0
         chain.reverse()
         crumbNodes = chain.toIntArray()
-        val rootName = Native.str(Native.path(h, 0)).ifEmpty { Holder.root }
-        title.text = if (node == 0) rootName else nameOf(node)
-        crumbs.removeAllViews()
-        for ((k, nd) in chain.dropLast(1).withIndex()) {
-            if (k > 0) crumbs.addView(label("›", 12f, C.MUTED, mono = true).apply {
-                setPadding(dp(2), 0, dp(2), 0)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            })
-            val text = if (nd == 0) rootName else nameOf(nd)
-            crumbs.addView(label(text, 12f, C.MUTED, mono = true).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                minHeight = dp(44)
-                setPadding(dp(4), 0, dp(4), 0)
-                isClickable = true; isFocusable = true
-                contentDescription = txt.s(R.string.crumb_go, text)
-                feedbackClick(Cue.BACK) { jumpTo(nd) }
-            })
-        }
-        crumbScroll.visibility = if (node == 0) View.GONE else View.VISIBLE
-        crumbScroll.post { crumbScroll.fullScroll(View.FOCUS_RIGHT) }
+        title.text = if (node == 0) PathText.rootTitle(rootPath(), txt.s(R.string.internal_storage)) else nameOf(node)
+        currentPath = Native.str(Native.path(h, node))
+        pathRow.path = currentPath
+        pathRow.contentDescription = txt.s(R.string.path_row_desc, currentPath)
+    }
+
+    /** Панель пути: полный путь, «Копировать путь», предки от корня (тап — переход к нему). */
+    fun openPathPanel() {
+        if (busy || h == 0L) return
+        pathPanel?.dismiss()
+        val root = rootPath()
+        val rows = crumbNodes.map { nd -> nd to (if (nd == 0) root else nameOf(nd)) }
+        pathPanel = PathPanel(this, currentPath, rows, node,
+            onCopy = { pathPanel?.dismiss(); copyPath() },
+            onJump = { nd -> pathPanel?.dismiss(); jumpTo(nd) }).also { it.show() }
+    }
+
+    /** Полный путь текущей папки — в буфер обмена; в подвале «Путь скопирован» на 4 с. */
+    fun copyPath() {
+        val cm = getSystemService(ClipboardManager::class.java) ?: return
+        cm.setPrimaryClip(ClipData.newPlainText(txt.s(R.string.path_caps), currentPath))
+        note(txt.s(R.string.path_copied))
     }
 
     private fun nameOf(nd: Int): String = Native.str(Native.name(h, nd))
 
-    /** Переход к предку [target] из крошек: его прокрутка восстанавливается, более глубоких — забываются. */
+    /** Переход к предку [target] из панели пути: его прокрутка восстанавливается, более глубоких — забываются. */
     fun jumpTo(target: Int) {
         if (busy || target == node || target !in crumbNodes) return
         for (nd in crumbNodes.dropWhile { it != target }.drop(1)) scrollAt.remove(nd)

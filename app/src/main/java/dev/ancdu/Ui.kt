@@ -3,10 +3,12 @@ package dev.ancdu
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -14,6 +16,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -232,6 +235,37 @@ fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply 
     contentDescription = tx.s(R.string.back)
     isClickable = true; isFocusable = true
     feedbackClick(Cue.BACK) { onClick() }
+}
+
+/**
+ * Окно листа у нижнего края во всю ширину: затемнение 60%, въезд снизу (SheetAnim; без анимаций — 0).
+ * Вызывать после setContentView.
+ */
+fun Dialog.bottomSheet() {
+    setCanceledOnTouchOutside(true)
+    window?.apply {
+        setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        setLayout(MATCH_PARENT, WRAP_CONTENT)
+        setGravity(Gravity.BOTTOM)
+        addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        setDimAmount(0.6f)
+        setWindowAnimations(Motion.sheet())
+    }
+}
+
+/**
+ * Вертикальный LinearLayout не выше [fraction] высоты экрана: ребёнок с весом (прокрутка тела)
+ * сжимается, остальные (кнопки) видны всегда.
+ */
+class MaxHeightBox(ctx: Context, private val fraction: Float) : LinearLayout(ctx) {
+    init { orientation = VERTICAL }
+
+    override fun onMeasure(ws: Int, hs: Int) {
+        val cap = (resources.displayMetrics.heightPixels * fraction).toInt()
+        val size = MeasureSpec.getSize(hs)
+        val h = if (MeasureSpec.getMode(hs) == MeasureSpec.UNSPECIFIED) cap else minOf(size, cap)
+        super.onMeasure(ws, MeasureSpec.makeMeasureSpec(h, MeasureSpec.AT_MOST))
+    }
 }
 
 fun Activity.darkBars() {

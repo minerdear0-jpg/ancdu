@@ -320,8 +320,7 @@ class BrowserTest {
 
     /**
      * Высота шапки не зависит от сортировки, режима размера («на диске»/«видимый»), плашки и чипа
-     * «новее». На корне строки крошек нет (путь — в заголовке): шапка ниже, без пустого зазора;
-     * во вложенных папках высота одна и та же.
+     * «новее». Строка пути есть всегда: на корне и во вложенных папках высота одна и та же.
      */
     @Test fun headerHeightIsStable() {
         val ctx = ins.targetContext
@@ -353,7 +352,7 @@ class BrowserTest {
             ins.runOnMainSync { act.list.source!!.click(0) }   // sub/ (по имени: sub < z.bin)
             assertNotEquals(0, act.node)
             val h1 = height()
-            assertTrue("на корне строка крошек не схлопнута: $h0 >= $h1", h0 < h1)
+            assertEquals("корень и вложенная папка", h0, h1)
             ins.runOnMainSync { act.list.source!!.click(0) }   // sub/deep/
             assertEquals("вторая вложенная папка", h1, height())
             ins.runOnMainSync { act.onBackPressed() }
@@ -376,6 +375,87 @@ class BrowserTest {
             assertEquals("корень с чипом «новее»", h0, height())
         } finally {
             ins.runOnMainSync { Holder.dropPending(); act.finish() }
+            forgetCache(dir)
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Строка пути: есть и на корне (той же высоты, не ниже 44dp), путь — полный путь папки.
+     * Тап — панель пути: полный путь, «Копировать путь» (буфер обмена, подвал «Путь скопирован»),
+     * предки от корня; тап по предку — переход к нему. Долгое нажатие копирует сразу.
+     */
+    @Test fun pathRowPanelCopyJump() {
+        val ctx = ins.targetContext
+        val dir = tmpDir("path")
+        File(dir, "a/b").mkdirs()
+        File(dir, "a/b/c.bin").writeBytes(ByteArray(10))
+        scan(dir)
+        val act = ins.startActivitySync(
+            Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+        ins.waitForIdleSync()
+        fun clip(): String? {
+            var s: String? = null
+            ins.runOnMainSync {
+                s = act.getSystemService(android.content.ClipboardManager::class.java)
+                    .primaryClip?.getItemAt(0)?.text?.toString()
+            }
+            return s
+        }
+        try {
+            var rootH = 0
+            ins.runOnMainSync {
+                assertEquals(View.VISIBLE, act.pathRow.visibility)
+                assertEquals(dir.path, act.currentPath)
+                assertEquals(dir.name, act.title.text.toString())
+                assertTrue(act.pathRow.height >= (44 * ctx.resources.displayMetrics.density).toInt())
+                assertEquals(act.getString(R.string.path_row_desc, dir.path), act.pathRow.contentDescription)
+                rootH = act.header.height
+                act.list.source!!.click(0)   // a/
+                act.list.source!!.click(0)   // a/b/
+            }
+            ins.waitForIdleSync()
+            ins.runOnMainSync {
+                assertEquals("b", act.title.text.toString())
+                assertEquals(File(dir, "a/b").path, act.currentPath)
+                assertEquals("шапка на корне и в a/b", rootH, act.header.height)
+                act.pathRow.performClick()
+            }
+            assertTrue(waitFor { act.pathPanel?.dialog?.isShowing == true })
+            ins.runOnMainSync {
+                val p = act.pathPanel!!
+                assertEquals(File(dir, "a/b").path, p.pathText.text.toString())
+                assertTrue(p.pathText.isTextSelectable)
+                assertEquals(act.crumbNodes.toList(), p.rowNodes)
+                assertEquals(3, p.rows.size)
+                assertFalse("текущая папка не касаемая", p.rows.last().isClickable)
+                p.copyButton.performClick()
+                assertFalse(p.dialog.isShowing)
+                assertEquals(act.getString(R.string.path_copied), act.footerText.toString())
+            }
+            assertTrue(waitFor { clip() == File(dir, "a/b").path })
+
+            // Переход к предку из панели: корень, прокрутка/анимация как у прежних крошек.
+            ins.runOnMainSync { act.pathRow.performClick() }
+            assertTrue(waitFor { act.pathPanel?.dialog?.isShowing == true })
+            ins.runOnMainSync {
+                val p = act.pathPanel!!
+                p.rows[1].performClick()     // a/
+                assertFalse(p.dialog.isShowing)
+                assertEquals(act.crumbNodes[1], act.node)
+                assertEquals("a", act.title.text.toString())
+            }
+
+            // Долгое нажатие — копирует сразу.
+            ins.runOnMainSync {
+                act.getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("x", "x"))
+                act.pathRow.performLongClick()
+                assertEquals(act.getString(R.string.path_copied), act.footerText.toString())
+            }
+            assertTrue(waitFor { clip() == File(dir, "a").path })
+        } finally {
+            ins.runOnMainSync { act.finish() }
             forgetCache(dir)
             dir.deleteRecursively()
         }

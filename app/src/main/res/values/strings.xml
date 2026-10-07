@@ -139,6 +139,12 @@
     <string name="folder_no_access">⚠ no access</string>
     <string name="browser_hint">tap — open · long press — details, delete</string>
     <string name="crumb_go">go to %1$s</string>
+    <string name="internal_storage">Internal storage</string>
+    <string name="path_caps">Path</string>
+    <string name="copy_path">Copy path</string>
+    <string name="path_copied">Path copied</string>
+    <string name="path_here">· here</string>
+    <string name="path_row_desc">Path: %1$s. Open path panel</string>
     <string name="deleting">Deleting…</string>
     <string name="delete_progress_desc">Delete progress</string>
     <string name="stop">Stop</string>

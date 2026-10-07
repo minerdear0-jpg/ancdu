@@ -87,7 +87,7 @@ class UxTest {
         }
     }
 
-    /** Заголовок — имя папки; тап по крошке ведёт к предку и восстанавливает его прокрутку. */
+    /** Заголовок — имя папки (на корне — последний сегмент пути); переход к предку восстанавливает его прокрутку. */
     @Test fun titleAndBreadcrumbs() {
         val dir = File(ctx.cacheDir, "ux2").apply { deleteRecursively(); mkdirs() }
         for (k in 0 until 60) File(dir, "f$k.bin").writeBytes(ByteArray(10_000 + k * 100))
@@ -95,7 +95,7 @@ class UxTest {
         File(dir, "a/b/c.bin").writeBytes(ByteArray(10))
         try {
             val a = browse(dir)
-            ins.runOnMainSync { assertEquals(dir.path, a.title.text.toString()) }
+            ins.runOnMainSync { assertEquals(dir.name, a.title.text.toString()) }
             var saved = 0
             ins.runOnMainSync {
                 a.list.scroll = 5 * a.list.rowHeight
@@ -111,7 +111,7 @@ class UxTest {
                 assertEquals(a.node, a.crumbNodes[2])
                 a.jumpTo(a.crumbNodes[0])
                 assertEquals(0, a.node)
-                assertEquals(dir.path, a.title.text.toString())
+                assertEquals(dir.name, a.title.text.toString())
                 assertEquals(saved, a.list.scroll)
                 a.finish()
             }

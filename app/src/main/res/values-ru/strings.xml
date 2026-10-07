@@ -130,6 +130,12 @@
     <string name="folder_no_access">⚠ нет доступа</string>
     <string name="browser_hint">тап — открыть · долгий — подробнее, удалить</string>
     <string name="crumb_go">перейти к %1$s</string>
+    <string name="internal_storage">Внутренняя память</string>
+    <string name="path_caps">Путь</string>
+    <string name="copy_path">Копировать путь</string>
+    <string name="path_copied">Путь скопирован</string>
+    <string name="path_here">· здесь</string>
+    <string name="path_row_desc">Путь: %1$s. Открыть панель пути</string>
     <string name="deleting">Удаление…</string>
     <string name="delete_progress_desc">Прогресс удаления</string>
     <string name="stop">Стоп</string>
