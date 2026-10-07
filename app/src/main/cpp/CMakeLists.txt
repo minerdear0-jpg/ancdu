@@ -22,6 +22,9 @@ target_include_directories(ancdu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ancdu_core PUBLIC _GNU_SOURCE)
 target_compile_options(ancdu_core PRIVATE -Wall -Wextra -fvisibility=hidden)
 target_link_libraries(ancdu_core PUBLIC Threads::Threads)
+if(ANDROID)
+  target_link_libraries(ancdu_core PUBLIC log) # rmtree: «сверка пропущена» — в logcat
+endif()
 
 add_executable(ancdu_scan cli.c)
 target_link_libraries(ancdu_scan PRIVATE ancdu_core)

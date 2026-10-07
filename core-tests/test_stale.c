@@ -41,7 +41,7 @@ static uint32_t find(const arena *a, const char *name) {
 }
 
 static void direct(void) {
-  char d[4200];
+  char d[4200], q[4300];
   snprintf(d, sizeof d, "%s/direct", S);
   mk_dir(d);
 
@@ -88,6 +88,38 @@ static void direct(void) {
   CHECK(rm_tree_expect(pj(d, "tgt"), 1, NULL, NULL, &w) == -ESTALE);
   CHECK(access(pj(d, "tgt2/keep"), F_OK) == 0);
 
+  /* якорь: d — «корень скана». dev вершины не совпал (want.dev = st_dev + 1), ino корня совпал —
+   * ФС перемонтирована, сверка только ino: та же вершина удаляется, подменённая — отказ.
+   * ino корня не совпал — сверки нет вовсе: подменённая удаляется (как до v3). */
+  rm_expect root = id_of(d);
+  mk_dir(pj(d, "re"));
+  w = id_of(pj(d, "re"));
+  w.dev += 1;
+  w.anchor = d;
+  w.anchor_ino = root.ino;
+  sandbox_guard(S, pj(d, "re"));
+  CHECK(rm_tree_expect(pj(d, "re"), 1, NULL, NULL, &w) == 0);
+  CHECK(access(pj(d, "re"), F_OK) != 0);
+  mk_dir(pj(d, "rr"));
+  write_file(pj(d, "rr/orig"), 1);
+  w = id_of(pj(d, "rr"));
+  replace_dir(d, "rr");
+  w.anchor = d;
+  w.anchor_ino = root.ino;
+  CHECK(rm_tree_expect(pj(d, "rr"), 1, NULL, NULL, &w) == -ESTALE); /* полная сверка */
+  w.dev += 1;
+  CHECK(rm_tree_expect(pj(d, "rr"), 1, NULL, NULL, &w) == -ESTALE); /* только ino */
+  CHECK(access(pj(d, "rr/new"), F_OK) == 0);
+  w.anchor_ino = root.ino + 1000003;
+  CHECK(rm_tree_expect(pj(d, "rr"), 1, NULL, NULL, &w) == 0); /* корень другой — без сверки */
+  CHECK(access(pj(d, "rr"), F_OK) != 0);
+  CHECK(access(pj(d, "rr.old/orig"), F_OK) == 0);
+  w.anchor_ino = root.ino;
+  snprintf(q, sizeof q, "%s/no-such-root", d);
+  w.anchor = q; /* корня нет — тоже без сверки */
+  mk_dir(pj(d, "rn"));
+  CHECK(rm_tree_expect(pj(d, "rn"), 1, NULL, NULL, &w) == 0);
+
   /* ino 0 — сверки нет (индекс, кэш без ino) */
   rm_expect none = {w.dev, 0};
   CHECK(rm_tree_expect(pj(d, "file"), 1, NULL, NULL, &none) == 0);
@@ -103,8 +135,10 @@ static void session_cases(const char *cache) {
   char R[4200];
   snprintf(R, sizeof R, "%s/tree", S);
   mk_dir(R);
-  const char *names[] = {"inproc", "helper", "fromcache", "keepok"};
-  for (int i = 0; i < 4; i++) {
+  const char *names[] = {"inproc", "helper", "fromcache", "keepok", "keepin",
+                         "dev_in", "dev_h", "devok_in", "devok_h", "gone_in", "gone_h"};
+  enum { NN = sizeof names / sizeof *names };
+  for (int i = 0; i < NN; i++) {
     mk_dir(pj(R, names[i]));
     write_file(pj(pj(R, names[i]), "orig"), 4096);
   }
@@ -116,7 +150,8 @@ static void session_cases(const char *cache) {
   arena *a = sess_arena(s);
   if (!a) return;
   CHECK(a->h->root_dev != 0);
-  for (int i = 0; i < 4; i++) CHECK(a->ino[find(a, names[i])] == id_of(pj(R, names[i])).ino);
+  for (int i = 0; i < NN; i++) CHECK(a->ino[find(a, names[i])] == id_of(pj(R, names[i])).ino);
+  CHECK(a->ino[0] == id_of(R).ino);
   CHECK(sess_save_cache(s, cache) == 0);
 
   uint64_t total = a->disk[0];
@@ -137,14 +172,48 @@ static void session_cases(const char *cache) {
   CHECK(access(pj(R, "helper.old/orig"), F_OK) == 0);
   CHECK_EQ_U(a->disk[0], total);
 
-  /* без подмены — удаляется (в процессе и через хелпер) */
+  /* без подмены — удаляется: через хелпер и в процессе */
   CHECK(sess_delete(s, find(a, "keepok"), SH, ANCDU_CLI) == 0);
   CHECK(access(pj(R, "keepok"), F_OK) != 0);
+  CHECK(sess_delete(s, find(a, "keepin"), NULL, NULL) == 0);
+  CHECK(access(pj(R, "keepin"), F_OK) != 0);
 
   /* пропал после скана — «уже удалён», как до сверки */
   sandbox_guard(S, pj(R, "vanishing"));
   CHECK(unlink(pj(R, "vanishing")) == 0);
   CHECK(sess_delete(s, find(a, "vanishing"), NULL, NULL) == 0);
+
+  /* st_dev сменился (перезагрузка/перемонтирование: дерево из кэша), ino корня тот же —
+   * сверка только по ino: подмена по-прежнему отказ, без подмены — удаляется */
+  a->h->root_dev += 1;
+  n = find(a, "dev_in");
+  replace_dir(R, "dev_in");
+  CHECK(sess_delete(s, n, NULL, NULL) == -ESTALE);
+  CHECK(access(pj(R, "dev_in/new"), F_OK) == 0);
+  n = find(a, "dev_h");
+  replace_dir(R, "dev_h");
+  CHECK(sess_delete(s, n, SH, ANCDU_CLI) == -ESTALE);
+  CHECK(access(pj(R, "dev_h/new"), F_OK) == 0);
+  CHECK(sess_delete(s, find(a, "devok_in"), NULL, NULL) == 0);
+  CHECK(access(pj(R, "devok_in"), F_OK) != 0);
+  CHECK(sess_delete(s, find(a, "devok_h"), SH, ANCDU_CLI) == 0);
+  CHECK(access(pj(R, "devok_h"), F_OK) != 0);
+  a->h->root_dev -= 1;
+
+  /* корень скана другой (ino[0] не совпал) — сверки нет, отказа не бывает: удаляется даже
+   * подменённый (поведение до сверки) — в процессе и через хелпер */
+  a->ino[0] += 1000003;
+  n = find(a, "gone_in");
+  replace_dir(R, "gone_in");
+  sandbox_guard(S, pj(R, "gone_in"));
+  CHECK(sess_delete(s, n, NULL, NULL) == 0);
+  CHECK(access(pj(R, "gone_in"), F_OK) != 0);
+  n = find(a, "gone_h");
+  replace_dir(R, "gone_h");
+  sandbox_guard(S, pj(R, "gone_h"));
+  CHECK(sess_delete(s, n, SH, ANCDU_CLI) == 0);
+  CHECK(access(pj(R, "gone_h"), F_OK) != 0);
+  a->ino[0] -= 1000003;
   sess_free(s);
 
   /* кэш v3 хранит ino: удаление из открытого кэша тоже сверяет */

@@ -335,9 +335,14 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
     free(path);
     return -EINTR;
   }
-  /* Объект со скана: вершина подменена после него — -ESTALE, ничего не удалено. Для media
-   * сверки нет: /data/media/<n>/X — другая ФС (не FUSE), её st_dev не совпадёт с узлом. */
-  rm_expect want = {a->h->root_dev, media ? 0 : a->ino[node]};
+  /* Объект со скана: вершина подменена после него — -ESTALE, ничего не удалено. Якорь — корень
+   * скана (root_path, ino[0]): по нему видно, что st_dev сменился при перемонтировании (rm_expect).
+   * Быстрый путь media СВЕРКИ НЕ ДЕЛАЕТ намеренно: удаляется /data/media/<n>/X — другая ФС, не
+   * FUSE-путь узла; ни её st_dev, ни корень скана (/storage/emulated/<n>) с ней не сопоставимы. */
+  char anchor[sizeof a->h->root_path];
+  snprintf(anchor, sizeof anchor, "%.*s", (int)strnlen(a->h->root_path, sizeof anchor - 1),
+           a->h->root_path);
+  rm_expect want = {a->h->root_dev, media ? 0 : a->ino[node], anchor, a->ino[0]};
   int gone;
   if (!prefix) {
     r = rm_tree_expect(path, rm_default_threads(path), &s->del_done, &s->del_stop, &want);
@@ -355,10 +360,15 @@ static int delete_node(session *s, uint32_t node, const char *const *prefix, con
       return -ENAMETOOLONG;
     }
     /* media: /data/media — не FUSE, один поток (явно, не полагаясь на statfs под su). */
-    char ex[64] = "";
-    if (want.ino)
-      snprintf(ex, sizeof ex, " --expect %llu:%llu", (unsigned long long)want.dev,
-               (unsigned long long)want.ino);
+    /* --expect и якорь (корень скана) — та же логика rm_expect в пространстве имён su. */
+    char ex[4400] = "", qa[4300];
+    if (want.ino) {
+      int k = snprintf(ex, sizeof ex, " --expect %llu:%llu", (unsigned long long)want.dev,
+                       (unsigned long long)want.ino);
+      if (want.anchor_ino && shq(want.anchor, qa, sizeof qa) >= 0)
+        snprintf(ex + k, sizeof ex - (size_t)k, " --anchor-ino %llu --anchor %s",
+                 (unsigned long long)want.anchor_ino, qa);
+    }
     snprintf(cmd, qcap, "%s --rm %s --watch-stdin%s%s", qh, qp, media ? " --threads 1" : "", ex);
     char *pfx[4] = {0};
     for (int i = 0; i < 3 && prefix[i]; i++) pfx[i] = (char *)prefix[i];

@@ -23,7 +23,8 @@ static int usage(void) {
         " [--watch-stdin]\n"
         "       libancdu_scan.so --memfd PATH [--root DIR] [--cross-fs] [--threads N]"
         " [--watch-stdin]\n"
-        "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin] [--expect DEV:INO]\n",
+        "       libancdu_scan.so --rm PATH [--threads N] [--watch-stdin] [--expect DEV:INO\n"
+        "                        [--anchor ROOT --anchor-ino INO]]\n",
         stderr);
   return ANCDU_EXIT_USAGE;
 }
@@ -102,7 +103,9 @@ static void *watch_stdin(void *p) {
  * Удаление идёт относительно открытого fd родителя: подмена компонента после проверки не
  * уводит его в сторону.
  * --expect DEV:INO: вершина (lstat) должна быть этим объектом со скана, иначе выход 9 —
- * «изменилось после скана», ничего не удалено.
+ * «изменилось после скана», ничего не удалено. --anchor ROOT --anchor-ino INO: корень скана —
+ * якорь сверки (rm_expect): dev сменился при перемонтировании — сверка только ino, корень
+ * другой — без сверки.
  * Выход — enum ancdu_exit (helper_proto.h): OK, RM_PARTIAL, RM_STOPPED, RM_SYMLINK,
  * RM_UNCHECKED, RM_CHANGED. */
 typedef struct {
@@ -170,7 +173,7 @@ int main(int argc, char **argv) {
   const char *root = NULL, *memfd = NULL;
   int mode = -1, one_fs = 1, threads = 0;
   int watch = 0;
-  rm_expect want = {0, 0};
+  rm_expect want = {0, 0, NULL, 0};
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--summary")) mode = MODE_SUMMARY;
     else if (!strcmp(argv[i], "--dump")) mode = MODE_DUMP;
@@ -186,10 +189,18 @@ int main(int argc, char **argv) {
       if (sscanf(argv[++i], "%llu:%llu%c", &d, &n, &tail) != 2 || !n) return usage();
       want.dev = d;
       want.ino = n;
+    } else if (!strcmp(argv[i], "--anchor") && i + 1 < argc) {
+      want.anchor = argv[++i];
+    } else if (!strcmp(argv[i], "--anchor-ino") && i + 1 < argc) {
+      unsigned long long n;
+      char tail;
+      if (sscanf(argv[++i], "%llu%c", &n, &tail) != 1 || !n) return usage();
+      want.anchor_ino = n;
     }
     else return usage();
   }
   if (mode < 0 || (mode != MODE_MEMFD && !root)) return usage();
+  if (!want.anchor != !want.anchor_ino) return usage(); /* якорь — путь и ino вместе */
   if (mode == MODE_RM) return run_rm(root, threads, watch, &want);
 
   arena a;

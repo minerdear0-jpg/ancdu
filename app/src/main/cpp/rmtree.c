@@ -5,12 +5,16 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
 #define RM_MAX_DEPTH 4096
 /* Стек потока удаления. Рекурсия rm_at↔walk берёт ~350–450 Б на уровень (с ASan больше),
@@ -18,6 +22,7 @@
  * на собственном потоке с этим стеком, вызывающий его ждёт. */
 #define RM_STACK_SIZE (8u << 20)
 #define RM_MAX_THREADS 64
+enum { ID_SKIP, ID_INO, ID_FULL };
 /* Очередь мала намеренно: каталог с заданиями в очереди держит открытый fd. */
 #define RM_QUEUE 256
 
@@ -41,6 +46,7 @@ typedef struct {
 typedef struct {
   dev_t dev; /* устройство вершины: всё на другом — -EXDEV, частичное удаление */
   const rm_expect *want; /* ожидаемый объект вершины (NULL или ino 0 — без сверки) */
+  int id_mode;           /* ID_* — как сверять вершину с want (id_mode_of) */
   _Atomic uint64_t *done;
   _Atomic int *stop;
   _Atomic int err;  /* первая ошибка (-errno) */
@@ -144,8 +150,9 @@ static void rm_at(rm_ctx *c, rdir *parent, int dfd, const char *name, int depth)
   int e = 0;
   if (fstatat(dfd, name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
     e = -errno;
-  } else if (!parent && c->want && c->want->ino &&
-             ((uint64_t)st.st_dev != c->want->dev || (uint64_t)st.st_ino != c->want->ino)) {
+  } else if (!parent && c->id_mode != ID_SKIP &&
+             ((uint64_t)st.st_ino != c->want->ino ||
+              (c->id_mode == ID_FULL && (uint64_t)st.st_dev != c->want->dev))) {
     e = -ESTALE; /* вершина — не тот объект, что видел скан: ничего не трогаем */
   } else if (st.st_dev != c->dev) {
     e = -EXDEV;
@@ -225,6 +232,26 @@ int rm_tree_target(const char *path, char *buf, size_t cap) {
   return 0;
 }
 
+static void rm_log(const char *msg, const char *path) {
+#ifdef __ANDROID__
+  __android_log_print(ANDROID_LOG_INFO, "ancdu", "%s: %s", msg, path);
+#else
+  fprintf(stderr, "ancdu: %s: %s\n", msg, path);
+#endif
+}
+
+/* Как сверять вершину с want — по якорю (см. rm_expect в rmtree.h). */
+static int id_mode_of(const rm_expect *w) {
+  if (!w || !w->ino) return ID_SKIP;
+  if (!w->anchor || !w->anchor_ino) return ID_FULL;
+  struct stat st;
+  if (stat(w->anchor, &st) != 0 || (uint64_t)st.st_ino != w->anchor_ino) {
+    rm_log("identity check skipped, scan root changed", w->anchor);
+    return ID_SKIP;
+  }
+  return (uint64_t)st.st_dev == w->dev ? ID_FULL : ID_INO;
+}
+
 static int rm_tree_run(int pfd, const char *name, int threads, _Atomic uint64_t *done,
                        _Atomic int *stop, const rm_expect *want) {
   if (!*name || strchr(name, '/') || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
@@ -239,6 +266,7 @@ static int rm_tree_run(int pfd, const char *name, int threads, _Atomic uint64_t 
   memset(&c, 0, sizeof c);
   c.dev = st.st_dev;
   c.want = want;
+  c.id_mode = id_mode_of(want);
   c.done = done;
   c.stop = stop;
   if (stopped(&c)) return -EINTR;
