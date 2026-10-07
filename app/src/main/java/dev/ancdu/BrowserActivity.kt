@@ -676,7 +676,8 @@ class BrowserActivity : LangActivity() {
         const val S_SEL = "sel_"
         const val SAVE_MAX = 2000
         const val SAVE_BYTES = 256 * 1024
-        const val K_SESSIONS = "browser_sessions"
+        /** v2: подсказка жестов сменилась (долгое — выбрать) — показать её снова. */
+        const val K_SESSIONS = "browser_sessions_v2"
         const val HINT_SESSIONS = 3
         /** Плашка вида дерева: до двух строк рядом с чипом «новее». */
         const val BADGE_LINES = 2

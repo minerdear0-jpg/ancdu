@@ -129,7 +129,7 @@
     <string name="size_mode_desc">Размер: %1$s</string>
     <string name="folder_empty">пусто</string>
     <string name="folder_no_access">⚠ нет доступа</string>
-    <string name="browser_hint">тап — открыть, просмотр · долгий — удалить</string>
+    <string name="browser_hint">тап — открыть · долгий — выбрать</string>
     <string name="crumb_go">перейти к %1$s</string>
     <string name="internal_storage">Внутренняя память</string>
     <string name="path_caps">Путь</string>

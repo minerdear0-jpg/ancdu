@@ -138,7 +138,7 @@
     <string name="size_mode_desc">Size: %1$s</string>
     <string name="folder_empty">empty</string>
     <string name="folder_no_access">⚠ no access</string>
-    <string name="browser_hint">tap — open, quick look · long press — delete</string>
+    <string name="browser_hint">tap — open · long press — select</string>
     <string name="crumb_go">go to %1$s</string>
     <string name="internal_storage">Internal storage</string>
     <string name="path_caps">Path</string>
