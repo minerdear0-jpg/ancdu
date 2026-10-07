@@ -417,8 +417,9 @@ class BrowserActivity : LangActivity() {
     private fun hasNewer(): Boolean =
         Swap.newer(Holder.pending, Holder.pendingRoot, Holder.pendingViaRoot, Holder.root, Holder.viaRoot)
 
-    /** Открыт лист удаления или карточка: дерево не подставляется под ними. */
-    private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true || quickLook?.dialog?.isShowing == true
+    /** Открыт лист удаления, карточка или панель пути: дерево не подставляется под ними (их id узлов устарели бы). */
+    private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true || quickLook?.dialog?.isShowing == true ||
+        pathPanel?.dialog?.isShowing == true
 
     /**
      * Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт.
@@ -552,6 +553,8 @@ class BrowserActivity : LangActivity() {
         // Байты имён, не строки: невалидный UTF-8 декодируется неоднозначно.
         val names = pathNames(h, node)
         val keep = list.scroll
+        // Строки панели пути — узлы старого дерева.
+        pathPanel?.dismiss(); pathPanel = null
         list.source = null
         promoting = true
         try { Holder.promote() } finally { promoting = false }
@@ -727,6 +730,7 @@ class BrowserActivity : LangActivity() {
 
     /** Полный путь текущей папки — в буфер обмена; в подвале «Путь скопирован» на 4 с. */
     fun copyPath() {
+        if (h == 0L || currentPath.isEmpty()) return
         val cm = getSystemService(ClipboardManager::class.java) ?: return
         cm.setPrimaryClip(ClipData.newPlainText(txt.s(R.string.path_caps), currentPath))
         note(txt.s(R.string.path_copied))

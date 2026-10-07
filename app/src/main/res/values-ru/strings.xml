@@ -117,7 +117,7 @@
     <string name="refresh_count">обновление · %1$s</string>
     <string name="refresh_waiting">обновление · ждёт</string>
     <string name="newer_desc">Есть более новое дерево — обновить</string>
-    <string name="long_click_label">Удалить или подробнее</string>
+    <string name="long_click_label">Удалить</string>
     <string name="gallery_cleaning">галерея: очистка %1$s…</string>
     <string name="sort_size">размер</string>
     <string name="sort_name">имя</string>

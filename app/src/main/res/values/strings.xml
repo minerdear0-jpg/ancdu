@@ -126,7 +126,7 @@
     <string name="refresh_count">refresh · %1$s</string>
     <string name="refresh_waiting">refresh · waiting</string>
     <string name="newer_desc">A newer tree is ready — refresh</string>
-    <string name="long_click_label">Delete or details</string>
+    <string name="long_click_label">Delete</string>
     <string name="gallery_cleaning">gallery: cleaning %1$s…</string>
     <string name="sort_size">size</string>
     <string name="sort_name">name</string>
