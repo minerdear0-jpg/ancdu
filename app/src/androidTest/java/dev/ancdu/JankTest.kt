@@ -17,11 +17,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/** Тест бюджета кадров: в обычном прогоне пропускается (см. [JankTest]). */
-@Retention(AnnotationRetention.RUNTIME)
-@Target(AnnotationTarget.CLASS)
-annotation class Jank
-
 /**
  * Бюджет кадров (DUT, 120 Гц, срок кадра 8,33 мс): dumpsys gfxinfo сбрасывается, идёт
  * сценарий, затем читается итог. Ворота — по медиане трёх прогонов: прокрутка — janky ≤ 5% и
@@ -33,7 +28,6 @@ annotation class Jank
  * (или gradle connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.ancdu.JankTest
  * -Pandroid.testInstrumentationRunnerArguments.jank=true). Числа — в logcat с тегом ancdu-jank.
  */
-@Jank
 @RunWith(AndroidJUnit4::class)
 class JankTest {
     private val ins = InstrumentationRegistry.getInstrumentation()
@@ -68,14 +62,19 @@ class JankTest {
 
     @After fun tearDown() {
         if (!::dir.isInitialized) return
-        act?.let { a -> ins.runOnMainSync { a.sheet?.dismiss(); a.finish() } }
-        Holder.io.submit {}.get()
-        Holder.cacheFile(ctx, dir.path, false).delete()
-        ctx.getSharedPreferences(Scans.PREFS, Context.MODE_PRIVATE).edit()
-            .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
-        // Только свой каталог mkdtemp (абсолютный путь под cacheDir).
-        check(dir.isAbsolute && dir.parentFile == ctx.cacheDir.absoluteFile && dir.name.startsWith("jank"))
-        dir.deleteRecursively()
+        try {
+            act?.let { a -> ins.runOnMainSync { a.sheet?.dismiss(); a.finish() } }
+            Holder.io.submit {}.get()
+            Holder.cacheFile(ctx, dir.path, false).delete()
+            ctx.getSharedPreferences(Scans.PREFS, Context.MODE_PRIVATE).edit()
+                .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
+        } finally {
+            // Дерево каталога не остаётся в Holder для следующих тестов.
+            ins.runOnMainSync { Holder.clear() }
+            // Только свой каталог mkdtemp (абсолютный путь под cacheDir).
+            check(dir.isAbsolute && dir.parentFile == ctx.cacheDir.absoluteFile && dir.name.startsWith("jank"))
+            dir.deleteRecursively()
+        }
     }
 
     private fun shell(cmd: String): String =
