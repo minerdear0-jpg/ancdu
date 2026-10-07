@@ -13,6 +13,7 @@ add_library(ancdu_core STATIC
   scan.c
   index.c
   rmtree.c
+  rm_parent.c
   session.c
   session_root.c
   shq.c
