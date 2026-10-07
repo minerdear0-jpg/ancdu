@@ -163,3 +163,78 @@ int csr_remove(arena *a, uint32_t node) {
   free(buf);
   return 0;
 }
+
+/* Порядок кучи: x «меньше» y — x уходит из топа раньше (меньший disk; при равном — больший id). */
+static int top_less(const arena *a, uint32_t x, uint32_t y) {
+  if (a->disk[x] != a->disk[y]) return a->disk[x] < a->disk[y];
+  return x > y;
+}
+
+static void sift_down(const arena *a, uint32_t *h, uint32_t n, uint32_t i) {
+  for (;;) {
+    uint32_t l = 2 * i + 1, r = l + 1, m = i;
+    if (l < n && top_less(a, h[l], h[m])) m = l;
+    if (r < n && top_less(a, h[r], h[m])) m = r;
+    if (m == i) return;
+    uint32_t t = h[i];
+    h[i] = h[m];
+    h[m] = t;
+    i = m;
+  }
+}
+
+static void sift_up(const arena *a, uint32_t *h, uint32_t i) {
+  while (i > 0) {
+    uint32_t p = (i - 1) / 2;
+    if (!top_less(a, h[i], h[p])) return;
+    uint32_t t = h[i];
+    h[i] = h[p];
+    h[p] = t;
+    i = p;
+  }
+}
+
+/* Узел или предок удалён (csr_remove помечает только вершину удалённого). */
+static int under_deleted(const arena *a, uint32_t x) {
+  for (; x != ANCDU_NONE; x = a->parent[x])
+    if (a->flags[x] & F_DELETED) return 1;
+  return 0;
+}
+
+uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
+  uint64_t n = atomic_load(&a->h->count);
+  if (k == 0 || n < 2) return 0;
+  /* Удалённое есть — «мёртв ли узел» одним проходом (parent < ребёнка); нет памяти — проход
+   * по предкам только у кандидатов в кучу. */
+  uint8_t *dead = NULL;
+  int any = 0;
+  for (uint64_t i = 0; i < n && !any; i++) any = (a->flags[i] & F_DELETED) != 0;
+  if (any && (dead = malloc(n))) {
+    dead[0] = (a->flags[0] & F_DELETED) != 0;
+    for (uint64_t i = 1; i < n; i++)
+      dead[i] = (a->flags[i] & F_DELETED) || dead[a->parent[i]];
+  }
+  uint32_t m = 0; /* out[0..m) — min-куча */
+  for (uint64_t i = 1; i < n; i++) {
+    uint32_t x = (uint32_t)i;
+    if (a->flags[x] & (F_DIR | F_HLDUP | F_DELETED) || a->disk[x] == 0) continue;
+    if (m == k && !top_less(a, out[0], x)) continue; /* не крупнее наименьшего в топе */
+    if (dead ? dead[x] : any && under_deleted(a, x)) continue;
+    if (m < k) {
+      out[m] = x;
+      sift_up(a, out, m++);
+    } else {
+      out[0] = x;
+      sift_down(a, out, m, 0);
+    }
+  }
+  free(dead);
+  /* Куча → по убыванию: наименьший уходит в конец. */
+  for (uint32_t end = m; end > 1; end--) {
+    uint32_t t = out[0];
+    out[0] = out[end - 1];
+    out[end - 1] = t;
+    sift_down(a, out, end - 1, 0);
+  }
+  return m;
+}

@@ -48,6 +48,9 @@ object Native {
     @JvmStatic external fun childCount(h: Long, node: Int): Int
     @JvmStatic external fun children(h: Long, node: Int, sort: Int, apparent: Boolean, out: IntArray): Int
     @JvmStatic external fun nodeInfo(h: Long, nodes: IntArray, n: Int, out: LongArray)
+    /** Крупнейшие файлы всего дерева: до out.size (≤ 256) id узлов по убыванию disk, без каталогов,
+     *  повторных жёстких ссылок (F_HLDUP), удалённого и пустых; число записанных. Только чтение. */
+    @JvmStatic external fun topFiles(h: Long, out: IntArray): Int
     @JvmStatic external fun name(h: Long, node: Int): ByteArray
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int

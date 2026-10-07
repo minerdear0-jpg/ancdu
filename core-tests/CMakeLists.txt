@@ -18,6 +18,7 @@ endfunction()
 
 ancdu_test(test_arena)
 ancdu_test(test_csr)
+ancdu_test(test_topk)
 ancdu_test(test_scan)
 ancdu_test(test_dump)
 ancdu_test(test_index)

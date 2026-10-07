@@ -245,6 +245,23 @@ FN(void, nodeInfo)(JNIEnv *e, jclass c, jlong h, jintArray nodes, jint n, jlongA
   (*e)->ReleaseIntArrayElements(e, nodes, nd, JNI_ABORT);
 }
 
+/* Крупнейшие файлы всего дерева (csr_top_files): k = длина out (не больше 256), id узлов по
+ * убыванию disk; возвращает их число (0 — нет дерева). Только чтение. */
+FN(jint, topFiles)(JNIEnv *e, jclass c, jlong h, jintArray out) {
+  (void)c;
+  arena *a = tree(h, 0);
+  if (!a || !out) return 0;
+  jsize cap = (*e)->GetArrayLength(e, out);
+  if (cap > 256) cap = 256;
+  if (cap <= 0) return 0;
+  uint32_t ids[256];
+  uint32_t k = csr_top_files(a, (uint32_t)cap, ids);
+  jint j[256];
+  for (uint32_t i = 0; i < k; i++) j[i] = (jint)ids[i];
+  if (k) (*e)->SetIntArrayRegion(e, out, 0, (jsize)k, j);
+  return (jint)k;
+}
+
 FN(jbyteArray, name)(JNIEnv *e, jclass c, jlong h, jint node) {
   (void)c;
   arena *a = tree(h, node);
