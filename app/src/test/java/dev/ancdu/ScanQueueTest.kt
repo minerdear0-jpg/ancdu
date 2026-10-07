@@ -97,4 +97,22 @@ class ScanQueueTest {
         q.remove(fixture)
         assertEquals(ScanState.NONE, q.state(fixture, running = data))
     }
+
+    /** Итог скана цели — только записанный после метки (не прежний итог той же цели), своя цель. */
+    @Test fun endsSinceMark() {
+        val e = ScanEnds()
+        e.record(fixture, ScanEnd.OK)
+        val mark = e.mark
+        assertNull("прежний итог не считается", e.since(fixture, mark))
+        e.record(fixture, ScanEnd.FAILED)
+        e.record(storage, ScanEnd.OK)
+        assertEquals("чужой итог следом не затирает", ScanEnd.FAILED, e.since(fixture, mark))
+        assertEquals(ScanEnd.OK, e.since(storage, mark))
+        assertNull(e.since(data, mark))
+        assertNull(e.since(data, 0))
+        val m2 = e.mark
+        e.record(fixture, ScanEnd.DISCARDED)
+        assertEquals(ScanEnd.DISCARDED, e.since(fixture, m2))
+    }
 }
+

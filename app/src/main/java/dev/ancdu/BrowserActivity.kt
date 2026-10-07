@@ -117,10 +117,11 @@ class BrowserActivity : LangActivity() {
     private var promoting = false
     /** Фоновый скан мог положить дерево в Holder.offer (тот слушателей не зовёт). */
     private val onBg: () -> Unit = {
-        val finished = renderProgress()
+        val end = renderProgress()
         refreshPending()
-        // Обновлённое дерево ждёт тапа по чипу «новее» — сказать об этом.
-        if (finished && newer.visibility == View.VISIBLE && newer.a11yOn())
+        // Этот скан удался и обновлённое дерево ждёт тапа по чипу «новее» — единственное
+        // объявление конца (автоподстановку объявляет landed(), провал — молча).
+        if (end != null && ScanProgress.announceNewer(end, newer.visibility == View.VISIBLE) && newer.a11yOn())
             newer.announceForAccessibility(txt.s(R.string.newer_desc))
     }
     /** Полоса 2dp под линией шапки: фоновое обновление показанного дерева. */
@@ -128,6 +129,8 @@ class BrowserActivity : LangActivity() {
         private set
     /** Состояние фонового скана показанного дерева при последнем [renderProgress]. */
     private var scanState = ScanState.NONE
+    /** [BgScan.endMark] на начале скана показанного дерева: итог — именно этого скана. */
+    private var endMark = 0L
     /** Когда плашка последний раз показала счёт (uptime). */
     private var badgeAt = 0L
     /** Оценка для доли полосы: items корня показанного дерева на старте скана. */
@@ -289,7 +292,7 @@ class BrowserActivity : LangActivity() {
         // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
         // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
         badge = label("", 12f, C.AMBER, mono = true).apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+            maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
         }
         newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
             gravity = Gravity.CENTER
@@ -422,20 +425,24 @@ class BrowserActivity : LangActivity() {
      * Полоса и плашка фонового обновления показанного дерева (тот же корень и режим su). Идёт —
      * доля files / items корня (не больше 0.97), плашка «обновление · N» раз в секунду; ждёт в
      * очереди — неопределённая полоса и «обновление · ждёт». Кончился — полоса на 100% и
-     * скрывается, плашка снова показывает вид дерева; не удался (нового дерева нет) — полоса
-     * скрывается сразу. Голосом — только начало, ожидание и конец. true — скан только что кончился.
+     * скрывается, плашка молча снова показывает вид дерева; не удался или выброшен (по итогу
+     * ЭТОГО скана, не по старому ждущему дереву) — полоса скрывается сразу. Голосом — только
+     * начало и ожидание ([ScanProgress.polite]). Итог скана, если он только что кончился, иначе null.
      */
-    private fun renderProgress(): Boolean {
-        if (!::scanLine.isInitialized || h == 0L || isDestroyed) return false
+    private fun renderProgress(): ScanEnd? {
+        if (!::scanLine.isInitialized || h == 0L || isDestroyed) return null
         val st = BgScan.stateFor(Holder.root, Holder.viaRoot)
         val was = scanState
         scanState = st
         if (st == ScanState.NONE) {
-            if (was == ScanState.NONE) return false
-            if (hasNewer()) scanLine.finish() else scanLine.hide()
-            setBadge(sourceBadge, polite = true)
-            return true
+            if (was == ScanState.NONE) return null
+            // Итог не записан (su-цель снята с очереди) — нового дерева нет, как при провале.
+            val end = BgScan.endFor(Holder.root, Holder.viaRoot, endMark) ?: ScanEnd.FAILED
+            if (ScanProgress.completes(end)) scanLine.finish() else scanLine.hide()
+            setBadge(sourceBadge, active = false, polite = false)
+            return end
         }
+        if (was == ScanState.NONE) endMark = BgScan.endMark
         val files = BgScan.p[1]
         // Во время удаления дерево не читается: без оценки — неопределённая полоса.
         if (st == ScanState.RUNNING && was != ScanState.RUNNING)
@@ -443,15 +450,20 @@ class BrowserActivity : LangActivity() {
         scanLine.show(if (st == ScanState.RUNNING) ScanProgress.fraction(files, estimate) else null)
         val now = SystemClock.uptimeMillis()
         if (ScanProgress.badgeDue(st != was, now, badgeAt)) {
-            setBadge(ScanProgress.badge(txt, st, files), polite = st != was)
+            setBadge(ScanProgress.badge(txt, st, files), active = true, polite = ScanProgress.polite(was, st))
             badgeAt = now
         }
-        return false
+        return null
     }
 
-    /** [polite] — TalkBack прочтёт (начало, ожидание, конец); тики счёта — молча. */
-    private fun setBadge(text: String, polite: Boolean) {
+    /**
+     * [polite] — TalkBack прочтёт (начало, ожидание); тики счёта, конец и покой — молча (живая
+     * область снимается до смены текста). [active] — ход скана: одна строка и при 200%; вид
+     * дерева — до [BADGE_LINES].
+     */
+    private fun setBadge(text: String, active: Boolean, polite: Boolean) {
         badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
+        badge.maxLines = if (active) 1 else BADGE_LINES
         badge.text = text
     }
 
@@ -510,6 +522,8 @@ class BrowserActivity : LangActivity() {
         const val S_SCROLL = "scroll"
         const val K_SESSIONS = "browser_sessions"
         const val HINT_SESSIONS = 3
+        /** Плашка вида дерева: до двух строк рядом с чипом «новее». */
+        const val BADGE_LINES = 2
     }
 
     /**
@@ -637,7 +651,7 @@ class BrowserActivity : LangActivity() {
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
         sourceBadge = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
-        if (scanState == ScanState.NONE) badge.text = sourceBadge
+        if (scanState == ScanState.NONE) setBadge(sourceBadge, active = false, polite = false)
         hint = listOfNotNull(if (showHint) txt.s(R.string.browser_hint) else null,
             if (p[3] > 0) "⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else null).joinToString("   ")
         setFooter(idleFooter())

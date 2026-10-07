@@ -37,6 +37,8 @@ object BgScan {
      * ([Swap.autoRoot] или прямой долгий тап через [refresh]).
      */
     private val queue = ScanQueue()
+    /** Итоги сканов по целям: экраны решают «на 100%» или «скрыть» по итогу своего скана. */
+    private val ends = ScanEnds()
     private var indexing = false
 
     /** Последний progress идущего (или последнего) скана — копия для экранов. */
@@ -59,6 +61,16 @@ object BgScan {
     /** Скан дерева [root] в режиме [su] (оба совпадают) идёт, ждёт в очереди или его нет. */
     fun stateFor(root: String, su: Boolean): ScanState =
         stateOverride ?: queue.state(ScanTarget(root, su), if (running) cur else null)
+
+    /** Для тестов: итог для любого дерева вместо настоящего ([endFor]). */
+    @Volatile var endOverride: ScanEnd? = null
+
+    /** Метка для [endFor]: экран берёт её, когда видит начало скана своей цели. */
+    val endMark: Long get() = ends.mark
+
+    /** Итог скана [root] в режиме [su], закончившегося после метки [mark] ([endMark]), или null. */
+    fun endFor(root: String, su: Boolean, mark: Long): ScanEnd? =
+        endOverride ?: ends.since(ScanTarget(root, su), mark)
 
     /** MainActivity между onResume и onPause. */
     var mainResumed = false
@@ -116,6 +128,7 @@ object BgScan {
                  else Native.scanStart(t.root, true, 0, err)
         if (nh == 0L) {
             failure = ScanFail(err[0]).also { NativeErr.log("bgscan start", it) }
+            ends.record(t, ScanEnd.FAILED)
             changed()
             return false
         }
@@ -148,12 +161,13 @@ object BgScan {
     private fun done(handle: Long) {
         h = 0L
         log("done")
-        if (dirty) { Holder.io.execute { Native.free(handle) }; discard(); return }
-        val ctx = app ?: run { Holder.io.execute { Native.free(handle) }; return discard() }
         val t = cur
+        if (dirty) { Holder.io.execute { Native.free(handle) }; ends.record(t, ScanEnd.DISCARDED); discard(); return }
+        val ctx = app ?: run { Holder.io.execute { Native.free(handle) }; ends.record(t, ScanEnd.DISCARDED); return discard() }
         if (t.su) { Root.rememberMemfd(ctx, p[5] == 1L); Root.granted(ctx) }
         val d = Scans.finish(ctx, handle, t.root, t.su, p)
         publish(handle, t, if (t.su) Kind.ROOT else Kind.SCAN, d.time, d.ms)
+        ends.record(t, ScanEnd.OK)
         // Ждёт обновление другой цели (браузер) — следом; во время удаления — после него.
         if (!queue.isEmpty && !Holder.deleting) restart()
         changed()
@@ -165,6 +179,7 @@ object BgScan {
         // Скан закончился — владелец читает текст ошибки, затем дескриптор уходит на io.
         failure = ScanFail(0, Native.str(Native.error(handle))).also { NativeErr.log("bgscan", it) }
         Holder.io.execute { Native.free(handle) }
+        ends.record(cur, if (dirty) ScanEnd.DISCARDED else ScanEnd.FAILED)
         if (dirty) { discard(); return }
         if (cur == STORAGE && noTree()) startIndex()
         if (!queue.isEmpty && !Holder.deleting) restart()

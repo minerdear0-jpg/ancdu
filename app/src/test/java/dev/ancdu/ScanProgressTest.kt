@@ -3,7 +3,9 @@ package dev.ancdu
 import dev.ancdu.XmlTxt.Companion.EN
 import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Полоса и плашка обновления дерева в шапке браузера (и полоса карточки главного экрана). */
@@ -37,5 +39,39 @@ class ScanProgressTest {
         assertEquals(true, ScanProgress.badgeDue(changed = true, now = 100, last = 50))
         assertEquals(false, ScanProgress.badgeDue(changed = false, now = 1049, last = 50))
         assertEquals(true, ScanProgress.badgeDue(changed = false, now = 1050, last = 50))
+    }
+
+    /**
+     * Голосом (живая область POLITE) — только начало («обновление · N») и ожидание; тики счёта,
+     * конец (плашка молча возвращает вид дерева) и покой — NONE.
+     */
+    @Test fun badgeLiveRegionOnlyOnStartAndWaiting() {
+        val R = ScanState.RUNNING; val Q = ScanState.QUEUED; val N0 = ScanState.NONE
+        assertTrue("начало", ScanProgress.polite(N0, R))
+        assertTrue("ожидание", ScanProgress.polite(N0, Q))
+        assertTrue("из очереди — начало", ScanProgress.polite(Q, R))
+        assertTrue("грязный итог — снова ждёт", ScanProgress.polite(R, Q))
+        assertFalse("тик счёта", ScanProgress.polite(R, R))
+        assertFalse("всё ещё ждёт", ScanProgress.polite(Q, Q))
+        assertFalse("конец", ScanProgress.polite(R, N0))
+        assertFalse("конец из очереди", ScanProgress.polite(Q, N0))
+        assertFalse("покой", ScanProgress.polite(N0, N0))
+    }
+
+    /** Полоса на 100% — только у удачного итога ЭТОГО скана; провал, выброшенный или неизвестный — скрыть. */
+    @Test fun lineCompletesOnlyOnThisScansSuccess() {
+        assertTrue(ScanProgress.completes(ScanEnd.OK))
+        assertFalse(ScanProgress.completes(ScanEnd.FAILED))
+        assertFalse(ScanProgress.completes(ScanEnd.DISCARDED))
+        assertFalse(ScanProgress.completes(null))
+    }
+
+    /** «Новее» объявляется только после удачного скана при видимом чипе (не по старому ждущему дереву). */
+    @Test fun newerAnnouncedOnlyAfterSuccessWithChip() {
+        assertTrue(ScanProgress.announceNewer(ScanEnd.OK, chipVisible = true))
+        assertFalse("автоподстановка: итог скажет landed()", ScanProgress.announceNewer(ScanEnd.OK, chipVisible = false))
+        assertFalse("провал при старом чипе", ScanProgress.announceNewer(ScanEnd.FAILED, chipVisible = true))
+        assertFalse(ScanProgress.announceNewer(ScanEnd.DISCARDED, chipVisible = true))
+        assertFalse(ScanProgress.announceNewer(null, chipVisible = true))
     }
 }

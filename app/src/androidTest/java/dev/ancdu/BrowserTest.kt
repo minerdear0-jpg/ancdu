@@ -443,28 +443,60 @@ class BrowserTest {
                     assertEquals(1, act.badge.lineCount)
                     assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, act.badge.accessibilityLiveRegion)
                 }
-                // Кончился без нового дерева (не удался): полоса скрыта сразу.
+                // Кончился без нового дерева (не удался): полоса скрыта сразу, плашка молча — вид дерева.
+                ins.runOnMainSync { BgScan.endOverride = ScanEnd.FAILED }
+                state(null)
+                fun idleBadge(what: String) {
+                    assertEquals(what, source, act.badge.text.toString())
+                    assertEquals(what, View.ACCESSIBILITY_LIVE_REGION_NONE, act.badge.accessibilityLiveRegion)
+                    assertEquals(what, 2, act.badge.maxLines)
+                }
+                ins.runOnMainSync {
+                    assertEquals(View.INVISIBLE, act.scanLine.visibility)
+                    idleBadge("провал")
+                }
+                assertEquals("scale=$scale: конец", idle, geo())
+
+                // Чип «новее» уже виден (дерево ждёт с прошлого скана): ход — всё равно одна строка.
+                val h2 = scanned(dir)
+                ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, false); act.refreshPending() }
+                val chipIdle = geo()
+                ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
+                state(ScanState.RUNNING, 1_234_567)
+                assertEquals("scale=$scale: идёт при чипе", chipIdle, geo())
+                ins.runOnMainSync {
+                    assertEquals(ScanProgress.badge(act.tx, ScanState.RUNNING, 1_234_567), act.badge.text.toString())
+                    assertEquals("scale=$scale при чипе: ${act.badge.text}", 1, act.badge.lineCount)
+                    assertEquals(1, act.badge.maxLines)
+                }
+                state(ScanState.QUEUED)
+                ins.runOnMainSync { assertEquals("scale=$scale при чипе: ждёт", 1, act.badge.lineCount) }
+                // Не удался при старом чипе: решает итог ЭТОГО скана, не hasNewer() — скрыть сразу.
+                state(ScanState.RUNNING, 0)
+                ins.runOnMainSync { BgScan.endOverride = ScanEnd.FAILED }
                 state(null)
                 ins.runOnMainSync {
                     assertEquals(View.INVISIBLE, act.scanLine.visibility)
-                    assertEquals(source, act.badge.text.toString())
+                    assertNotEquals(1f, act.scanLine.fraction)
+                    assertEquals(View.VISIBLE, act.newer.visibility)
+                    idleBadge("провал при чипе")
                 }
-                assertEquals("scale=$scale: конец", idle, geo())
-                if (scale == 1f) {
-                    // Кончился с новым деревом: 100%, затем скрыта; чип «новее» на месте.
-                    state(ScanState.RUNNING, 0)
-                    val h2 = scanned(dir)
-                    ins.runOnMainSync {
-                        Holder.offer(h2, Kind.SCAN, dir.path, false)
-                        BgScan.stateOverride = null; BgScan.changed()
-                        assertEquals(1f, act.scanLine.fraction!!, 0f)
-                        assertEquals(View.VISIBLE, act.newer.visibility)
-                        assertEquals(source, act.badge.text.toString())
-                    }
-                    assertTrue(waitFor(2000) { act.scanLine.visibility == View.INVISIBLE })
+                // Удался, дерево ждёт тапа по чипу: 100%, затем скрыта; плашка молча — вид дерева.
+                state(ScanState.RUNNING, 0)
+                ins.runOnMainSync { BgScan.endOverride = ScanEnd.OK }
+                state(null)
+                ins.runOnMainSync {
+                    assertEquals(1f, act.scanLine.fraction!!, 0f)
+                    assertEquals(View.VISIBLE, act.newer.visibility)
+                    idleBadge("удался")
                 }
+                assertTrue(waitFor(2000) { act.scanLine.visibility == View.INVISIBLE })
+                assertEquals("scale=$scale: конец при чипе", chipIdle, geo())
             } finally {
-                ins.runOnMainSync { BgScan.stateOverride = null; BgScan.p[1] = 0; Holder.dropPending(); act.finish() }
+                ins.runOnMainSync {
+                    BgScan.stateOverride = null; BgScan.endOverride = null; BgScan.p[1] = 0
+                    Holder.dropPending(); act.finish()
+                }
                 Lang.fontScale = null
             }
         }

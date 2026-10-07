@@ -25,4 +25,16 @@ object ScanProgress {
 
     /** Пора ли обновить плашку: состояние сменилось — сразу, иначе раз в [BADGE_MS]. */
     fun badgeDue(changed: Boolean, now: Long, last: Long): Boolean = changed || now - last >= BADGE_MS
+
+    /**
+     * Живая область плашки (POLITE): только начало («обновление · N» впервые) и ожидание. Тики
+     * счёта, конец (вид дерева возвращается молча — итог скажут «новее» или landed()) и покой — NONE.
+     */
+    fun polite(was: ScanState, st: ScanState): Boolean = st != ScanState.NONE && st != was
+
+    /** Полоса на 100% ([ScanLine.finish]) — только у удачного итога этого скана; иначе скрыть сразу. */
+    fun completes(end: ScanEnd?): Boolean = end == ScanEnd.OK
+
+    /** Объявить «новее» после скана: он удался и чип остался (автоподстановку объявляет landed()). */
+    fun announceNewer(end: ScanEnd?, chipVisible: Boolean): Boolean = end == ScanEnd.OK && chipVisible
 }

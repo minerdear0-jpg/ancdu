@@ -11,6 +11,27 @@ data class ScanTarget(val root: String, val su: Boolean) {
 /** Фоновый скан цели: идёт, ждёт в очереди или его нет. */
 enum class ScanState { RUNNING, QUEUED, NONE }
 
+/** Итог скана цели: дерево готово, не удался (или не запустился), выброшен («грязный» после удаления). */
+enum class ScanEnd { OK, FAILED, DISCARDED }
+
+/**
+ * Чистый Kotlin: последние итоги сканов по целям. Экран берёт [mark], когда видит начало скана
+ * своей цели, и по [since] узнаёт итог именно этого скана: прежний итог той же цели и итог чужой
+ * цели, записанный следом, его не подменяют.
+ */
+class ScanEnds {
+    private var seq = 0L
+    private val ends = HashMap<ScanTarget, Pair<Long, ScanEnd>>()
+
+    /** Метка «сейчас»: итоги, записанные позже, — новее её. */
+    val mark: Long get() = seq
+
+    fun record(t: ScanTarget, e: ScanEnd) { ends[t] = ++seq to e }
+
+    /** Итог цели [t], записанный после метки [mark], или null. */
+    fun since(t: ScanTarget, mark: Long): ScanEnd? = ends[t]?.takeIf { it.first > mark }?.second
+}
+
 /**
  * Чистый Kotlin: очередь сканов BgScan — FIFO без повторов. Постановка не вытесняет ждущие цели
  * (обновление после удаления не теряется из-за второго удаления или скана главного экрана);
