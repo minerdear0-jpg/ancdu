@@ -349,4 +349,71 @@ class DeleteSheetTest {
             assertNull(chosen)
         }
     }
+
+    /**
+     * #6: «быстро через root» удаляет через su — лист применяет ярус root: открыт отмеченным —
+     * пауза 2,5 с (3-2-1) и предупреждение root; снята — обычный ярус (здесь без паузы: включается
+     * сразу); отмечена снова — отсчёт с 3, и «Удалить» не включается раньше конца ТЕКУЩЕГО отсчёта.
+     * С данными другого приложения снятие возвращает паузу 1,5 с (2-1). Синтетическое превью,
+     * «Удалить» не нажимается — su не вызывается и ничего не удаляется (поэтому root не нужен).
+     */
+    @Test fun fastRootToggleRestartsCountdown() {
+        val dir = fixture("ds-fast-tier")
+        File(dir, "a.bin").writeBytes(ByteArray(10))
+        val a = browse(dir.path)
+        fun pv(owner: String?) = DeletePreview(
+            name = "DCIM", path = "/storage/emulated/0/DCIM", dir = true, disk = 1000, apparent = 1000,
+            items = 1500, flags = F_DIR, top = emptyList(), more = 0, owner = owner, viaRoot = false,
+            block = null, kind = Kind.SCAN, cacheTime = null, fast = true, root = RootState.GRANTED)
+        var chosen: Boolean? = null
+        lateinit var s: DeleteSheet
+        ins.runOnMainSync {
+            s = DeleteSheet(a, pv(null)) { chosen = it }.also { it.show() }
+            assertTrue(s.fastBox!!.isChecked)                 // по умолчанию при GRANTED и ≥1000 эл.
+            assertEquals(DeleteTier.ROOT, s.tier)
+            assertFalse(s.deleteButton!!.isEnabled)
+            assertEquals(listOf(3L), s.countdownShown)
+            assertEquals("⚠ " + a.getString(R.string.root_no_trash), s.rootText!!.text.toString())
+        }
+        Thread.sleep(1200)
+        ins.runOnMainSync {
+            assertFalse(s.deleteButton!!.isEnabled)
+            s.fastBox!!.isChecked = false                    // обычный ярус: паузы нет — сразу
+            assertEquals(DeleteTier.NONE, s.tier)
+            assertTrue(s.deleteButton!!.isEnabled)
+            assertNull(s.rootText)
+            s.fastBox!!.isChecked = true                     // снова root: отсчёт с 3
+            assertFalse(s.deleteButton!!.isEnabled)
+            assertEquals(3L, s.countdownShown.last())
+            assertTrue(s.deleteButton!!.text.startsWith(a.prefixOf(R.string.delete_in)))
+            assertNotNull(s.rootText)
+        }
+        val t1 = System.currentTimeMillis()
+        // Не включается раньше конца текущего отсчёта (2,5 с от повторной отметки).
+        while (System.currentTimeMillis() - t1 < DeletePolicy.ROOT_PAUSE_MS - 150) {
+            var on = true
+            ins.runOnMainSync { on = s.deleteButton!!.isEnabled }
+            assertFalse("включилась через ${System.currentTimeMillis() - t1} мс", on)
+            Thread.sleep(50)
+        }
+        assertTrue(waitFor(3_000) { s.deleteButton!!.isEnabled })
+        ins.runOnMainSync {
+            assertEquals(listOf(3L, 2L, 3L, 2L, 1L), s.countdownShown)
+            s.dismiss()
+        }
+
+        // Данные другого приложения: снятие галочки — пауза обычного яруса 1,5 с с начала.
+        ins.runOnMainSync {
+            s = DeleteSheet(a, pv("com.example.other")) { chosen = it }.also { it.show() }
+            assertEquals(DeleteTier.ROOT, s.tier)
+            s.fastBox!!.isChecked = false
+            assertEquals(DeleteTier.PAUSE, s.tier)
+            assertFalse(s.deleteButton!!.isEnabled)
+            assertEquals(2L, s.countdownShown.last())
+            assertNull(s.rootText)
+        }
+        assertTrue(waitFor(4_000) { s.deleteButton!!.isEnabled })
+        ins.runOnMainSync { s.dismiss() }
+        assertNull(chosen)
+    }
 }

@@ -144,6 +144,7 @@ object Feedback {
             Haptic.CONTEXT_CLICK -> perform(HapticFeedbackConstants.CONTEXT_CLICK)
             Haptic.CONFIRM -> perform(HapticFeedbackConstants.CONFIRM)
             Haptic.REJECT -> perform(HapticFeedbackConstants.REJECT)
+            Haptic.LONG_PRESS -> perform(HapticFeedbackConstants.LONG_PRESS)
             // QUICK_RISE — API 30 (minSdk).
             Haptic.QUICK_RISE -> if (!compose(30, VibrationEffect.Composition.PRIMITIVE_QUICK_RISE to 0.6f))
                 perform(HapticFeedbackConstants.CONTEXT_CLICK)

@@ -23,6 +23,8 @@ class FeedbackPolicyTest {
             Cue.COMMIT_ROOT to Decision(Sound.COMMIT, Haptic.CLICK_THUD),
             Cue.DONE to Decision(Sound.DONE, Haptic.CONFIRM),
             Cue.REFUSE to Decision(Sound.REFUSE, Haptic.REJECT),
+            // Долгое нажатие строки — только вибрация, без нового звука (#7).
+            Cue.LONG_PRESS to Decision(null, Haptic.LONG_PRESS),
         )
         assertEquals(Cue.entries.toSet(), want.keys)
         for ((c, w) in want) assertEquals("$c", w, d(c))
@@ -47,7 +49,7 @@ class FeedbackPolicyTest {
     /** TalkBack: tick, tock, arm, count и ready молчат целиком; commit, done, refuse — со звуком и вибрацией. */
     @Test fun talkBack() {
         val tb = on.copy(touchExploration = true)
-        for (c in listOf(Cue.TAP, Cue.BACK, Cue.ARM, Cue.ARM_ROOT, Cue.COUNT, Cue.READY))
+        for (c in listOf(Cue.TAP, Cue.BACK, Cue.ARM, Cue.ARM_ROOT, Cue.COUNT, Cue.READY, Cue.LONG_PRESS))
             assertEquals("$c", Decision(null, null), d(c, tb))
         for (c in listOf(Cue.COMMIT, Cue.COMMIT_ROOT, Cue.DONE, Cue.REFUSE)) assertEquals("$c", d(c), d(c, tb))
     }

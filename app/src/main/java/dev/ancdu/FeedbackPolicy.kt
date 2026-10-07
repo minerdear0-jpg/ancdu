@@ -17,6 +17,8 @@ enum class Cue {
     DONE,
     /** Отказ: ничего не удалено, ошибка, удаление запрещено. */
     REFUSE,
+    /** Долгое нажатие строки списка: только вибрация. */
+    LONG_PRESS,
 }
 
 /** Звук: файл [src] (Synth) и скорость SoundPool [rate]. */
@@ -29,9 +31,9 @@ enum class Sound(val src: String, val rate: Float) {
 
 /**
  * Вибрация. CLOCK_TICK, CONTEXT_CLICK, CONFIRM, REJECT — HapticFeedbackConstants;
- * QUICK_RISE (0.6) и CLICK_THUD (CLICK, через 70 мс THUD) — композиции Vibrator; CLICK — EFFECT_CLICK.
+ * LONG_PRESS — тоже HapticFeedbackConstants; QUICK_RISE (0.6) и CLICK_THUD (CLICK, через 70 мс THUD) — композиции Vibrator; CLICK — EFFECT_CLICK.
  */
-enum class Haptic { CLOCK_TICK, CONTEXT_CLICK, QUICK_RISE, CLICK, CLICK_THUD, CONFIRM, REJECT }
+enum class Haptic { CLOCK_TICK, CONTEXT_CLICK, QUICK_RISE, CLICK, CLICK_THUD, CONFIRM, REJECT, LONG_PRESS }
 
 /** Настройка «Звук и вибрация»; [tag] — значение в prefs, [label] — подпись в меню. */
 enum class FxMode(val tag: String, val label: Int) {
@@ -97,6 +99,7 @@ object FeedbackPolicy {
         Cue.COMMIT_ROOT to Decision(Sound.COMMIT, Haptic.CLICK_THUD),
         Cue.DONE to Decision(Sound.DONE, Haptic.CONFIRM),
         Cue.REFUSE to Decision(Sound.REFUSE, Haptic.REJECT),
+        Cue.LONG_PRESS to Decision(null, Haptic.LONG_PRESS),
     )
 
     /** С TalkBack остаются только итоговые события: подтверждение, готово, отказ. */

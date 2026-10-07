@@ -16,6 +16,16 @@ enum class Block(val res: Int) {
     NO_FAST(R.string.block_no_fast),
 }
 
+/**
+ * Ярус листа удаления: пауза до «Удалить» ([pauseMs]) и удаление через su ([root] — ARM_ROOT,
+ * предупреждение root, COMMIT_ROOT).
+ */
+enum class DeleteTier(val pauseMs: Long, val root: Boolean) {
+    NONE(0L, false),
+    PAUSE(DeletePolicy.PAUSE_MS, false),
+    ROOT(DeletePolicy.ROOT_PAUSE_MS, true),
+}
+
 /** Что удалять нельзя никогда. Чистый Kotlin: решение по пути, флагам узла и виду дерева. */
 object DeletePolicy {
     private val PROTECTED = listOf("/data/system", "/data/adb", "/data/app", "/data/misc",
@@ -152,6 +162,17 @@ object DeletePolicy {
         needsPause(viaRoot = false, owned = owned, disk = disk) -> PAUSE_MS
         else -> 0L
     }
+
+    /**
+     * Ярус листа: [viaRoot] — root-сессия, [fast] — отмечено «быстро через root» (удаление тоже
+     * через su). Пауза — как у [pauseMs] от viaRoot || fast.
+     */
+    fun tier(viaRoot: Boolean, fast: Boolean, owned: Boolean, disk: Long): DeleteTier =
+        when (pauseMs(viaRoot || fast, owned, disk)) {
+            ROOT_PAUSE_MS -> DeleteTier.ROOT
+            PAUSE_MS -> DeleteTier.PAUSE
+            else -> DeleteTier.NONE
+        }
 
     /** Числа обратного отсчёта паузы [ms] по порядку показа (2500 → 3, 2, 1). */
     fun countdown(ms: Long): List<Long> = ((ms + 999) / 1000 downTo 1L).toList()

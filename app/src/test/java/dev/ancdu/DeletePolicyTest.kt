@@ -226,6 +226,26 @@ class DeleteTierTest {
         assertEquals(emptyList<Long>(), DeletePolicy.countdown(0))
     }
 
+    /**
+     * Ярус листа: «быстро через root» удаляет через su — тот же ярус, что у root-сессии (#6).
+     * Чистая функция viaRoot || fast, owned, disk.
+     */
+    @Test fun sheetTierWithFast() {
+        assertEquals(DeleteTier.NONE, DeletePolicy.tier(viaRoot = false, fast = false, owned = false, disk = 10))
+        assertEquals(DeleteTier.PAUSE, DeletePolicy.tier(viaRoot = false, fast = false, owned = true, disk = 10))
+        assertEquals(DeleteTier.PAUSE, DeletePolicy.tier(viaRoot = false, fast = false, owned = false, disk = gib))
+        assertEquals(DeleteTier.ROOT, DeletePolicy.tier(viaRoot = true, fast = false, owned = false, disk = 10))
+        assertEquals(DeleteTier.ROOT, DeletePolicy.tier(viaRoot = false, fast = true, owned = false, disk = 10))
+        assertEquals(DeleteTier.ROOT, DeletePolicy.tier(viaRoot = false, fast = true, owned = true, disk = gib))
+        assertEquals(DeleteTier.ROOT, DeletePolicy.tier(viaRoot = true, fast = true, owned = false, disk = 10))
+        assertEquals(listOf(0L, 1500L, 2500L), DeleteTier.entries.map { it.pauseMs })
+        assertEquals(listOf(false, false, true), DeleteTier.entries.map { it.root })
+        // совпадает с pauseMs при viaRoot = viaRoot || fast
+        for (via in listOf(false, true)) for (fast in listOf(false, true)) for (owned in listOf(false, true))
+            for (disk in listOf(10L, gib))
+                assertEquals(DeletePolicy.pauseMs(via || fast, owned, disk), DeletePolicy.tier(via, fast, owned, disk).pauseMs)
+    }
+
     /** Предупреждение root — одна строка: «от root · без корзины» и та же вторая фраза, что у обычного. */
     @Test fun rootWarningText() {
         assertEquals("Deleting as root · no trash. This can't be undone.", XmlTxt.EN.s(R.string.root_no_trash))

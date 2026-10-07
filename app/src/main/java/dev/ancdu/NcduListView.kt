@@ -141,7 +141,8 @@ class NcduListView(ctx: Context) : View(ctx) {
         }
         override fun onLongPress(e: MotionEvent) {
             val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
-            if (i >= 0) { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); source?.longClick(i) }
+            // Через Feedback: «Звук и вибрация: Выкл» и правило TalkBack действуют и здесь.
+            if (i >= 0) { Feedback.cue(this@NcduListView, Cue.LONG_PRESS); source?.longClick(i) }
         }
     })
 

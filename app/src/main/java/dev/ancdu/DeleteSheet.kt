@@ -77,19 +77,25 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
         private set
-    /** Предупреждение «⚠ Удаление от root · без корзины…» (null — удаление не от root или запрещено). */
-    var rootText: TextView? = null
-        private set
-    /** Для тестов: показанные числа обратного отсчёта по порядку. */
+    /** Предупреждение над кнопками (null — удаление запрещено). */
+    private var warnText: TextView? = null
+    /** Предупреждение «⚠ Удаление от root · без корзины…» (null — удаление не через su или запрещено). */
+    val rootText: TextView? get() = warnText?.takeIf { tier.root }
+    /** Для тестов: показанные числа обратного отсчёта по порядку (перезапуск продолжает список). */
     val countdownShown = ArrayList<Long>()
 
     private val hardlink = !p.dir && p.flags and F_HLDUP != 0
-    /** Пауза до «Удалить» (мс): своё приложение (тест, свой кэш) «чужим» не считается. */
-    private val pauseMs = if (p.block != null) 0L
-        else DeletePolicy.pauseMs(p.viaRoot, p.owner != null && p.owner != act.packageName, p.disk)
-    private val pause = pauseMs > 0
+    /** Данные другого приложения: своё (тест, свой кэш) «чужим» не считается. */
+    private val owned = p.owner != null && p.owner != act.packageName
+    /**
+     * Ярус по текущему выбору: отмеченное «быстро через root» удаляет через su — ярус root
+     * (пауза 2,5 с, ARM_ROOT, предупреждение root), как у root-сессии.
+     */
+    val tier: DeleteTier get() = DeletePolicy.tier(p.viaRoot, fastBox?.isChecked == true, owned, p.disk)
     private val readyLabel = if (hardlink) t.s(R.string.delete_btn) else t.s(R.string.delete_btn_size, Fmt.size(p.disk, t))
     private var enableAt = 0L
+    /** Последнее показанное число ТЕКУЩЕГО отсчёта (null — отсчёт только начался). */
+    private var lastShown: Long? = null
 
     private val tick = object : Runnable {
         override fun run() {
@@ -98,22 +104,54 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             if (left > 0) {
                 val s = (left + 999) / 1000
                 // Новое число — count; первое совпадает с arm и молчит.
-                FeedbackPolicy.countCue(countdownShown.lastOrNull(), s)?.let { Feedback.cue(b, it) }
-                if (countdownShown.lastOrNull() != s) countdownShown += s
+                FeedbackPolicy.countCue(lastShown, s)?.let { Feedback.cue(b, it) }
+                if (lastShown != s) { countdownShown += s; lastShown = s }
                 val n = Fmt.count(s, t.locale)
                 b.text = t.s(R.string.delete_in, n)
                 b.contentDescription = t.s(R.string.delete_in_desc, n + Fmt.NBSP + t.s(R.string.unit_s))
                 ui.postDelayed(this, minOf(left, 100))
             } else {
-                b.isEnabled = true
-                b.alpha = 1f
-                b.text = readyLabel
-                b.contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
-                Feedback.cue(b, Cue.READY)
-                if (b.a11yOn()) b.announceForAccessibility(t.s(R.string.delete_ready))
+                enable(b)
             }
         }
     }
+
+    private fun enable(b: TextView) {
+        val was = b.isEnabled
+        b.isEnabled = true
+        b.alpha = 1f
+        b.text = readyLabel
+        b.contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
+        if (was) return
+        Feedback.cue(b, Cue.READY)
+        if (b.a11yOn()) b.announceForAccessibility(t.s(R.string.delete_ready))
+    }
+
+    /**
+     * Отсчёт паузы ТЕКУЩЕГО яруса с начала: кнопка выключена до его конца; пауза 0 — включается
+     * сразу. Прежний отсчёт снимается.
+     */
+    private fun restartCountdown() {
+        val b = deleteButton ?: return
+        ui.removeCallbacks(tick)
+        lastShown = null
+        val ms = tier.pauseMs
+        if (ms <= 0) { enable(b); return }
+        b.isEnabled = false
+        b.alpha = 0.5f
+        enableAt = SystemClock.uptimeMillis() + ms
+        tick.run()
+    }
+
+    /** Галочка «быстро через root» сменилась: ярус, предупреждение и отсчёт — заново. */
+    private fun fastToggled(on: Boolean) {
+        warnText?.text = warning()
+        if (!dialog.isShowing) return
+        fastBox?.let { Feedback.cue(it, if (on && tier.root) Cue.ARM_ROOT else Cue.TAP) }
+        restartCountdown()
+    }
+
+    private fun warning(): String = "⚠ " + t.s(if (tier.root) R.string.root_no_trash else R.string.no_trash)
 
     init {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -126,11 +164,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     fun show() {
         dialog.show()
         cancelButton.requestFocus()
-        Feedback.cue(cancelButton, FeedbackPolicy.sheetOpen(blocked = p.block != null, viaRoot = p.viaRoot))
-        if (pause) {
-            enableAt = SystemClock.uptimeMillis() + pauseMs
-            tick.run()
-        }
+        Feedback.cue(cancelButton, FeedbackPolicy.sheetOpen(blocked = p.block != null, viaRoot = tier.root))
+        if (p.block == null && tier.pauseMs > 0) restartCountdown()
     }
 
     fun dismiss() = dialog.dismiss()
@@ -146,9 +181,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             isFillViewport = false
             addView(body())
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
-        // Предупреждение — сразу над кнопками; от root — одной строкой с ним.
-        if (p.block == null) addView(act.label("⚠ " + t.s(if (p.viaRoot) R.string.root_no_trash else R.string.no_trash),
-            14f, C.DANGER_TEXT, bold = true).also { if (p.viaRoot) rootText = it })
+        // Предупреждение — сразу над кнопками; через su (root-сессия или «быстро через root») —
+        // одной строкой с ним.
+        if (p.block == null) addView(act.label(warning(), 14f, C.DANGER_TEXT, bold = true).also { warnText = it })
         addView(buttons())
     }
 
@@ -189,7 +224,11 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             setPadding(act.dp(12), 0, 0, 0)
             minHeight = act.dp(48)
             isChecked = DeletePolicy.fastByDefault(p.items, p.root)
-            setOnCheckedChangeListener { _, on -> note.visibility = if (on) View.VISIBLE else View.GONE }
+            isSoundEffectsEnabled = false
+            setOnCheckedChangeListener { _, on ->
+                note.visibility = if (on) View.VISIBLE else View.GONE
+                fastToggled(on)
+            }
         }
         note.visibility = if (box.isChecked) View.VISIBLE else View.GONE
         fastBox = box
@@ -269,12 +308,12 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         val del = button(readyLabel, C.DANGER_FILL, Color.WHITE, cue = null) {
             val b = deleteButton
             if (b?.isEnabled == true) {
-                Feedback.cue(b, if (p.viaRoot) Cue.COMMIT_ROOT else Cue.COMMIT)
+                Feedback.cue(b, if (tier.root) Cue.COMMIT_ROOT else Cue.COMMIT)
                 dialog.dismiss(); onDelete(fastBox?.isChecked == true)
             }
         }.apply {
             contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
-            if (pause) { isEnabled = false; alpha = 0.5f }
+            if (tier.pauseMs > 0) { isEnabled = false; alpha = 0.5f }
         }
         deleteButton = del
         addView(ButtonPair(act, del, cancelButton, listOf(readyLabel, t.s(R.string.delete_in, Fmt.count(9, t.locale)))),
