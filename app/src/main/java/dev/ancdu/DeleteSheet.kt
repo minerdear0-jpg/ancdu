@@ -80,9 +80,17 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
         private set
+    /** Строка «Удаление от root · без корзины» (null — удаление не от root или запрещено). */
+    var rootText: TextView? = null
+        private set
+    /** Для тестов: показанные числа обратного отсчёта по порядку. */
+    val countdownShown = ArrayList<Long>()
 
     private val hardlink = !p.dir && p.flags and F_HLDUP != 0
-    private val pause = p.block == null && DeletePolicy.needsPause(p.viaRoot, p.owner != null, p.disk)
+    /** Пауза до «Удалить» (мс): своё приложение (тест, свой кэш) «чужим» не считается. */
+    private val pauseMs = if (p.block != null) 0L
+        else DeletePolicy.pauseMs(p.viaRoot, p.owner != null && p.owner != act.packageName, p.disk)
+    private val pause = pauseMs > 0
     private val readyLabel = if (hardlink) t.s(R.string.delete_btn) else t.s(R.string.delete_btn_size, Fmt.size(p.disk, t))
     private var enableAt = 0L
 
@@ -92,6 +100,11 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             val left = enableAt - SystemClock.uptimeMillis()
             if (left > 0) {
                 val s = (left + 999) / 1000
+                // Новое число — count; первое совпадает с arm и молчит.
+                if (countdownShown.lastOrNull() != s) {
+                    if (countdownShown.isNotEmpty()) Feedback.cue(b, Cue.COUNT)
+                    countdownShown += s
+                }
                 val n = Fmt.count(s, t.locale)
                 b.text = t.s(R.string.delete_in, n)
                 b.contentDescription = t.s(R.string.delete_in_desc, n + Fmt.NBSP + t.s(R.string.unit_s))
@@ -101,6 +114,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 b.alpha = 1f
                 b.text = readyLabel
                 b.contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
+                Feedback.cue(b, Cue.READY)
                 if (b.a11yOn()) b.announceForAccessibility(t.s(R.string.delete_ready))
             }
         }
@@ -131,7 +145,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             else -> Cue.ARM
         })
         if (pause) {
-            enableAt = SystemClock.uptimeMillis() + PAUSE_MS
+            enableAt = SystemClock.uptimeMillis() + pauseMs
             tick.run()
         }
     }
@@ -149,7 +163,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             isFillViewport = false
             addView(body())
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
-        // Предупреждение — сразу над кнопками.
+        // Предупреждение — сразу над кнопками; от root — строка об этом прямо над ним.
+        if (p.block == null && p.viaRoot) addView(act.label(t.s(R.string.root_no_trash), 14f, C.DANGER_TEXT, bold = true)
+            .also { rootText = it })
         if (p.block == null) addView(act.label("⚠ " + t.s(R.string.no_trash), 14f, C.DANGER_TEXT, bold = true))
         addView(buttons())
     }
@@ -318,7 +334,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
 
     companion object {
-        const val PAUSE_MS = 1500L
         /** Нажатая «Удалить»: темнее DANGER_FILL (белый текст на нём контрастнее). */
         private const val DANGER_PRESSED = 0xFF8C1D17.toInt()
     }

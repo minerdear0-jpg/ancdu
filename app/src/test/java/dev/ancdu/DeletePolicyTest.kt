@@ -203,12 +203,26 @@ class StaleTreeReasonTest {
 }
 
 class DeleteTierTest {
+    private val gib = 1L shl 30
+
+    /** Серьёзное удаление: root, данные другого приложения или от 1 ГиБ. */
     @Test fun pauseTier() {
-        val gib = 1L shl 30
         assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib - 1))
         assertTrue(DeletePolicy.needsPause(viaRoot = false, owned = false, disk = gib))
-        assertFalse(DeletePolicy.needsPause(viaRoot = true, owned = false, disk = 10))
-        assertFalse(DeletePolicy.needsPause(viaRoot = false, owned = true, disk = 10))
+        assertTrue(DeletePolicy.needsPause(viaRoot = true, owned = false, disk = 10))
+        assertTrue(DeletePolicy.needsPause(viaRoot = false, owned = true, disk = 10))
         assertTrue(DeletePolicy.needsPause(viaRoot = true, owned = true, disk = 10))
+    }
+
+    /** Пауза: root — 2500 мс (отсчёт 3-2-1), прочее серьёзное — 1500 мс (2-1), иначе 0. */
+    @Test fun rootTier() {
+        assertEquals(0L, DeletePolicy.pauseMs(viaRoot = false, owned = false, disk = 10))
+        assertEquals(1500L, DeletePolicy.pauseMs(viaRoot = false, owned = true, disk = 10))
+        assertEquals(1500L, DeletePolicy.pauseMs(viaRoot = false, owned = false, disk = gib))
+        assertEquals(2500L, DeletePolicy.pauseMs(viaRoot = true, owned = false, disk = 10))
+        assertEquals(2500L, DeletePolicy.pauseMs(viaRoot = true, owned = true, disk = gib))
+        assertEquals(listOf(3L, 2L, 1L), DeletePolicy.countdown(2500))
+        assertEquals(listOf(2L, 1L), DeletePolicy.countdown(1500))
+        assertEquals(emptyList<Long>(), DeletePolicy.countdown(0))
     }
 }

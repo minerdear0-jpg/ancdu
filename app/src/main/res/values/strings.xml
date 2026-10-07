@@ -183,6 +183,7 @@
     <string name="cache_sizes">sizes from the scan of %1$s</string>
     <string name="fast_box">fast via root (bypasses FUSE)</string>
     <string name="fast_note">space is freed at once; the gallery updates in the background</string>
+    <string name="root_no_trash">Deleting as root · no trash</string>
     <string name="no_trash">No trash. This can\'t be undone.</string>
     <string name="delete_btn">Delete</string>
     <string name="delete_btn_size">Delete %1$s</string>

@@ -224,7 +224,10 @@ class DeleteSheetTest {
             .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
     }
 
-    /** Данные приложения как root: кнопка выключена 1,5 с с обратным отсчётом, затем включается. */
+    /**
+     * Данные приложения как root: кнопка выключена 2,5 с с отсчётом 3-2-1, затем включается;
+     * над «без корзины» — строка «Удаление от root».
+     */
     @Test fun seriousDeleteCountsDown() {
         val dir = fixture("ds4")
         File(dir, "x").mkdirs()
@@ -239,15 +242,47 @@ class DeleteSheetTest {
             assertFalse(b.isEnabled)
             assertTrue(b.text.toString(), b.text.startsWith(a.prefixOf(R.string.delete_in)))
             b.performClick()                      // нажатие до конца паузы ничего не делает
+            val root = s.rootText!!
+            assertEquals(a.getString(R.string.root_no_trash), root.text.toString())
+            assertEquals(View.VISIBLE, root.visibility)
+            // Прямо над предупреждением «без корзины».
+            val box = root.parent as android.view.ViewGroup
+            val warn = box.getChildAt(box.indexOfChild(root) + 1) as android.widget.TextView
+            assertEquals("⚠ " + a.getString(R.string.no_trash), warn.text.toString())
         }
         assertFalse(a.busy)
-        assertTrue(waitFor(5_000) { s.deleteButton!!.isEnabled })
-        assertTrue(System.currentTimeMillis() - t0 >= DeleteSheet.PAUSE_MS - 100)
+        assertTrue(waitFor(6_000) { s.deleteButton!!.isEnabled })
+        assertTrue(System.currentTimeMillis() - t0 >= DeletePolicy.ROOT_PAUSE_MS - 100)
         ins.runOnMainSync {
+            assertEquals(listOf(3L, 2L, 1L), s.countdownShown)
             assertEquals(a.getString(R.string.delete_btn_size, Fmt.size(s.p.disk, a.tx)), s.deleteButton!!.text.toString())
             s.dismiss()
         }
         assertTrue(File(dir, "x/data.bin").exists())
+    }
+
+    /** Данные другого приложения без root: пауза 1,5 с, отсчёт 2-1, строки root нет. Синтетическое превью, «Удалить» не нажимается. */
+    @Test fun otherAppDeleteCountsTwo() {
+        val dir = fixture("ds-other")
+        File(dir, "a.bin").writeBytes(ByteArray(10))
+        val a = browse(dir.path)
+        val pv = DeletePreview(
+            name = "com.example.other", path = "/storage/emulated/0/Android/data/com.example.other", dir = true,
+            disk = 1000, apparent = 1000, items = 3, flags = F_DIR, top = emptyList(), more = 0,
+            owner = "com.example.other", viaRoot = false, block = null, kind = Kind.SCAN, cacheTime = null)
+        lateinit var s: DeleteSheet
+        var chosen: Boolean? = null
+        ins.runOnMainSync {
+            s = DeleteSheet(a, pv) { chosen = it }.also { it.show() }
+            assertFalse(s.deleteButton!!.isEnabled)
+            assertNull(s.rootText)
+        }
+        assertTrue(waitFor(4_000) { s.deleteButton!!.isEnabled })
+        ins.runOnMainSync {
+            assertEquals(listOf(2L, 1L), s.countdownShown)
+            s.dismiss()
+        }
+        assertNull(chosen)
     }
 
     /** Размер и видимый размер не обрезаются: не влезли в строку — видимый переносится. */

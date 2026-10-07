@@ -133,7 +133,26 @@ object DeletePolicy {
 
     private const val GIB = 1L shl 30
 
-    /** Серьёзное удаление: кнопка «Удалить» включается не сразу. */
+    /**
+     * Серьёзное удаление — кнопка «Удалить» включается не сразу: от root, данные другого
+     * приложения ([owned]) или от 1 ГиБ.
+     */
     fun needsPause(viaRoot: Boolean, owned: Boolean, disk: Long): Boolean =
-        (viaRoot && owned) || disk >= GIB
+        viaRoot || owned || disk >= GIB
+
+    const val PAUSE_MS = 1500L
+    const val ROOT_PAUSE_MS = 2500L
+
+    /**
+     * Пауза до «Удалить» (мс): от root — [ROOT_PAUSE_MS], прочее серьёзное — [PAUSE_MS], иначе 0.
+     * [owned] — путь принадлежит другому приложению (данные, Android/data/<pkg>).
+     */
+    fun pauseMs(viaRoot: Boolean, owned: Boolean, disk: Long): Long = when {
+        viaRoot -> ROOT_PAUSE_MS
+        needsPause(viaRoot = false, owned = owned, disk = disk) -> PAUSE_MS
+        else -> 0L
+    }
+
+    /** Числа обратного отсчёта паузы [ms] по порядку показа (2500 → 3, 2, 1). */
+    fun countdown(ms: Long): List<Long> = ((ms + 999) / 1000 downTo 1L).toList()
 }
