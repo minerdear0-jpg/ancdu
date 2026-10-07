@@ -394,14 +394,9 @@ class BrowserTest {
         val act = ins.startActivitySync(
             Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
-        fun clip(): String? {
-            var s: String? = null
-            ins.runOnMainSync {
-                s = act.getSystemService(android.content.ClipboardManager::class.java)
-                    .primaryClip?.getItemAt(0)?.text?.toString()
-            }
-            return s
-        }
+        // Только из waitFor: он уже на главном потоке.
+        fun clip(): String? = act.getSystemService(android.content.ClipboardManager::class.java)
+            .primaryClip?.getItemAt(0)?.text?.toString()
         try {
             var rootH = 0
             ins.runOnMainSync {
