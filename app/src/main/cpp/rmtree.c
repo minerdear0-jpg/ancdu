@@ -5,10 +5,12 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #define RM_MAX_DEPTH 4096
@@ -224,26 +226,134 @@ int rm_tree_target(const char *path, char *buf, size_t cap) {
   return 0;
 }
 
-static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
-                       _Atomic int *stop, const rm_expect *want) {
-  /* Отказ до любых lstat/open/unlink. */
+/* ---- родитель вершины ---- */
+
+#ifndef SYS_openat2
+#define SYS_openat2 437
+#endif
+#define RM_RESOLVE_NO_MAGICLINKS 0x02
+#define RM_RESOLVE_NO_SYMLINKS 0x04
+
+struct rm_open_how {
+  uint64_t flags, mode, resolve;
+};
+
+/* openat2: 0 — не проверяли, 1 — работает, -1 — нет (старое ядро или seccomp-фильтр). */
+static _Atomic int openat2_state;
+
+/* Под seccomp-фильтром (процесс приложения Android) неизвестный фильтру syscall — это SIGSYS,
+ * а не ENOSYS: openat2 пробуем только без фильтра (хелпер под su, хост). */
+static int seccomp_filtered(void) {
+  int fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return 1;
+  char buf[4096];
+  ssize_t n = read(fd, buf, sizeof buf - 1);
+  close(fd);
+  if (n <= 0) return 1;
+  buf[n] = 0;
+  const char *p = strstr(buf, "\nSeccomp:");
+  if (!p) return 0; /* ядро без seccomp */
+  p += 9;
+  while (*p == ' ' || *p == '\t') p++;
+  return *p != '0';
+}
+
+/* Родитель целиком через openat2(RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS); -ENOSYS —
+ * openat2 нет, вызывающий идёт по компонентам. */
+static int open_parent_openat2(const char *parent) {
+  int st = atomic_load(&openat2_state);
+  if (st < 0) return -ENOSYS;
+  if (st == 0 && seccomp_filtered()) {
+    atomic_store(&openat2_state, -1);
+    return -ENOSYS;
+  }
+  struct rm_open_how how = {O_PATH | O_DIRECTORY | O_CLOEXEC, 0,
+                            RM_RESOLVE_NO_SYMLINKS | RM_RESOLVE_NO_MAGICLINKS};
+  long fd = syscall(SYS_openat2, AT_FDCWD, parent, &how, sizeof how);
+  if (fd >= 0) {
+    atomic_store(&openat2_state, 1);
+    return (int)fd;
+  }
+  int e = errno;
+  if (e == ENOSYS || e == EPERM || e == E2BIG || (e == EINVAL && st == 0)) {
+    atomic_store(&openat2_state, -1);
+    return -ENOSYS;
+  }
+  atomic_store(&openat2_state, 1);
+  return -e;
+}
+
+/* Родитель по компонентам от «/»: openat(O_PATH|O_NOFOLLOW|O_DIRECTORY) каждого
+ * относительно fd предыдущего. Ссылка (с O_PATH|O_NOFOLLOW она открылась бы сама, с
+ * O_DIRECTORY — ENOTDIR) — -ELOOP. */
+static int open_parent_chain(const char *parent) {
+  int fd = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
+  if (fd < 0) return -errno;
+  for (const char *c = parent + 1; *c;) {
+    const char *e = strchr(c, '/');
+    size_t k = e ? (size_t)(e - c) : strlen(c);
+    char comp[NAME_MAX + 1];
+    if (k > NAME_MAX) {
+      close(fd);
+      return -ENAMETOOLONG;
+    }
+    memcpy(comp, c, k);
+    comp[k] = 0;
+    int nfd = openat(fd, comp, O_PATH | O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC);
+    if (nfd < 0) {
+      int err = errno;
+      struct stat st;
+      if ((err == ENOTDIR || err == ELOOP) && fstatat(fd, comp, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+          S_ISLNK(st.st_mode))
+        err = ELOOP;
+      close(fd);
+      return -err;
+    }
+    close(fd);
+    fd = nfd;
+    if (!e) break;
+    c = e + 1;
+  }
+  return fd;
+}
+
+int rm_open_parent(const char *path, int nofollow, char *last, size_t cap) {
   char buf[PATH_MAX];
   int v = rm_tree_target(path, buf, sizeof buf);
   if (v) return v;
-  const char *slash = strrchr(buf, '/');
-  struct stat st, pst;
-  if (lstat(buf, &st) != 0) return -errno;
-  /* Вершина — точка монтирования (или bind-файл): её устройство отличается от родителя. */
-  char parent[PATH_MAX];
-  if (!slash) {
-    strcpy(parent, ".");
-  } else if (slash == buf) {
-    strcpy(parent, "/");
-  } else {
-    memcpy(parent, buf, (size_t)(slash - buf));
-    parent[slash - buf] = 0;
+  if (buf[0] != '/') return -EINVAL; /* относительный путь зависел бы от cwd */
+  char *slash = strrchr(buf, '/');
+  size_t ln = strlen(slash + 1);
+  if (ln > NAME_MAX) return -ENAMETOOLONG;
+  if (ln + 1 > cap) return -ENAMETOOLONG;
+  memcpy(last, slash + 1, ln + 1);
+  if (slash == buf) slash[1] = 0; /* родитель — «/» */
+  else *slash = 0;
+  if (!nofollow) {
+    int fd = open(buf, O_PATH | O_DIRECTORY | O_CLOEXEC);
+    return fd < 0 ? -errno : fd;
   }
-  if (stat(parent, &pst) != 0) return -errno;
+  /* Без ссылок — и без «.», «..», пустых компонентов: такой путь не нормализован (их нет в
+   * путях дерева), «..» вывел бы из проверенного префикса. */
+  for (const char *c = buf + 1; *c;) {
+    const char *e = strchr(c, '/');
+    size_t k = e ? (size_t)(e - c) : strlen(c);
+    if (k == 0 || (k == 1 && c[0] == '.') || (k == 2 && c[0] == '.' && c[1] == '.')) return -ELOOP;
+    if (!e) break;
+    c = e + 1;
+  }
+  int fd = open_parent_openat2(buf);
+  return fd == -ENOSYS ? open_parent_chain(buf) : fd;
+}
+
+static int rm_tree_run(int pfd, const char *name, int threads, _Atomic uint64_t *done,
+                       _Atomic int *stop, const rm_expect *want) {
+  if (!*name || strchr(name, '/') || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+    return -EINVAL;
+  struct stat st, pst;
+  if (fstatat(pfd, name, &st, AT_SYMLINK_NOFOLLOW) != 0) return -errno;
+  /* Вершина — точка монтирования (или bind-файл): её устройство отличается от родителя. */
+  if (fstat(pfd, &pst) != 0) return -errno;
   if (st.st_dev != pst.st_dev) return -EXDEV;
 
   rm_ctx c;
@@ -262,7 +372,7 @@ static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
     pthread_cond_init(&c.not_full, NULL);
     while (c.workers < nt && pthread_create(&th[c.workers], NULL, worker, &c) == 0) c.workers++;
   }
-  rm_at(&c, NULL, AT_FDCWD, buf, 0);
+  rm_at(&c, NULL, pfd, name, 0);
   if (c.q) {
     pthread_mutex_lock(&c.mu);
     c.closed = 1;
@@ -280,7 +390,8 @@ static int rm_tree_run(const char *path, int threads, _Atomic uint64_t *done,
 }
 
 typedef struct {
-  const char *path;
+  int pfd;
+  const char *name;
   int threads;
   _Atomic uint64_t *done;
   _Atomic int *stop;
@@ -290,7 +401,7 @@ typedef struct {
 
 static void *rm_call_main(void *p) {
   rm_call *k = p;
-  k->result = rm_tree_run(k->path, k->threads, k->done, k->stop, k->want);
+  k->result = rm_tree_run(k->pfd, k->name, k->threads, k->done, k->stop, k->want);
   return NULL;
 }
 
@@ -309,11 +420,22 @@ static int on_big_stack(void *(*fn)(void *), void *arg) {
   return 0;
 }
 
-int rm_tree_expect(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop,
-                   const rm_expect *want) {
-  rm_call k = {path, threads, done, stop, want, 0};
+int rm_tree_at(int pfd, const char *name, int threads, _Atomic uint64_t *done, _Atomic int *stop,
+               const rm_expect *want) {
+  rm_call k = {pfd, name, threads, done, stop, want, 0};
   int e = on_big_stack(rm_call_main, &k);
   return e ? e : k.result;
+}
+
+int rm_tree_expect(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop,
+                   const rm_expect *want) {
+  char last[NAME_MAX + 1];
+  /* Отказ до любых lstat/open/unlink. */
+  int pfd = rm_open_parent(path, 0, last, sizeof last);
+  if (pfd < 0) return pfd;
+  int r = rm_tree_at(pfd, last, threads, done, stop, want);
+  close(pfd);
+  return r;
 }
 
 int rm_tree_ex(const char *path, int threads, _Atomic uint64_t *done, _Atomic int *stop) {
@@ -329,16 +451,4 @@ int rm_default_threads(const char *path) {
   if (statfs(path, &sf) != 0 || (unsigned long)sf.f_type != RM_FUSE_SUPER_MAGIC) return 1;
   long n = sysconf(_SC_NPROCESSORS_ONLN);
   return n < 1 ? 1 : n > 6 ? 6 : (int)n;
-}
-
-int rm_parent_real(const char *path) {
-  char buf[PATH_MAX], real[PATH_MAX];
-  int v = rm_tree_target(path, buf, sizeof buf);
-  if (v) return v;
-  if (buf[0] != '/') return -EINVAL;
-  char *slash = strrchr(buf, '/');
-  if (slash == buf) return 0; /* родитель — «/» */
-  *slash = 0;
-  if (!realpath(buf, real)) return -errno;
-  return strcmp(real, buf) == 0 ? 0 : -ELOOP;
 }

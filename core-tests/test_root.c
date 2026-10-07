@@ -19,6 +19,15 @@ static uint32_t find(const arena *a, const char *name) {
   return ANCDU_NONE;
 }
 
+/* Проверка родителя, как у хелпера --rm: 0 или -errno; только открывает (ничего не удаляет). */
+static int parent_nofollow(const char *p) {
+  char last[256];
+  int fd = rm_open_parent(p, 1, last, sizeof last);
+  if (fd < 0) return fd;
+  close(fd);
+  return 0;
+}
+
 static uint64_t root_total(session *s) {
   arena *a = sess_arena(s);
   return a ? a->disk[0] : 0;
@@ -190,7 +199,7 @@ int main(void) {
   {
     uint32_t inner = find(a, "inner");
     CHECK(rm_tree(pj(T, "vanish")) == 0);
-    CHECK(rm_parent_real(pj(T, "vanish/inner")) == -ENOENT);
+    CHECK(parent_nofollow(pj(T, "vanish/inner")) == -ENOENT);
     CHECK(sess_delete(p, inner, SH, ANCDU_CLI) == 0);
     CHECK(a->flags[inner] & F_DELETED);
   }
@@ -199,7 +208,7 @@ int main(void) {
   if (geteuid() != 0) {
     uint32_t sub = find(a, "leaf");
     CHECK(chmod(pj(T, "acc"), 0) == 0);
-    CHECK(rm_parent_real(pj(T, "acc/mid/leaf")) == -EACCES);
+    CHECK(parent_nofollow(pj(T, "acc/mid/leaf")) == -EACCES);
     CHECK(sess_delete(p, sub, SH, ANCDU_CLI) == -EPERM);
     CHECK(chmod(pj(T, "acc"), 0755) == 0);
     CHECK(access(pj(T, "acc/mid/leaf/x"), F_OK) == 0);
@@ -375,13 +384,15 @@ int main(void) {
     snprintf(TL, sizeof TL, "%s", mk_tmp());
     mk_dir(pj(TA, "victim"));
     write_file(pj(TA, "victim/sentinel"), 10);
+    mk_dir(pj(TA, "victim/sub"));
+    write_file(pj(TA, "victim/sub/deep"), 10);
     snprintf(LR, sizeof LR, "%s/link", TL);
     CHECK(symlink(TA, LR) == 0);
-    CHECK(rm_parent_real(pj(LR, "victim")) == -ELOOP);
-    CHECK(rm_parent_real(pj(TA, "victim")) == 0);
-    CHECK(rm_parent_real(LR) == 0); /* сама ссылка — последний компонент, не родитель */
-    CHECK(rm_parent_real("/x") == 0);
-    CHECK(rm_parent_real("rel/x") == -EINVAL);
+    CHECK(parent_nofollow(pj(LR, "victim")) == -ELOOP);
+    CHECK(parent_nofollow(pj(TA, "victim")) == 0);
+    CHECK(parent_nofollow(LR) == 0); /* сама ссылка — последний компонент, не родитель */
+    CHECK(parent_nofollow("/x") == 0);
+    CHECK(parent_nofollow("rel/x") == -EINVAL);
     session *ls = sess_scan_start(LR, 1, 2, &err);
     CHECK_EQ_U(sess_wait(ls), ST_DONE);
     arena *la = sess_arena(ls);
@@ -389,6 +400,11 @@ int main(void) {
     CHECK(vic != ANCDU_NONE);
     if (vic != ANCDU_NONE) CHECK(sess_delete(ls, vic, SH, ANCDU_CLI) == -ELOOP);
     CHECK(access(pj(TA, "victim/sentinel"), F_OK) == 0);
+    /* ссылка — промежуточный компонент (LR/victim/sub): тоже отказ, цель цела */
+    uint32_t sb = la ? find(la, "sub") : ANCDU_NONE;
+    CHECK(sb != ANCDU_NONE);
+    if (sb != ANCDU_NONE) CHECK(sess_delete(ls, sb, SH, ANCDU_CLI) == -ELOOP);
+    CHECK(access(pj(TA, "victim/sub/deep"), F_OK) == 0);
     struct stat lst;
     CHECK(lstat(LR, &lst) == 0 && S_ISLNK(lst.st_mode));
     sess_free(ls);

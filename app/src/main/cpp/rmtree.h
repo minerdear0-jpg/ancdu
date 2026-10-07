@@ -9,8 +9,8 @@
  * как и каталог, подменённый между проверкой и открытием.
  * Не-каталоги по d_type удаляются сразу (unlinkat без fstatat; EBUSY — bind-файл — -EXDEV),
  * каталоги и DT_UNKNOWN — с полной проверкой устройства и подмены.
- * Путь с пустым последним компонентом («/», «//», «») или оканчивающийся на «.»/«..» —
- * отказ -EINVAL без каких-либо действий (см. rm_tree_target).
+ * Путь с пустым последним компонентом («/», «//», «») или оканчивающийся на «.»/«..», а также
+ * относительный путь — отказ -EINVAL без каких-либо действий (см. rm_open_parent).
  * Продолжает после ошибок; возвращает 0 или первую ошибку (-errno).
  *
  * threads > 1 — параллельно: этот поток обходит каталоги, threads рабочих выполняют
@@ -43,15 +43,25 @@ int rm_tree_expect(const char *path, int threads, _Atomic uint64_t *done, _Atomi
  * (задержка запроса к демону FUSE). Подбирается по замерам на устройстве. */
 int rm_default_threads(const char *path);
 
-/* Для удаления под root: 0, если ни один компонент родителя path не симлинк
- * (realpath(dirname) == dirname); -ELOOP — есть симлинк или путь не нормализован,
- * -EINVAL — путь не абсолютный или отказ rm_tree_target, иначе -errno realpath
- * (-ENOENT — родителя нет). Только чтение ФС.
- * Принятый остаток (check-then-act): после проверки компоненты родителя заново
- * разрешаются lstat/stat/rm_at в rm_tree_ex, и подмена компонента на симлинк между
- * проверкой и удалением не ловится. Полное решение — openat2(RESOLVE_NO_SYMLINKS) или
- * обход компонентов openat(O_NOFOLLOW|O_DIRECTORY) с удалением относительно fd родителя. */
-int rm_parent_real(const char *path);
+/* Открывает каталог-родитель вершины path для удаления (O_PATH; закрывает вызывающий) и
+ * копирует последний компонент в last (cap байт). Отказы — до любых обращений к ФС:
+ * rm_tree_target (-EINVAL / -ENAMETOOLONG), относительный path — -EINVAL.
+ * nofollow = 0 — родитель как его разрешает ядро (ссылки в родителе допустимы:
+ * /data/user/0 → /data/data у cacheDir приложения); разрешается один раз, дальше всё
+ * относительно fd.
+ * nofollow = 1 (удаление под root) — ни один компонент родителя не ссылка: от «/»
+ * openat2(RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS), а где его нет (ядра 4.19/5.4,
+ * seccomp-фильтр) — по компонентам openat(O_PATH | O_NOFOLLOW | O_DIRECTORY) от fd
+ * предыдущего. Ссылка или компонент «.»/«..»/пустой — -ELOOP; нет компонента — -ENOENT;
+ * иначе -errno (EACCES, ENOTDIR…). Подмена компонента после открытия уже не влияет:
+ * удаление идёт относительно полученного fd (rm_tree_at). Возвращает fd или -errno. */
+int rm_open_parent(const char *path, int nofollow, char *last, size_t cap);
+
+/* Как rm_tree_expect, но вершина — запись name (один компонент, не «.»/«..») каталога pfd
+ * (от rm_open_parent; не закрывается). Проверка точки монтирования — st_dev name против
+ * fstat(pfd). */
+int rm_tree_at(int pfd, const char *name, int threads, _Atomic uint64_t *done, _Atomic int *stop,
+               const rm_expect *want);
 
 /* rm_tree_ex(path, 1, NULL, NULL). */
 int rm_tree(const char *path);

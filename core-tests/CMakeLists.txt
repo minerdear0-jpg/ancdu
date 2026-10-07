@@ -36,6 +36,12 @@ target_include_directories(test_rmtree_stop PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_definitions(test_rmtree_stop PRIVATE _GNU_SOURCE)
 target_link_libraries(test_rmtree_stop PRIVATE Threads::Threads)
 add_test(NAME test_rmtree_stop COMMAND test_rmtree_stop)
+# rmtree.c включается в сам тест (openat2_state: проход по компонентам без openat2)
+add_executable(test_rmtree_chain test_rmtree_chain.c)
+target_include_directories(test_rmtree_chain PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../app/src/main/cpp)
+target_compile_definitions(test_rmtree_chain PRIVATE _GNU_SOURCE)
+target_link_libraries(test_rmtree_chain PRIVATE Threads::Threads)
+add_test(NAME test_rmtree_chain COMMAND test_rmtree_chain)
 ancdu_test(test_session)
 
 ancdu_test(test_memfd)

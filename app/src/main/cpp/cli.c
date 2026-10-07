@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -95,9 +96,11 @@ static void *watch_stdin(void *p) {
 /* --rm: удаление с прогрессом и остановкой.
  * stderr: «progress N» не чаще раза в 100 мс и итоговая строка; N — удалено записей.
  * --watch-stdin: EOF на stdin (приложение закрыло его, работает и через su) — стоп.
- * Родитель пути не должен проходить через симлинк (rm_parent_real): иначе отказ до
- * удаления, выход 7. Родителя нет (ENOENT) и самого пути нет — уже удалён, выход 0.
- * Иная ошибка проверки (EACCES, ENAMETOOLONG…) — выход 8. В обоих отказах ничего не удалено.
+ * Родитель пути открывается от «/» без ссылок (rm_open_parent nofollow): ссылка или «.»/«..»
+ * в нём — отказ до удаления, выход 7. Компонента нет (ENOENT) — путь уже удалён, выход 0.
+ * Иная ошибка (EACCES, ENOTDIR, ENAMETOOLONG…) — выход 8. В обоих отказах ничего не удалено.
+ * Удаление идёт относительно открытого fd родителя: подмена компонента после проверки не
+ * уводит его в сторону.
  * --expect DEV:INO: вершина (lstat) должна быть этим объектом со скана, иначе выход 9 —
  * «изменилось после скана», ничего не удалено.
  * Выход: 0 — путь удалён, 5 — частично, 6 — остановлено (частично), 7 — симлинк в родителе,
@@ -131,13 +134,13 @@ static void *rm_progress(void *p) {
 }
 
 static int run_rm(const char *path, int threads, int watch, const rm_expect *want) {
-  int pr = rm_parent_real(path);
-  if (pr) {
-    struct stat st;
+  char last[NAME_MAX + 1];
+  int pfd = rm_open_parent(path, 1, last, sizeof last);
+  if (pfd < 0) {
     fputs("progress 0\n", stderr);
-    if (pr == -ENOENT && lstat(path, &st) != 0 && errno == ENOENT) return 0; /* уже удалён */
-    fprintf(stderr, "rm: refused: %s\n", strerror(-pr));
-    return pr == -ELOOP ? 7 : 8;
+    if (pfd == -ENOENT) return 0; /* компонента родителя нет — пути тоже, уже удалён */
+    fprintf(stderr, "rm: refused: %s\n", strerror(-pfd));
+    return pfd == -ELOOP ? 7 : 8;
   }
   if (watch) {
     /* stdin уже закрыт (стоп до запуска) — остановиться до первого удаления */
@@ -149,13 +152,15 @@ static int run_rm(const char *path, int threads, int watch, const rm_expect *wan
   }
   pthread_t pth;
   int have_progress = pthread_create(&pth, NULL, rm_progress, NULL) == 0;
-  int r = rm_tree_expect(path, threads > 0 ? threads : rm_default_threads(path), &rms.done,
-                         &rms.stop, want);
+  int r = rm_tree_at(pfd, last, threads > 0 ? threads : rm_default_threads(path), &rms.done,
+                     &rms.stop, want);
   atomic_store(&rms.fin, 1);
   if (have_progress) pthread_join(pth, NULL);
   fprintf(stderr, "progress %llu\n", (unsigned long long)atomic_load(&rms.done));
   struct stat st;
-  if (r == 0 || (lstat(path, &st) != 0 && errno == ENOENT)) return 0;
+  int gone = r == 0 || (fstatat(pfd, last, &st, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT);
+  close(pfd);
+  if (gone) return 0;
   fprintf(stderr, "rm: %s\n", strerror(-r));
   if (r == -ESTALE) return 9;
   return r == -EINTR ? 6 : 5;
