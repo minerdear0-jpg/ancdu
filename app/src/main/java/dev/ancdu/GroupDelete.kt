@@ -11,6 +11,8 @@ class GroupItem(
     val owner: String?,
     val block: Block?,
     val fast: Boolean,
+    /** Метка безопасности объекта (уже для показа) или null. */
+    val tag: TagText? = null,
 )
 
 /**
@@ -89,7 +91,8 @@ object GroupSheet {
             items = DeletePolicy.sum(items.map { it.items }), flags = 0,
             top = top.map { (if (it.dir) it.name + "/" else it.name) to it.disk }, more = items.size - top.size,
             owner = owners.singleOrNull()?.takeIf { ownerItems == items.size }, viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
-            kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root)
+            kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root,
+            topTags = top.map { it.tag })
         val info = GroupInfo(
             count = items.size, owners = owners, owned = items.map { it.owner != null && it.owner != self },
             disks = items.map { it.disk }, hardlink = items.any { !it.dir && it.flags and F_HLDUP != 0 },

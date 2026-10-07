@@ -255,6 +255,21 @@ fun Context.ownerRow(pkg: String, t: Txt): LinearLayout = hbox(8).apply {
     contentDescription = t.s(R.string.owner_desc, name)
 }
 
+/** Метки приложений для меток «app:<Метка>»: одной строкой, bidi видимыми; кэш на процесс. Любой поток. */
+object AppLabels {
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Метка установленного пакета [pkg] или null (не установлен, другой профиль). */
+    fun get(ctx: Context, pkg: String): String? = cache.getOrPut(pkg) {
+        val pm = ctx.packageManager
+        try { Bidi.label(pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()) }
+        catch (e: PackageManager.NameNotFoundException) { "" }
+    }.ifEmpty { null }
+
+    /** Метка [tag] для показа ([Tag.resolve]) с меткой приложения, если она есть. */
+    fun resolve(ctx: Context, t: Txt, tag: Tag): TagText = tag.resolve(t, tag.pkg?.let { get(ctx, it) })
+}
+
 fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply {
     gravity = Gravity.CENTER
     minWidth = dp(44); minHeight = dp(44)

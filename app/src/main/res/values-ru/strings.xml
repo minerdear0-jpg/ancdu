@@ -280,4 +280,11 @@
     <string name="group_partial_stopped">Удалено %1$s из %2$s · остановлено</string>
     <string name="group_title_blocked">Нельзя удалить %1$s</string>
     <string name="owner_part">данные %1$s: %2$s из %3$s</string>
+    <!-- Task 25a: метки безопасности -->
+    <string name="tag_sys">системное</string>
+    <string name="tag_app">данные приложения</string>
+    <string name="tag_app_named">данные приложения %1$s</string>
+    <string name="tag_cache">кэш</string>
+    <string name="tag_dl">загрузки</string>
+    <string name="tag_media">медиа</string>
 </resources>

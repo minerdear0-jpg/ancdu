@@ -51,6 +51,10 @@ class DeletePreview(
     val fast: Boolean = false,
     /** Известное о root (Root.state): галочка быстрого пути по умолчанию — только при GRANTED. */
     val root: RootState = RootState.UNKNOWN,
+    /** Метка безопасности самого объекта (у группы — null: метки у строк [top]). */
+    val tag: TagText? = null,
+    /** Метки строк [top] по порядку (короче [top] — у остальных нет). */
+    val topTags: List<TagText?> = emptyList(),
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -91,6 +95,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Для тестов: строка «данные 2 приложений: …» листа группы (null — владельцев меньше двух). */
     var ownersText: TextView? = null
         private set
+    /** Для тестов: тексты показанных меток — объекта, затем строк детей. */
+    val tagTexts = ArrayList<String>()
     /** Для тестов: строка «N уже нет на диске» листа группы. */
     var goneText: TextView? = null
         private set
@@ -206,6 +212,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            p.tag?.let { addView(tagLabel(it)) }
             if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
                 setPadding(act.dp(8), act.dp(4), act.dp(8), act.dp(4))
                 background = act.box(Color.TRANSPARENT, C.FRAME)
@@ -308,6 +315,13 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         contentDescription = text
     }
 
+    /** Метка безопасности (моно 12sp, цвет метки); TalkBack читает её словом («кэш»). */
+    private fun tagLabel(tag: TagText): TextView = act.label(tag.text, 12f, tag.color, mono = true).apply {
+        maxLines = 1
+        contentDescription = tag.desc.removePrefix(", ")
+        tagTexts += tag.text
+    }
+
     private fun children(): View = act.vbox(4).apply {
         val barMax = act.dp(56)
         for ((k, pair) in p.top.withIndex()) {
@@ -336,8 +350,10 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                     addView(name)
                     addView(act.label("· " + t.items(n), 12f, C.MUTED, mono = true))
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                val tag = p.topTags.getOrNull(k)
+                tag?.let { addView(tagLabel(it)) }
                 addView(act.label(Fmt.size(size, t), 13f, C.MUTED, mono = true))
-                contentDescription = "$nm, ${Fmt.size(size, t)}" + if (n != null) ", " + t.items(n) else ""
+                contentDescription = "$nm, ${Fmt.size(size, t)}" + (if (n != null) ", " + t.items(n) else "") + (tag?.desc ?: "")
             })
         }
         if (p.more > 0) addView(act.label(t.s(R.string.more_children, Fmt.count(p.more.toLong(), t.locale)), 12f, C.MUTED, mono = true).apply {

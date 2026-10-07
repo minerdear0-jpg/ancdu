@@ -28,6 +28,9 @@ class Row {
     var segs: FloatArray? = null
     var segColors: IntArray? = null
     var sub: String? = null
+    /** Метка безопасности справа от имени (моно 12sp, [Tag.fit]); null — нет. */
+    var tag: String? = null
+    var tagColor = C.MUTED
     var desc = ""
     /** Режим выбора: флажок в колонке процента (true — выбрана, строка PANEL2); null — режима нет. */
     var checked: Boolean? = null
@@ -44,7 +47,7 @@ class Row {
 
     fun reset() {
         name = ""; size = ""; pct = ""; bar = 0f; barColor = C.AMBER; nameColor = C.TEXT
-        mark = ""; segs = null; segColors = null; sub = null; desc = ""
+        mark = ""; segs = null; segColors = null; sub = null; tag = null; tagColor = C.MUTED; desc = ""
         checked = null; enabled = true; stateDesc = null; clickLabel = null; longLabel = null; long = true
     }
 }
@@ -107,6 +110,7 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val sizePaint = TextPaint(mono).apply { typeface = Fonts.get(ctx, mono = true, bold = true) }
     private val small = TextPaint(mono).apply { textSize = sp(12f); color = C.MUTED }
     private val pctPaint = TextPaint(small).apply { color = C.TEXT }
+    private val tagPaint = TextPaint(small)
     // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val pctW = maxOf(ctx.dp(34), pctPaint.measureText("100%").toInt())
@@ -275,7 +279,15 @@ class NcduListView(ctx: Context) : View(ctx) {
         // имя: метка не режется, имя — до конца строки с многоточием (у файлов — в конце основы)
         mono.color = row.nameColor
         val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
-        val avail = maxOf((w - pad - x).toFloat() - mono.measureText(mark), 0f)
+        var avail = maxOf((w - pad - x).toFloat() - mono.measureText(mark), 0f)
+        // Метка — у правого края; имя ей уступает не больше 3 знаков, иначе метка короче или её нет.
+        val tag = row.tag?.let { Tag.fit(row.name, it, avail, gap.toFloat(), mono::measureText, tagPaint::measureText) }
+        if (tag != null) {
+            val tw = tagPaint.measureText(tag)
+            tagPaint.color = row.tagColor
+            c.drawText(tag, w - pad - tw, base, tagPaint)
+            avail = maxOf(avail - tw - gap, 0f)
+        }
         val name = if (keepExt) Ellipsis.stemKeepExt(row.name, avail, mono::measureText)
             else TextUtils.ellipsize(row.name, mono, avail, TextUtils.TruncateAt.END).toString()
         c.drawText(mark + name, x.toFloat(), base, mono)

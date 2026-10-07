@@ -49,6 +49,11 @@ class BrowserActivity : LangActivity() {
     private var sizes = arrayOfNulls<String>(0)
     private var pcts = arrayOfNulls<String>(0)
     private var descs = arrayOfNulls<String>(0)
+    /** Метки безопасности строк ([Tag.of]): лениво, [tagDone] — уже посчитана (null — метки нет). */
+    private var tags = arrayOfNulls<TagText>(0)
+    private var tagDone = BooleanArray(0)
+    /** Путь корня дерева [h] (для меток: «<корень>/Download» и т. п.). */
+    private var treeRoot = ""
     private var maxV = 0L
     private var parentV = 0L
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
@@ -314,6 +319,22 @@ class BrowserActivity : LangActivity() {
 
     private fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
 
+    /** Путь ребёнка текущей папки с именем [nm] (строкой: для меток и правил по пути). */
+    private fun childPath(nm: String): String = if (currentPath.endsWith("/")) currentPath + nm else "$currentPath/$nm"
+
+    /** Метка строки [index] (имя [nm], флаги [flags]) — один раз до следующего load(). */
+    private fun tagAt(index: Int, nm: String, flags: Int): TagText? {
+        if (tagDone[index]) return tags[index]
+        tagDone[index] = true
+        val path = childPath(nm)
+        return tagOf(path, flags, DeletePolicy.blockReason(path, false, node == 0, Holder.root, flags, Holder.kind))
+            .also { tags[index] = it }
+    }
+
+    /** Метка пути [path] узла с флагами [flags] и запретом [block] дерева [h], уже для показа. */
+    private fun tagOf(path: String, flags: Int, block: Block?): TagText? =
+        Tag.of(path, flags, Owner.packageOf(path), block, treeRoot, packageName)?.let { AppLabels.resolve(this, txt, it) }
+
     private fun nameAt(index: Int): String =
         names[index] ?: Native.str(Native.name(h, kids[index])).also { names[index] = it }
 
@@ -331,6 +352,9 @@ class BrowserActivity : LangActivity() {
             row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
             row.barColor = if (dir) C.AMBER else C.BLUE
             row.nameColor = if (dir) C.TEXT else C.BLUE_HI
+            val tag = tagAt(index, nm, flags)
+            row.tag = tag?.text
+            if (tag != null) row.tagColor = tag.color
             when {
                 flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.AMBER }
                 flags and F_OTHERFS != 0 -> row.mark = "↪"
@@ -342,6 +366,7 @@ class BrowserActivity : LangActivity() {
                 if (dir) { append(", "); append(txt.s(R.string.desc_dir)) }
                 // F_ERR — и нет доступа, и незаконченное удаление: данные узла неполные.
                 if (flags and F_ERR != 0) { append(", "); append(txt.s(R.string.desc_incomplete)) }
+                if (tag != null) append(tag.desc)
             }.also { descs[index] = it }
             if (selection.active) {
                 // Флажок: CheckBox для TalkBack; запрещённая строка — недоступна, с причиной.
@@ -820,12 +845,14 @@ class BrowserActivity : LangActivity() {
         n = maxOf(0, Native.children(h, node, sort, apparent, kids))
         names = arrayOfNulls(n); shown = arrayOfNulls(n); sizes = arrayOfNulls(n)
         pcts = arrayOfNulls(n); descs = arrayOfNulls(n)
+        tags = arrayOfNulls(n); tagDone = BooleanArray(n)
         keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
+        treeRoot = rootPath()
         renderHeader()
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
@@ -1126,9 +1153,10 @@ class BrowserActivity : LangActivity() {
             val nd = nodes[j]
             val path = Native.str(Native.path(handle, nd))
             val flags = inf[4 * j + 3].toInt()
+            val block = blockReason(handle, nd, path)
             GroupItem(name = nameOf(nd), dir = flags and F_DIR != 0, disk = inf[4 * j], apparent = inf[4 * j + 1],
                 items = inf[4 * j + 2], flags = flags, owner = Owner.packageOf(path),
-                block = blockReason(handle, nd, path), fast = fastAllowed(path))
+                block = block, fast = fastAllowed(path), tag = tagOf(path, flags, block))
         }
         val (p, g) = GroupSheet.preview(txt, items, currentPath, packageName, Holder.viaRoot, Holder.kind,
             if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null, Root.state, gone)
@@ -1257,6 +1285,7 @@ class BrowserActivity : LangActivity() {
         val flags = self[3].toInt()
         val dir = flags and F_DIR != 0
         var top = emptyList<Pair<String, Long>>()
+        var topTags = emptyList<TagText?>()
         var more = 0
         if (dir) {
             val ch = IntArray(Native.childCount(handle, target))
@@ -1268,15 +1297,21 @@ class BrowserActivity : LangActivity() {
                     val nm = Native.str(Native.name(handle, ch[j]))
                     (if (ci[4 * j + 3].toInt() and F_DIR != 0) "$nm/" else nm) to ci[4 * j]
                 }
+                topTags = (0 until k).map { j ->
+                    val cp = Native.str(Native.path(handle, ch[j]))
+                    val cf = ci[4 * j + 3].toInt()
+                    tagOf(cp, cf, blockReason(handle, ch[j], cp))
+                }
             }
             more = cn - k
         }
+        val block = blockReason(handle, target, path)
         return DeletePreview(
             name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
             flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
-            block = blockReason(handle, target, path), kind = Holder.kind,
+            block = block, kind = Holder.kind,
             cacheTime = if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null,
-            fast = fastAllowed(path), root = Root.state)
+            fast = fastAllowed(path), root = Root.state, tag = tagOf(path, flags, block), topTags = topTags)
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */

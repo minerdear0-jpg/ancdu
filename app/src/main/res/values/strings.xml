@@ -289,4 +289,11 @@
     <string name="group_partial_stopped">Deleted %1$s of %2$s · stopped</string>
     <string name="group_title_blocked">Can\'t delete %1$s</string>
     <string name="owner_part">%1$s data: %2$s of %3$s</string>
+    <!-- Task 25a: метки безопасности -->
+    <string name="tag_sys">system</string>
+    <string name="tag_app">app data</string>
+    <string name="tag_app_named">%1$s app data</string>
+    <string name="tag_cache">cache</string>
+    <string name="tag_dl">downloads</string>
+    <string name="tag_media">media</string>
 </resources>
