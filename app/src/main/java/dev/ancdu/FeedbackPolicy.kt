@@ -114,4 +114,24 @@ object FeedbackPolicy {
         val haptic = base.haptic.takeIf { !sys || env.systemHaptics }
         return Decision(sound, haptic)
     }
+
+    /**
+     * Звук итога удаления [r]: 0 — done; -EINTR — остановил пользователь («Стоп» уже дал tock),
+     * сколько бы ни удалилось, — тишина; любой другой код (ничего не удалено, ошибка, частично) — refuse.
+     */
+    fun afterDelete(r: Int): Cue? = when (r) {
+        0 -> Cue.DONE
+        -DeleteProgress.EINTR -> null
+        else -> Cue.REFUSE
+    }
+
+    /** Открытие листа удаления: удаление запрещено — refuse, от root — armRoot, иначе arm. */
+    fun sheetOpen(blocked: Boolean, viaRoot: Boolean): Cue = when {
+        blocked -> Cue.REFUSE
+        viaRoot -> Cue.ARM_ROOT
+        else -> Cue.ARM
+    }
+
+    /** Показано число отсчёта [shown] после [previous] (null — первое): новое число, кроме первого, — count. */
+    fun countCue(previous: Long?, shown: Long): Cue? = if (previous != null && previous != shown) Cue.COUNT else null
 }

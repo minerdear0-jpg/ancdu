@@ -101,10 +101,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             if (left > 0) {
                 val s = (left + 999) / 1000
                 // Новое число — count; первое совпадает с arm и молчит.
-                if (countdownShown.lastOrNull() != s) {
-                    if (countdownShown.isNotEmpty()) Feedback.cue(b, Cue.COUNT)
-                    countdownShown += s
-                }
+                FeedbackPolicy.countCue(countdownShown.lastOrNull(), s)?.let { Feedback.cue(b, it) }
+                if (countdownShown.lastOrNull() != s) countdownShown += s
                 val n = Fmt.count(s, t.locale)
                 b.text = t.s(R.string.delete_in, n)
                 b.contentDescription = t.s(R.string.delete_in_desc, n + Fmt.NBSP + t.s(R.string.unit_s))
@@ -139,11 +137,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     fun show() {
         dialog.show()
         cancelButton.requestFocus()
-        Feedback.cue(cancelButton, when {
-            p.block != null -> Cue.REFUSE
-            p.viaRoot -> Cue.ARM_ROOT
-            else -> Cue.ARM
-        })
+        Feedback.cue(cancelButton, FeedbackPolicy.sheetOpen(blocked = p.block != null, viaRoot = p.viaRoot))
         if (pause) {
             enableAt = SystemClock.uptimeMillis() + pauseMs
             tick.run()

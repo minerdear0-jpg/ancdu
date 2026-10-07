@@ -169,11 +169,11 @@ class BrowserActivity : LangActivity() {
         } else {
             list.source = src
             load(node, keepScroll)
-            if (r == 0) { note(DeleteProgress.freed(txt, Holder.delDisk)); Feedback.cue(list, Cue.DONE) }
+            // Готово — done; отказ и ошибка — refuse; «Стоп» пользователя (-EINTR) — тишина, tock уже был.
+            if (r == 0 || !isFinishing) FeedbackPolicy.afterDelete(r)?.let { Feedback.cue(list, it) }
+            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk))
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
-                // Отказ и ошибка — refuse; «Стоп» до начала пользователь уже услышал (tock).
-                if (!DeleteProgress.isCancelled(r, doneN)) Feedback.cue(list, Cue.REFUSE)
                 when {
                     // «Стоп» до начала: пользователь сам остановил — без диалога.
                     DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.cancelled(txt))

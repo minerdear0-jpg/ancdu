@@ -132,4 +132,33 @@ class FeedbackPolicyTest {
         assertEquals(Sound.COUNT, FeedbackPolicy.decide(Cue.COUNT, on, lim, 20).sound)
         assertEquals(Sound.DONE, FeedbackPolicy.decide(Cue.DONE, on, lim, 21).sound)
     }
+
+    /** Итог удаления: готово — done; «Стоп» пользователя (-EINTR, сколько бы ни удалилось) — тишина; прочее — refuse. */
+    @Test fun afterDelete() {
+        assertEquals(Cue.DONE, FeedbackPolicy.afterDelete(0))
+        assertNull(FeedbackPolicy.afterDelete(-DeleteProgress.EINTR))
+        assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-1))     // su отказал, ничего не удалено
+        assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-DeleteProgress.ELOOP))
+        assertEquals(Cue.REFUSE, FeedbackPolicy.afterDelete(-5))     // -EIO, частично
+    }
+
+    /** Открытие листа: запрет — refuse (и с root), root — armRoot, иначе arm. */
+    @Test fun sheetOpen() {
+        assertEquals(Cue.REFUSE, FeedbackPolicy.sheetOpen(blocked = true, viaRoot = false))
+        assertEquals(Cue.REFUSE, FeedbackPolicy.sheetOpen(blocked = true, viaRoot = true))
+        assertEquals(Cue.ARM_ROOT, FeedbackPolicy.sheetOpen(blocked = false, viaRoot = true))
+        assertEquals(Cue.ARM, FeedbackPolicy.sheetOpen(blocked = false, viaRoot = false))
+    }
+
+    /** Отсчёт: первое число молчит (совпадает с arm), каждое новое — count, повтор того же — тишина. */
+    @Test fun countdownCues() {
+        fun cues(shown: List<Long>): List<Cue?> {
+            var prev: Long? = null
+            return shown.map { s -> FeedbackPolicy.countCue(prev, s).also { prev = s } }
+        }
+        assertEquals(listOf(null, Cue.COUNT, Cue.COUNT), cues(DeletePolicy.countdown(DeletePolicy.ROOT_PAUSE_MS)))
+        assertEquals(listOf(null, Cue.COUNT), cues(DeletePolicy.countdown(DeletePolicy.PAUSE_MS)))
+        // Таймер срабатывает каждые ≤100 мс: одно число показывается много раз — count один раз.
+        assertEquals(listOf(null, null, null, Cue.COUNT, null, Cue.COUNT), cues(listOf(3L, 3L, 3L, 2L, 2L, 1L)))
+    }
 }
