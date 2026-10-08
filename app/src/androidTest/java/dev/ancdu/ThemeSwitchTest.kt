@@ -170,10 +170,9 @@ class ThemeSwitchTest {
             ins.runOnMainSync {
                 val d = a.themeDialog!!
                 assertTrue(d.isShowing)
-                val list = d.listView
-                assertEquals(listOf("System", "Dark", "Light"), (0 until list.count).map { list.adapter.getItem(it).toString() })
-                assertEquals(2, list.checkedItemPosition)
-                list.performItemClick(list.getChildAt(1), 1, list.adapter.getItemId(1))
+                assertEquals(listOf("System", "Dark", "Light"), d.options)
+                assertEquals(2, d.checked)
+                assertTrue(d.rows[1].performClick())
             }
             assertTrue("экран не пересоздан тёмным", waitFor(10_000) {
                 val n = resumed<MainActivity>()

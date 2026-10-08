@@ -868,8 +868,8 @@ class BrowserTest {
                 // «Ничего не удалено» · «"victim" изменился после скана.» · [Закрыть] [Обновить].
                 assertEquals(act.getString(R.string.nothing_deleted) to act.getString(R.string.delete_changed_name, "victim"), act.lastAlert)
                 val d = act.alertDialog!!
-                assertEquals(act.getString(R.string.refresh_btn), d.getButton(android.content.DialogInterface.BUTTON_POSITIVE).text.toString())
-                assertEquals(act.getString(R.string.close), d.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).text.toString())
+                assertEquals(act.getString(R.string.refresh_btn), d.getButton(android.content.DialogInterface.BUTTON_POSITIVE)!!.text.toString())
+                assertEquals(act.getString(R.string.close), d.getButton(android.content.DialogInterface.BUTTON_NEGATIVE)!!.text.toString())
                 assertEquals(h0, Holder.h)                                  // без автообновления
                 val c = IntArray(Native.childCount(Holder.h, act.node))
                 val n = Native.children(Holder.h, act.node, SORT_SIZE, false, c)
@@ -885,7 +885,7 @@ class BrowserTest {
             var path0 = ""
             ins.runOnMainSync {
                 path0 = act.currentPath
-                assertTrue(act.alertDialog!!.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick())
+                assertTrue(act.alertDialog!!.getButton(android.content.DialogInterface.BUTTON_POSITIVE)!!.performClick())
             }
             assertTrue("дерево не обновилось", waitFor(30_000) { Holder.h != h0 && act.h == Holder.h })
             val k2 = index(act, "victim/")

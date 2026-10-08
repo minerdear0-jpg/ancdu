@@ -1,14 +1,10 @@
 package dev.ancdu
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.Dialog
-import android.content.DialogInterface
 import android.graphics.Color
-import android.os.SystemClock
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -78,11 +74,10 @@ class DeleteLogSheet(private val act: Activity, entries: List<LogEntry>) {
     var emptyText: TextView? = null
         private set
     /** Для тестов: открытое подтверждение очистки. */
-    var confirm: AlertDialog? = null
+    var confirm: ConfirmSheet? = null
         private set
     /** Для тестов: касаний «Очистить» подтверждения, отклонённых защитой от двойного тапа. */
-    var guardedTaps = 0
-        private set
+    val guardedTaps: Int get() = confirm?.guardedTaps ?: 0
     private var count = entries.size
     private lateinit var list: LinearLayout
 
@@ -171,31 +166,11 @@ class DeleteLogSheet(private val act: Activity, entries: List<LogEntry>) {
         if (count == 0 || confirm?.isShowing == true) return
         val n = Fmt.count(count.toLong(), t.locale)
         val body = t.q(if (DeleteLog.notice != null) R.plurals.log_clear_body_notice else R.plurals.log_clear_body, count.toLong(), n)
-        val d = AlertDialog.Builder(act, R.style.Theme_Ancdu_Alert)
-            .setTitle(t.s(R.string.log_clear_title)).setMessage(body)
-            .setNegativeButton(t.s(R.string.cancel)) { dd, _ -> Feedback.cue((dd as AlertDialog).window?.decorView, Cue.BACK) }
-            .setPositiveButton(t.s(R.string.log_clear_ok), null)
-            .create()
-        d.setOnCancelListener { Feedback.cue(d.window?.decorView, Cue.BACK) }
-        d.show()
-        val shownAt = SystemClock.uptimeMillis()
-        val ok = d.getButton(DialogInterface.BUTTON_POSITIVE)
-        ok.setOnTouchListener { _, ev ->
-            val early = SystemClock.uptimeMillis() - shownAt < OPEN_GUARD_MS
-            if (early && ev.actionMasked == MotionEvent.ACTION_UP) guardedTaps++
-            early
-        }
-        ok.setOnClickListener {
-            Feedback.cue(ok, Cue.TAP)
-            d.dismiss()
+        // Опасный вариант листа: «Очистить» — красная заливка, первые OPEN_GUARD_MS касания мимо; фокус — «Отмена».
+        confirm = ConfirmSheet(act, t.s(R.string.log_clear_title), body, ok = t.s(R.string.log_clear_ok),
+            cancel = t.s(R.string.cancel), danger = true) {
             DeleteLog.clear { done -> if (done && dialog.isShowing) cleared() }
-        }
-        // Фокус по умолчанию — «Отмена». Окно диалога при первом проходе само ставит фокус на первую
-        // кнопку (вне режима касания), поэтому — и сразу, и после первого кадра окна.
-        val cancel = d.getButton(DialogInterface.BUTTON_NEGATIVE)
-        cancel.requestFocus()
-        d.window?.decorView?.post { if (d.isShowing) cancel.requestFocus() }
-        confirm = d
+        }.show()
     }
 
     /** Очищено: строки уходят, на их месте — «Журнал очищен»; «Очистить…» прячется. */

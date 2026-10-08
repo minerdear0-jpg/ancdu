@@ -1,7 +1,6 @@
 package dev.ancdu
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
@@ -106,15 +105,11 @@ object Theme {
     }
 
     /** Диалог «Тема: Как в системе / Тёмная / Светлая» (пункт меню «···»). */
-    fun ask(a: Activity): AlertDialog {
+    fun ask(a: Activity): ChoiceSheet {
         val all = ThemeChoice.entries
         val cur = choice(a)
-        return AlertDialog.Builder(a, R.style.Theme_Ancdu_Alert)
-            .setTitle(a.tx.s(R.string.theme_title))
-            .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
-                d.dismiss()
-                if (all[which] != cur) set(a, all[which])
-            }
-            .show()
+        return ChoiceSheet(a, a.tx.s(R.string.theme_title), all.map { a.tx.s(it.label) }, all.indexOf(cur)) { which ->
+            if (all[which] != cur) set(a, all[which])
+        }.show()
     }
 }

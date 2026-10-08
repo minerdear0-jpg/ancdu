@@ -567,10 +567,12 @@ internal class MiddleLines(ctx: Context, private val full: String, private val l
  * или [second] не влезает в половину ширины — друг под другом, [first] сверху.
  * В строку: [second] слева, [first] справа.
  */
-private class ButtonPair(ctx: Context, private val first: TextView, private val second: TextView,
-                         private val labels: List<String>) : ViewGroup(ctx) {
+internal class ButtonPair(ctx: Context, private val first: TextView, private val second: TextView,
+                          private val labels: List<String>) : ViewGroup(ctx) {
     private val gap = ctx.dp(10)
-    private var stacked = false
+    /** Подписи не влезли в половину — кнопки друг под другом. */
+    var stacked = false
+        private set
 
     init { addView(second); addView(first) }
 

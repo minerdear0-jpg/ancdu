@@ -2,7 +2,6 @@ package dev.ancdu
 
 import android.animation.ValueAnimator
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
@@ -378,12 +377,15 @@ fun Activity.systemBars() {
     window.insetsController?.setSystemBarsAppearance(if (C.p.dark) 0 else mask, mask)
 }
 
-/** [onDismiss] — после закрытия любым путём (кнопка, «назад», тап вне диалога). */
+/**
+ * Сообщение приложения — лист [ConfirmSheet] (не системный диалог). Без [cancel] — одна кнопка [ok]
+ * (закрывает и зовёт [onOk]); с [cancel] — [cancel] и [ok]. [onDismiss] — после закрытия любым путём
+ * (кнопка, «назад», тап вне листа). [cue] — звук открытия (сообщения — об ошибке: REFUSE; null — его
+ * уже дал вызвавший).
+ */
 fun Activity.alert(title: String, msg: String, ok: String = getString(android.R.string.ok), cancel: String? = null,
-                   onDismiss: (() -> Unit)? = null, onOk: () -> Unit = {}): AlertDialog =
-    AlertDialog.Builder(this, R.style.Theme_Ancdu_Alert)
-        .setTitle(title).setMessage(msg)
-        .setPositiveButton(ok) { _, _ -> onOk() }
-        .apply { if (cancel != null) setNegativeButton(cancel, null) }
-        .apply { if (onDismiss != null) setOnDismissListener { onDismiss() } }
-        .show()
+                   onDismiss: (() -> Unit)? = null, cue: Cue? = Cue.REFUSE, onOk: () -> Unit = {}): ConfirmSheet =
+    // Одна кнопка — это [ok] на месте «Отмены» (фокус по умолчанию); её нажатие зовёт [onOk], «назад» — нет.
+    if (cancel == null) ConfirmSheet(this, title, msg, ok = null, cancel = ok, openCue = cue, onDismiss = onDismiss,
+        onCancelButton = onOk).show()
+    else ConfirmSheet(this, title, msg, ok = ok, cancel = cancel, openCue = cue, onDismiss = onDismiss, onOk = onOk).show()

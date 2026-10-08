@@ -285,13 +285,13 @@ class DeleteLogUiTest {
         // Default focus is Cancel (set again after the dialog's first frame). In touch mode nothing is
         // focused, so wait for it only outside touch mode; never assert the positive button has it.
         var touch = true
-        ins.runOnMainSync { touch = s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE).isInTouchMode }
-        if (!touch) assertTrue("Cancel not focused", waitFor { s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE).isFocused })
+        ins.runOnMainSync { touch = s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE)!!.isInTouchMode }
+        if (!touch) assertTrue("Cancel not focused", waitFor { s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE)!!.isFocused })
         ins.runOnMainSync {
             val c = s.confirm!!
-            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).isFocusable)
-            assertFalse(c.getButton(DialogInterface.BUTTON_POSITIVE).isFocused)
-            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).performClick())
+            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE)!!.isFocusable)
+            assertFalse(c.getButton(DialogInterface.BUTTON_POSITIVE)!!.isFocused)
+            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE)!!.performClick())
         }
         assertTrue(waitFor { s.confirm?.isShowing != true })
         ins.runOnMainSync { assertEquals(1, s.rows.size) }
@@ -300,7 +300,7 @@ class DeleteLogUiTest {
         // Second time: a tap right after the dialog opens (the double tap's second half) does nothing.
         ins.runOnMainSync {
             assertTrue(s.clearButton.performClick())
-            val ok = s.confirm!!.getButton(DialogInterface.BUTTON_POSITIVE)
+            val ok = s.confirm!!.getButton(DialogInterface.BUTTON_POSITIVE)!!
             val t0 = SystemClock.uptimeMillis()
             ok.dispatchTouchEvent(MotionEvent.obtain(t0, t0, MotionEvent.ACTION_DOWN, 5f, 5f, 0))
             ok.dispatchTouchEvent(MotionEvent.obtain(t0, t0 + 30, MotionEvent.ACTION_UP, 5f, 5f, 0))
@@ -313,7 +313,7 @@ class DeleteLogUiTest {
         drainIo()
         assertEquals(1, DeleteLogModel.entries(DeleteLogStore(log).lines()).size)
         Thread.sleep(DeleteLogSheet.OPEN_GUARD_MS + 100)
-        ins.runOnMainSync { assertTrue(s.confirm!!.getButton(DialogInterface.BUTTON_POSITIVE).performClick()) }
+        ins.runOnMainSync { assertTrue(s.confirm!!.getButton(DialogInterface.BUTTON_POSITIVE)!!.performClick()) }
         assertTrue("not cleared", waitFor { s.emptyText?.text?.toString() == ctx.getString(R.string.log_cleared) })
         ins.runOnMainSync { assertEquals(View.GONE, s.clearButton.visibility); s.dismiss() }
         drainIo()

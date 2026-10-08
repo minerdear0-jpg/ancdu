@@ -188,12 +188,11 @@ class LangTest {
         ins.runOnMainSync {
             val d = a.langDialog!!
             assertTrue(d.isShowing)
-            // «Звук и вибрация» — свой пункт меню, не кнопка диалога языка.
-            assertTrue(d.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)?.visibility != android.view.View.VISIBLE)
-            val list = d.listView
-            assertEquals(3, list.count)
-            assertEquals("Русский", list.adapter.getItem(2).toString())
-            list.performItemClick(list.getChildAt(2), 2, list.adapter.getItemId(2))
+            // Лист приложения (не системный диалог): три строки выбора, «Закрыть»; «Звук и вибрация» — свой пункт меню.
+            assertEquals(3, d.options.size)
+            assertEquals("Русский", d.options[2])
+            assertTrue(d.rows.all { it.height >= a.dp(44) })
+            assertTrue(d.rows[2].performClick())
         }
         assertTrue("экран не пересоздан по-русски", waitFor(10_000) {
             val m = resumed<MainActivity>()
@@ -225,10 +224,9 @@ class LangTest {
             ins.runOnMainSync {
                 val d = a.fxDialog!!
                 assertTrue(d.isShowing)
-                val list = d.listView
-                assertEquals(listOf("System", "On", "Off"), (0 until list.count).map { list.adapter.getItem(it).toString() })
-                assertEquals(0, list.checkedItemPosition)
-                list.performItemClick(list.getChildAt(2), 2, list.adapter.getItemId(2))
+                assertEquals(listOf("System", "On", "Off"), d.options)
+                assertEquals(0, d.checked)
+                assertTrue(d.rows[2].performClick())
             }
             ins.waitForIdleSync()
             assertEquals("off", ui.getString(FxPrefs.KEY, null))

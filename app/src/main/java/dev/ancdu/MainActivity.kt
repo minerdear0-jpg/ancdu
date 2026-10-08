@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
@@ -39,7 +38,7 @@ class MainActivity : LangActivity() {
     /** Идёт открытие кэша на Holder.io: повторные тапы игнорируются. */
     var opening = false
         private set
-    private var dialog: AlertDialog? = null
+    private var dialog: android.app.Dialog? = null
     /** Кнопка меню «···» в шапке: язык, звук и вибрация, тема, о приложении. */
     lateinit var menuButton: TextView
         private set
@@ -52,13 +51,13 @@ class MainActivity : LangActivity() {
     var logSheet: DeleteLogSheet? = null
         private set
     /** Для тестов: открытый диалог выбора языка. */
-    var langDialog: AlertDialog? = null
+    var langDialog: ChoiceSheet? = null
         private set
     /** Для тестов: открытый диалог «Звук и вибрация». */
-    var fxDialog: AlertDialog? = null
+    var fxDialog: ChoiceSheet? = null
         private set
     /** Для тестов: открытый диалог «Тема». */
-    var themeDialog: AlertDialog? = null
+    var themeDialog: ChoiceSheet? = null
         private set
 
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
@@ -148,7 +147,7 @@ class MainActivity : LangActivity() {
         super.onDestroy()
     }
 
-    fun showAlert(title: String, msg: String) { dialog = alert(title, msg) }
+    fun showAlert(title: String, msg: String) { dialog = alert(title, msg).dialog }
 
     /** versionName из манифеста (не зашитая строка); пусто, если прочитать нельзя. */
     private fun versionName(): String =
@@ -176,9 +175,9 @@ class MainActivity : LangActivity() {
         dialog?.dismiss()
         menu?.dismiss(); about?.dismiss()
         menu = MenuSheet(this,
-            onLang = { dialog = Lang.ask(this).also { langDialog = it } },
-            onFx = { dialog = Lang.askFx(this).also { fxDialog = it } },
-            onTheme = { dialog = Theme.ask(this).also { themeDialog = it } },
+            onLang = { dialog = Lang.ask(this).also { langDialog = it }.dialog },
+            onFx = { dialog = Lang.askFx(this).also { fxDialog = it }.dialog },
+            onTheme = { dialog = Theme.ask(this).also { themeDialog = it }.dialog },
             onAbout = { about = AboutSheet(this).also { it.show() } },
             onLog = { DeleteLogSheet.open(this) { s -> logSheet?.dismiss(); logSheet = s } }).also { it.show() }
     }

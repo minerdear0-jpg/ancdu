@@ -1,6 +1,6 @@
 package dev.ancdu
 
-import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.media.MediaScannerConnection
@@ -77,7 +77,7 @@ class BrowserActivity : LangActivity() {
     internal var gen = 0L
         private set
     internal var keepScroll = 0
-    private var wait: AlertDialog? = null
+    private var wait: Dialog? = null
     /** Для тестов: полоса, счётчик и кнопка «Стоп» диалога удаления (null — диалога нет). */
     var waitBar: ProgressBar? = null
         private set
@@ -302,7 +302,7 @@ class BrowserActivity : LangActivity() {
     val footerText: CharSequence get() = if (notice.visibility == View.VISIBLE) notice.text else footer.text
 
     /** Для тестов: открытое сообщение по итогам удаления. */
-    var alertDialog: AlertDialog? = null
+    var alertDialog: ConfirmSheet? = null
         private set
 
     /**
@@ -311,8 +311,9 @@ class BrowserActivity : LangActivity() {
      */
     internal fun report(title: String, msg: String, fix: Pair<String, () -> Unit>? = null) {
         lastAlert = title to msg
-        alertDialog = if (fix == null) alert(title, msg)
-            else alert(title, msg, ok = fix.first, cancel = txt.s(R.string.close), onOk = fix.second)
+        // Звук итога (refuse) уже дал вызвавший — лист открывается молча.
+        alertDialog = if (fix == null) alert(title, msg, cue = null)
+            else alert(title, msg, ok = fix.first, cancel = txt.s(R.string.close), cue = null, onOk = fix.second)
     }
 
     /**
@@ -990,9 +991,18 @@ class BrowserActivity : LangActivity() {
         }
         waitBar = bar; waitText = text; waitStop = stop
         lastDecile = -1
-        wait = AlertDialog.Builder(this, R.style.Theme_Ancdu_Alert)
-            .setView(body).setCancelable(false).create().apply {
+        // Окно приложения (не системный диалог): тело — в скобках PANEL, по центру, затемнение позади.
+        wait = Dialog(this, R.style.Theme_Ancdu_Sheet).apply {
+                requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+                setContentView(FrameLayout(this@BrowserActivity).apply {
+                    setPadding(dp(24), 0, dp(24), 0)
+                    addView(body, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER))
+                })
+                setCancelable(false)
                 window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                window?.setLayout(MATCH_PARENT, WRAP_CONTENT)
+                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window?.setDimAmount((C.SCRIM ushr 24) / 255f)
                 // Заголовок окна — для TalkBack (видимый заголовок — в теле).
                 window?.setTitle(DeleteProgress.titleFor(txt, Holder.delName, Holder.delCount))
                 show()

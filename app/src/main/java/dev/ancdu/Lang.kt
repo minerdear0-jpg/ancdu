@@ -1,7 +1,6 @@
 package dev.ancdu
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.LocaleManager
 import android.content.Context
 import android.content.Intent
@@ -103,29 +102,21 @@ object Lang {
     }
 
     /** Диалог «Системный / English / Русский» (пункт меню «···»; звук и вибрация — свой пункт). */
-    fun ask(a: Activity): AlertDialog {
+    fun ask(a: Activity): ChoiceSheet {
         val all = LangChoice.entries
         val cur = choice(a)
-        return AlertDialog.Builder(a, R.style.Theme_Ancdu_Alert)
-            .setTitle(a.tx.s(R.string.lang_title))
-            .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
-                d.dismiss()
-                if (all[which] != cur) set(a, all[which])
-            }
-            .show()
+        return ChoiceSheet(a, a.tx.s(R.string.lang_title), all.map { a.tx.s(it.label) }, all.indexOf(cur)) { which ->
+            if (all[which] != cur) set(a, all[which])
+        }.show()
     }
 
     /** Диалог «Звук и вибрация: Как в системе / Вкл / Выкл». */
-    fun askFx(a: Activity): AlertDialog {
+    fun askFx(a: Activity): ChoiceSheet {
         val all = FxMode.entries
         val cur = Feedback.mode
-        return AlertDialog.Builder(a, R.style.Theme_Ancdu_Alert)
-            .setTitle(a.tx.s(R.string.fx_title))
-            .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
-                d.dismiss()
-                FxPrefs.set(a, all[which])
-            }
-            .show()
+        return ChoiceSheet(a, a.tx.s(R.string.fx_title), all.map { a.tx.s(it.label) }, all.indexOf(cur)) { which ->
+            FxPrefs.set(a, all[which])
+        }.show()
     }
 }
 

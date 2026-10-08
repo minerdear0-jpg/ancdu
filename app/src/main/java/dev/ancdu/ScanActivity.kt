@@ -1,6 +1,5 @@
 package dev.ancdu
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -42,7 +41,7 @@ class ScanActivity : LangActivity() {
     /** Скан для этого экрана закончен (любым исходом): тик остановлен, «назад» просто закрывает. */
     private var finished = false
     /** Для тестов: диалог ошибки, если показан. */
-    var failure: AlertDialog? = null
+    var failure: ConfirmSheet? = null
         private set
     /** Экран прогресса построен (скан идёт ≥ [SHOW_AFTER_MS]); до этого — только фон. */
     var built = false

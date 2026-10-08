@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Диалоги и окна листов в тёмной теме (светлые — values). -->
-    <style name="Theme.Ancdu.Alert" parent="@android:style/Theme.DeviceDefault.Dialog.Alert" />
     <style name="Theme.Ancdu.Sheet" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar" />
 </resources>
