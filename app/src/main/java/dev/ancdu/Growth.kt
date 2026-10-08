@@ -179,8 +179,7 @@ object Growth {
     /** Поколение, расчёт для которого стоит на io (-1 — нет). */
     private var flight = -1L
     /** Для тестов: сколько расчётов закончено. */
-    @Volatile var computed = 0
-        private set
+    val computed = java.util.concurrent.atomic.AtomicInteger()
 
     /** Любой экран (LangActivity.onCreate): контекст приложения для каталога точек отсчёта. */
     fun init(ctx: Context) { if (app == null) app = ctx.applicationContext }
@@ -212,7 +211,7 @@ object Growth {
         val files = Baseline.files(ctx, root, viaRoot)
         Holder.io.execute {
             val d = runCatching { compute(h, gen, files) }.onFailure { Log.w("ancdu", "delta failed", it) }.getOrNull()
-            computed++
+            computed.incrementAndGet()
             main.post {
                 if (my != seq) return@post
                 flight = -1L
@@ -282,7 +281,9 @@ object Growth {
     }
 
     /**
-     * На Holder.io: строка главного экрана по Δ [d] дерева [h] (на диске) — null, если |Δ| < 1 МиБ.
+     * На Holder.io: строка главного экрана по Δ [d] дерева [h] — null, если |Δ| < 1 МиБ. «Больше всего»
+     * считается по Δ НА ДИСКЕ (как объём карточки), и браузер по тапу открывается в режиме «диск»
+     * (новый экран, apparent = false) — та же Δ, что в строке.
      * Только чтения дерева: дети каталогов на пути «больше всего» и их имена.
      */
     fun home(h: Long, d: Delta): HomeGrowth? {

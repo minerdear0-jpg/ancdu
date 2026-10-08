@@ -363,20 +363,8 @@ class NcduListView(ctx: Context) : View(ctx) {
     }
 
     /** Значок [text] в контуре 1dp FRAME, правый край — [right], по центру [mid]; его ширина. */
-    private fun drawBadge(c: Canvas, text: String, right: Int, mid: Int): Int {
-        val padX = context.dp(4)
-        val fm = badgePaint.fontMetricsInt
-        val th = fm.descent - fm.ascent
-        val bw = badgePaint.measureText(text).toInt() + 2 * padX
-        val bh = th + context.dp(2)
-        val l = (right - bw).toFloat(); val t = (mid - bh / 2).toFloat()
-        badgePaint.color = C.TEXT
-        c.drawText(text, l + padX, t + (bh - th) / 2f - fm.ascent, badgePaint)
-        fill.color = C.FRAME
-        c.drawRect(l, t, l + bw, t + one, fill); c.drawRect(l, t + bh - one, l + bw, t + bh, fill)
-        c.drawRect(l, t, l + one, t + bh, fill); c.drawRect(l + bw - one, t, l + bw, t + bh, fill)
-        return bw
-    }
+    private fun drawBadge(c: Canvas, text: String, right: Int, mid: Int): Int =
+        kotlin.math.ceil(context.drawOutlinedBadge(c, text, badgePaint, fill, right.toFloat(), mid.toFloat())).toInt()
 
     /** Строка-сводка: приглушённый текст от левого поля, по центру строки; волосяная линия снизу. */
     private fun drawNote(c: Canvas, text: String, top: Int, rh: Int) {

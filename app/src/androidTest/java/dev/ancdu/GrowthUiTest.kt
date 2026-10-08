@@ -115,10 +115,10 @@ class GrowthUiTest {
 
     /** Точка отсчёта := показанное дерево, дождаться пересчёта Δ. */
     private fun markAndWait() {
-        val before = Growth.computed
+        val before = Growth.computed.get()
         ins.runOnMainSync { Growth.markNow(ctx) }
         Holder.io.submit {}.get(30, TimeUnit.SECONDS)
-        assertTrue(waitFor { Growth.computed > before && Growth.forTree(Holder.h, Holder.gen) != null })
+        assertTrue(waitFor { Growth.computed.get() > before && Growth.forTree(Holder.h, Holder.gen) != null })
     }
 
     @Test fun deltaSegmentHiddenWithoutBaseline() {
@@ -213,13 +213,13 @@ class GrowthUiTest {
             assertEquals(Freshness.date(b.tx, R.string.fmt_since_time, d.baseTime), sh.dateText.text.toString())
             assertTrue(sh.infoText.text.toString().startsWith(b.getString(R.string.today)))
             assertTrue(sh.markButton.height >= b.dp(56) || sh.markButton.minimumHeight >= b.dp(56))
-            before = Growth.computed
+            before = Growth.computed.get()
             // «Отметить сейчас»: сразу, без подтверждения; лист закрывается.
             assertTrue(sh.markButton.performClick())
             assertFalse(sh.dialog.isShowing)
         }
         Holder.io.submit {}.get(30, TimeUnit.SECONDS)
-        assertTrue(waitFor { Growth.computed > before && b.deltaShown && b.goneText == null })
+        assertTrue(waitFor { Growth.computed.get() > before && b.deltaShown && b.goneText == null })
         ins.runOnMainSync {
             val r = rows(b)
             assertEquals(4, r.size)

@@ -192,8 +192,8 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
     private val fitPaint = TextPaint(sizePaint)
     private val small = TextPaint(mono).apply { textSize = sp(12f); color = C.MUTED }
     private val tagPaint = TextPaint(small)
-    private val badgePaint = TextPaint(small).apply { textSize = sp(10f); color = C.TEXT }
-    private val frame = Paint().apply { color = C.FRAME }
+    private val badgePaint = TextPaint(small).apply { textSize = sp(10f) }
+    private val frame = Paint()
     private val gap = ctx.dp(10)
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val compact = resources.configuration.fontScale > 1.3f
@@ -237,17 +237,10 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
         // «NEW» в контуре FRAME — у правого края, метка — левее.
         var right = w.toFloat()
         badge?.let { b ->
-            val one = context.dp(1).toFloat(); val padX = context.dp(4).toFloat()
-            val fm = badgePaint.fontMetricsInt
-            val th = (fm.descent - fm.ascent).toFloat()
-            val bw = badgePaint.measureText(b) + 2 * padX
-            val bh = th + context.dp(2)
-            val l = right - bw
-            val tp = base + mono.fontMetricsInt.ascent / 2f - bh / 2f + mono.fontMetricsInt.descent / 2f
-            c.drawText(b, l + padX, tp + (bh - th) / 2f - fm.ascent, badgePaint)
-            c.drawRect(l, tp, l + bw, tp + one, frame); c.drawRect(l, tp + bh - one, l + bw, tp + bh, frame)
-            c.drawRect(l, tp, l + one, tp + bh, frame); c.drawRect(l + bw - one, tp, l + bw, tp + bh, frame)
-            right = l - gap
+            // Центр по высоте — середина строки имени.
+            val cy = base + (mono.fontMetricsInt.ascent + mono.fontMetricsInt.descent) / 2f
+            val bw = context.drawOutlinedBadge(c, b, badgePaint, frame, right, cy)
+            right -= bw + gap
             avail = maxOf(avail - bw - gap, 0f)
         }
         tagShown = tag?.let { Tag.fit(name, it.text, avail, gap.toFloat(), mono::measureText, tagPaint::measureText) }

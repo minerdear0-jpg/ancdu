@@ -360,7 +360,7 @@
         <item quantity="other">%1$s days ago</item>
     </plurals>
     <string name="baseline_caps">Baseline</string>
-    <string name="baseline_explain">Δ is counted against this scan. The baseline renews itself: once a week the newer saved scan takes its place, so it is always 7–14 days old.</string>
+    <string name="baseline_explain">Δ is counted against this scan: usually 7–14 days old; renews itself weekly.</string>
     <string name="baseline_mark">Mark now</string>
     <string name="baseline_mark_sub">Count Δ from the tree on screen</string>
     <string name="growth_home">%1$s since %2$s · mostly %3$s ›</string>

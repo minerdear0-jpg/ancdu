@@ -352,7 +352,7 @@
         <item quantity="other">%1$s дня назад</item>
     </plurals>
     <string name="baseline_caps">Точка отсчёта</string>
-    <string name="baseline_explain">Δ считается от этого скана. Точка отсчёта обновляется сама: раз в неделю её место занимает более новый сохранённый скан, поэтому ей всегда 7–14 дней.</string>
+    <string name="baseline_explain">Δ считается от этого скана: обычно 7–14 дней назад, обновляется сама раз в неделю.</string>
     <string name="baseline_mark">Отметить сейчас</string>
     <string name="baseline_mark_sub">Считать Δ от дерева на экране</string>
     <string name="growth_home">%1$s с %2$s · больше всего %3$s ›</string>

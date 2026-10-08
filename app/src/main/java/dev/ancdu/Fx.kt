@@ -365,3 +365,25 @@ class FitText(ctx: Context, private val maxSp: Float, private val minSp: Float =
         super.onMeasure(ws, hs)
     }
 }
+
+/**
+ * Значок в контуре 1dp FRAME (моно 10sp, текст TEXT) — «NEW» в строках браузера и «крупнейших файлов».
+ * Правый край — [right], центр по высоте — [cy]; [paint] — краска текста значка, [fill] — для контура
+ * (цвет перезаписывается). Возвращает ширину значка.
+ */
+fun Context.drawOutlinedBadge(c: Canvas, text: String, paint: Paint, fill: Paint, right: Float, cy: Float): Float {
+    val one = dp(1).toFloat()
+    val padX = dp(4).toFloat()
+    val fm = paint.fontMetricsInt
+    val th = (fm.descent - fm.ascent).toFloat()
+    val bw = paint.measureText(text) + 2 * padX
+    val bh = th + dp(2)
+    val l = right - bw
+    val t = cy - bh / 2f
+    paint.color = C.TEXT
+    c.drawText(text, l + padX, t + (bh - th) / 2f - fm.ascent, paint)
+    fill.color = C.FRAME
+    c.drawRect(l, t, l + bw, t + one, fill); c.drawRect(l, t + bh - one, l + bw, t + bh, fill)
+    c.drawRect(l, t, l + one, t + bh, fill); c.drawRect(l + bw - one, t, l + bw, t + bh, fill)
+    return bw
+}
