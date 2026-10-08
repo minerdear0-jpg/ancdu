@@ -72,12 +72,14 @@ class BrowserPreviews(private val a: BrowserActivity) {
             more = cn - k
         }
         val block = a.blockReason(handle, target, path)
+        val tag = a.tagOf(path, flags, block)
         return DeletePreview(
             name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
             flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
             block = block, kind = Holder.kind,
             cacheTime = if (Holder.kind == Kind.CACHE) Freshness.date(a.txt, R.string.fmt_day_time, Holder.time) else null,
-            fast = a.fastAllowed(path), root = Root.state, tag = a.tagOf(path, flags, block), topTags = topTags,
+            fast = a.fastAllowed(path), root = Root.state, tag = tag, topTags = topTags,
+            risks = listOfNotNull(SheetWarning.risk(tag, name, dir, self[0])),
             topPeek = topPeek, topContact = topContact,
             selfContact = if (dir) contactSheet(handle, target, path) else emptyList(),
             selfPeek = if (dir) null else peekInfo(name, path,

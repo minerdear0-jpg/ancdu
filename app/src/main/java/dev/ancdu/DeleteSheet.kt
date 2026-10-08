@@ -69,6 +69,8 @@ class DeletePreview(
      * (её лист показывает один раз рядом с заголовком).
      */
     val ownTag: TagText? = tag,
+    /** Необратимое среди удаляемого (медиа, данные приложений): его называет строка-предупреждение. */
+    val risks: List<Risk> = emptyList(),
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -90,8 +92,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         private set
     var blockText: TextView? = null
         private set
-    var ownerText: TextView? = null
-        private set
     /** Имена показанных детей (для тестов). */
     val childNames = ArrayList<String>()
     lateinit var cancelButton: TextView
@@ -102,16 +102,14 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
         private set
-    /** Предупреждение над кнопками (null — удаление запрещено). */
-    private var warnText: TextView? = null
+    /** Единственная строка-предупреждение над кнопками (null — удаление запрещено). */
+    var warnText: TextView? = null
+        private set
     /** Предупреждение «⚠ Удаление от root · без корзины…» (null — удаление не через su или запрещено). */
     val rootText: TextView? get() = warnText?.takeIf { tier.root }
     /** Для тестов: показанные числа обратного отсчёта по порядку (перезапуск продолжает список). */
     val countdownShown = ArrayList<Long>()
 
-    /** Для тестов: строка «данные 2 приложений: …» листа группы (null — владельцев меньше двух). */
-    var ownersText: TextView? = null
-        private set
     /** Для тестов: тексты показанных меток — объекта, затем строк детей. */
     val tagTexts = ArrayList<String>()
     /** Для тестов: строка «N уже нет на диске» листа группы. */
@@ -211,7 +209,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         restartCountdown()
     }
 
-    private fun warning(): String = "⚠ " + t.s(if (tier.root) R.string.root_no_trash else R.string.no_trash)
+    private fun warning(): String = SheetWarning.text(t, tier.root, p.risks)
 
     init {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -306,6 +304,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
+                // Путь больше не печатается строкой листа — его читает TalkBack у заголовка.
+                contentDescription = "$title, ${t.s(R.string.path_desc, p.path)}"
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             (p.tag ?: p.ownTag)?.let { addView(tagLabel(it)) }
             if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
@@ -314,15 +314,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 contentDescription = t.s(R.string.as_root_desc)
             })
         })
-        // Путь целиком, с переносами.
-        addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
-            contentDescription = t.s(R.string.path_desc, p.path)
-        })
-        if (group != null && group.owners.size > 1) addView(ownersRow(group.owners))
-        // Один владелец не у всех: «данные WhatsApp: 2 из 3»; у всех — прежний ownerRow (p.owner).
-        else if (group != null && group.owners.size == 1 && p.owner == null)
-            addView(ownersRow(group.owners, GroupSheet.ownerPart(t, label(group.owners[0]), group.ownerItems, group.count)))
-        else p.owner?.let { addView(act.ownerRow(it, t).also { r -> ownerText = r.getChildAt(r.childCount - 1) as TextView }) }
+        // Ни строки пути (путь — у каждой строки списка и у TalkBack заголовка), ни строки владельцев:
+        // приложение называет предупреждение, если его данные не вернуть.
         addView(sizeLine())
         // Лист одного каталога: крупнейшие картинки и видео в нём самом.
         if (group == null && p.dir) contactRow(p.selfContact)?.let { selfContactRow = it; addView(it) }
@@ -394,30 +387,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 (if (p.dir) ", " + t.q(R.plurals.items_long, p.items, Fmt.count(p.items, t.locale)) else "") +
                 (if (p.apparent != p.disk) ", $apparent" else "")
         }
-    }
-
-    /** Метка приложения [pkg] (одной строкой, bidi видимыми); нет пакета — его имя. */
-    private fun label(pkg: String): String = AppLabels.get(act, pkg) ?: pkg
-
-    /**
-     * Владельцы группы: до трёх значков 20dp и [text] (по умолчанию «данные 5 приложений: A, B, C +2» —
-     * «+N» только в тексте, один раз).
-     */
-    private fun ownersRow(pkgs: List<String>, text: String = GroupSheet.owners(t, pkgs.map { label(it) })): View = act.hbox(8).apply {
-        val pm = act.packageManager
-        for (pkg in pkgs.take(GroupSheet.ICONS)) {
-            val icon = try { pm.getApplicationInfo(pkg, 0).loadIcon(pm) }
-                catch (e: android.content.pm.PackageManager.NameNotFoundException) { null } ?: continue
-            addView(android.widget.ImageView(act).apply {
-                setImageDrawable(icon)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(act.dp(20), act.dp(20)))
-        }
-        addView(act.label(text, 14f, C.TEXT).apply {
-            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-            ownersText = this
-        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        contentDescription = text
     }
 
     /** Метка безопасности (моно 12sp, цвет метки); TalkBack читает её словом («кэш»). */

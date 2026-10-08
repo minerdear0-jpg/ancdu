@@ -170,7 +170,6 @@
     <string name="cache_sizes">размеры по скану от %1$s</string>
     <string name="fast_box">быстро через root (в обход FUSE)</string>
     <string name="fast_note">место освобождается сразу; галерея обновится в фоне</string>
-    <string name="root_no_trash">Удаление от root · без корзины. Отменить нельзя.</string>
     <string name="no_trash">Без корзины. Отменить нельзя.</string>
     <string name="delete_btn">Удалить</string>
     <string name="delete_btn_size">Удалить %1$s</string>
@@ -256,12 +255,6 @@
         <item quantity="many">Удаление %1$s объектов</item>
         <item quantity="other">Удаление %1$s объекта</item>
     </plurals>
-    <plurals name="owners_n">
-        <item quantity="one">данные %1$s приложения: %2$s</item>
-        <item quantity="few">данные %1$s приложений: %2$s</item>
-        <item quantity="many">данные %1$s приложений: %2$s</item>
-        <item quantity="other">данные %1$s приложения: %2$s</item>
-    </plurals>
     <string name="group_title">Удалить %1$s?</string>
     <string name="group_gone">%1$s уже нет на диске</string>
     <string name="group_stopped">Остановлено: удалено %1$s из %2$s · %3$s</string>
@@ -278,7 +271,6 @@
     <string name="fail_not_started">не начато</string>
     <string name="group_partial_stopped">Удалено %1$s из %2$s · остановлено</string>
     <string name="group_title_blocked">Нельзя удалить %1$s</string>
-    <string name="owner_part">данные %1$s: %2$s из %3$s</string>
     <!-- Task 25a: biggest files, safety tags -->
     <string name="big_gone">Данные скана устарели — обновляю</string>
     <string name="big_title">Самые крупные файлы</string>
@@ -367,4 +359,19 @@
     <string name="nothing_deleted">Ничего не удалено</string>
     <string name="delete_changed_name">«%1$s» изменился после скана.</string>
     <string name="refresh_btn">Обновить</string>
+    <string name="warn_photo">фото</string>
+    <string name="warn_video">видео</string>
+    <string name="warn_audio">аудио</string>
+    <string name="warn_media">медиа</string>
+    <string name="warn_part">%1$s %2$s</string>
+    <string name="warn_app">данные %1$s %2$s</string>
+    <plurals name="warn_apps">
+        <item quantity="one">данные %1$s приложения %2$s</item>
+        <item quantity="few">данные %1$s приложений %2$s</item>
+        <item quantity="many">данные %1$s приложений %2$s</item>
+        <item quantity="other">данные %1$s приложения %2$s</item>
+    </plurals>
+    <string name="warn_gone">Без корзины. Не вернуть: %1$s.</string>
+    <string name="warn_and">%1$s и %2$s</string>
+    <string name="warn_root">Удаление от root · %1$s</string>
 </resources>

@@ -153,9 +153,6 @@ class GroupTextTest {
     }
 
     @Test fun ownersAndGone() {
-        assertEquals("данные 2 приложений: WhatsApp, Telegram", GroupSheet.owners(RU, listOf("WhatsApp", "Telegram")))
-        assertEquals("данные 5 приложений: A, B, C +2", GroupSheet.owners(RU, listOf("A", "B", "C", "D", "E")))
-        assertEquals("data of 2 apps: WhatsApp, Telegram", GroupSheet.owners(EN, listOf("WhatsApp", "Telegram")))
         assertEquals("1 уже нет на диске", GroupSheet.gone(RU, 1))
         assertEquals("2 no longer on disk", GroupSheet.gone(EN, 2))
         assertEquals("Выбор снят: 3", GroupSheet.cleared(RU, 3))
@@ -256,8 +253,6 @@ class GroupPolishTest {
     }
 
     @Test fun ownerTexts() {
-        assertEquals("данные WhatsApp: 2 из 3", GroupSheet.ownerPart(RU, "WhatsApp", 2, 3))
-        assertEquals("WhatsApp data: 2 of 3", GroupSheet.ownerPart(EN, "WhatsApp", 2, 3))
         assertEquals("Нельзя удалить 3 объекта", GroupSheet.blockedTitle(RU, 3))
         assertEquals("Can't delete 3 items", GroupSheet.blockedTitle(EN, 3))
     }

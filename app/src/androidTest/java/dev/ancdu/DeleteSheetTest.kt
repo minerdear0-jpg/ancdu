@@ -241,7 +241,7 @@ class DeleteSheetTest {
 
     /**
      * Данные приложения как root: кнопка выключена 2,5 с с отсчётом 3-2-1, затем включается;
-     * предупреждение — одной строкой «⚠ Удаление от root · без корзины. Отменить нельзя.».
+     * предупреждение — одной строкой «⚠ Удаление от root · Без корзины. Отменить нельзя.» (свои данные — не чужие).
      */
     @Test fun seriousDeleteCountsDown() {
         val dir = fixture("ds4")
@@ -252,18 +252,18 @@ class DeleteSheetTest {
         val t0 = System.currentTimeMillis()
         ins.runOnMainSync {
             assertEquals(ctx.packageName, s.p.owner)
-            assertTrue(s.ownerText!!.text.toString().endsWith(a.suffixOf(R.string.owner)))
             val b = s.deleteButton!!
             assertFalse(b.isEnabled)
             assertTrue(b.text.toString(), b.text.startsWith(a.prefixOf(R.string.delete_in)))
             b.performClick()                      // нажатие до конца паузы ничего не делает
             // Одна строка-предупреждение (root вместе с «без корзины»), без повтора обычной.
             val root = s.rootText!!
-            assertEquals("⚠ " + a.getString(R.string.root_no_trash), root.text.toString())
+            assertEquals(SheetWarning.text(a.tx, true, emptyList()), root.text.toString())
             assertEquals(View.VISIBLE, root.visibility)
             val box = root.parent as android.view.ViewGroup
             val texts = (0 until box.childCount).mapNotNull { (box.getChildAt(it) as? android.widget.TextView)?.text?.toString() }
-            assertFalse(texts.toString(), texts.contains("⚠ " + a.getString(R.string.no_trash)))
+            // Ровно одна строка-предупреждение.
+            assertEquals(texts.toString(), 1, texts.count { it.startsWith("⚠") })
         }
         assertFalse(a.busy)
         assertTrue(waitFor(6_000) { s.deleteButton!!.isEnabled })
@@ -274,6 +274,38 @@ class DeleteSheetTest {
             s.dismiss()
         }
         assertTrue(File(dir, "x/data.bin").exists())
+    }
+
+    /**
+     * One warning line: media and other apps' data are named with sizes; cache and downloads stay
+     * silent; nothing irreversible — the plain line. Synthetic previews, «Удалить» is never pressed.
+     */
+    @Test fun warningNamesIrreversibleOnly() {
+        val dir = fixture("ds-warn")
+        File(dir, "a.bin").writeBytes(ByteArray(10))
+        val a = browse(dir.path)
+        val gib = 1L shl 30
+        val media = Tag(TagKind.MEDIA).resolve(a.tx, null)
+        val wa = Tag(TagKind.APP, "com.whatsapp").resolve(a.tx, "WhatsApp")
+        val dl = Tag(TagKind.DL).resolve(a.tx, null)
+        fun pv(risks: List<Risk>, top: List<Pair<String, Long>> = emptyList()) = DeletePreview(
+            name = "4", path = "/storage/emulated/0/", dir = true, disk = 8 * gib, apparent = 8 * gib, items = 4,
+            flags = F_DIR, top = top, more = 0, owner = null, viaRoot = false, block = null, kind = Kind.SCAN,
+            cacheTime = null, risks = risks)
+        val risky = listOfNotNull(SheetWarning.risk(media, "VID.mp4", false, (3.8 * gib).toLong()),
+            SheetWarning.risk(dl, "x.bin", false, 3 * gib), SheetWarning.risk(wa, "files", true, (0.6 * gib).toLong()))
+        var chosen: Boolean? = null
+        ins.runOnMainSync {
+            val s = DeleteSheet(a, pv(risky)) { chosen = it }.also { it.show() }
+            val w = s.warnText!!.text.toString()
+            assertEquals(SheetWarning.text(a.tx, false, risky), w)
+            assertTrue(w, w.contains("WhatsApp") && !w.contains("dl"))
+            s.dismiss()
+            val plain = DeleteSheet(a, pv(emptyList())) { chosen = it }.also { it.show() }
+            assertEquals("⚠ " + a.getString(R.string.no_trash), plain.warnText!!.text.toString())
+            plain.dismiss()
+        }
+        assertNull(chosen)
     }
 
     /** Данные другого приложения без root: пауза 1,5 с, отсчёт 2-1, строки root нет. Синтетическое превью, «Удалить» не нажимается. */
@@ -380,7 +412,7 @@ class DeleteSheetTest {
             assertEquals(DeleteTier.ROOT, s.tier)
             assertFalse(s.deleteButton!!.isEnabled)
             assertEquals(listOf(3L), s.countdownShown)
-            assertEquals("⚠ " + a.getString(R.string.root_no_trash), s.rootText!!.text.toString())
+            assertEquals(SheetWarning.text(a.tx, true, emptyList()), s.rootText!!.text.toString())
         }
         Thread.sleep(1200)
         ins.runOnMainSync {

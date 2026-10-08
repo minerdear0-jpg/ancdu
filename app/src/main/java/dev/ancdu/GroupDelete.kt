@@ -43,8 +43,6 @@ class GroupInfo(
 object GroupSheet {
     /** Строк «крупнейших» в листе. */
     const val TOP = 5
-    /** Значков владельцев в сводке. */
-    const val ICONS = 3
 
     /** «3 объекта» / «3 items». */
     fun objects(t: Txt, n: Int): String = t.q(R.plurals.objects, n.toLong(), Fmt.count(n.toLong(), t.locale))
@@ -55,12 +53,6 @@ object GroupSheet {
     /** «3 выбрано» (подпись прописными делает caps). */
     fun selected(t: Txt, n: Int): String = t.q(R.plurals.selected_n, n.toLong(), Fmt.count(n.toLong(), t.locale))
 
-    /** «данные 2 приложений: WhatsApp, Telegram»; больше [ICONS] — «A, B, C +2». */
-    fun owners(t: Txt, labels: List<String>): String {
-        val shown = labels.take(ICONS).joinToString(", ") + if (labels.size > ICONS) " +${labels.size - ICONS}" else ""
-        return t.q(R.plurals.owners_n, labels.size.toLong(), Fmt.count(labels.size.toLong(), t.locale), shown)
-    }
-
     /** «1 уже нет на диске». */
     fun gone(t: Txt, n: Int): String = t.s(R.string.group_gone, Fmt.count(n.toLong(), t.locale))
 
@@ -69,10 +61,6 @@ object GroupSheet {
 
     /** «Нельзя удалить 3 объекта» — лист группы с запретом. */
     fun blockedTitle(t: Txt, n: Int): String = t.s(R.string.group_title_blocked, objects(t, n))
-
-    /** Один владелец не у всех: «данные WhatsApp: 2 из 3». */
-    fun ownerPart(t: Txt, label: String, k: Int, n: Int): String =
-        t.s(R.string.owner_part, label, Fmt.count(k.toLong(), t.locale), Fmt.count(n.toLong(), t.locale))
 
     /** Путь папки с «/» в конце. */
     fun parentPath(path: String): String = if (path.endsWith("/")) path else "$path/"
@@ -98,7 +86,7 @@ object GroupSheet {
             top = top.map { (if (it.dir) it.name + "/" else it.name) to it.disk }, more = items.size - top.size,
             owner = owners.singleOrNull()?.takeIf { ownerItems == items.size }, viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
             kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root,
-            topTags = top.map { it.tag?.takeUnless { t -> TagText.same(t, own) } }, ownTag = own, topPeek = top.map { if (it.dir) null else it.peek },
+            topTags = top.map { it.tag?.takeUnless { t -> TagText.same(t, own) } }, ownTag = own, risks = items.mapNotNull { SheetWarning.risk(it.tag, it.name, it.dir, it.disk) }, topPeek = top.map { if (it.dir) null else it.peek },
             topContact = top.map { if (it.dir) contact(it) else emptyList() })
         val info = GroupInfo(
             count = items.size, owners = owners, owned = items.map { it.owner != null && it.owner != self },
