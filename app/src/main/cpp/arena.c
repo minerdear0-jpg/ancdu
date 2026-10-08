@@ -347,7 +347,10 @@ int arena_read_stream(arena *out, int fd) {
 int arena_save_file(const arena *a, const char *path) {
   char tmp[4096];
   if (snprintf(tmp, sizeof tmp, "%s.tmp", path) >= (int)sizeof tmp) return -ENAMETOOLONG;
-  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+  /* Стоячий tmp (прерванное сохранение) может оказаться жёсткой ссылкой на живой файл: снять его и
+   * создать заново (O_EXCL) — запись никогда не идёт сквозь чужой inode. */
+  if (unlink(tmp) != 0 && errno != ENOENT) return -errno;
+  int fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
   if (fd < 0) return -errno;
   int r = arena_write(a, fd);
   if (!r && fsync(fd) != 0) r = -errno;

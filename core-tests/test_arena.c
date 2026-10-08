@@ -113,11 +113,39 @@ static void test_hints(void) {
   arena_unmap(&a);
 }
 
+/* Стоячий «<путь>.tmp» — жёсткая ссылка на живой файл (кэш): сохранение не пишет сквозь неё
+ * (никакого O_TRUNC по чужому inode), живой файл цел. Всё — в mk_tmp(). */
+static void test_save_over_stale_link(void) {
+  char T[4096];
+  snprintf(T, sizeof T, "%s", mk_tmp());
+  char live[4200], path[4200], tmp[4300];
+  snprintf(live, sizeof live, "%s/live.ancdu", T);
+  snprintf(path, sizeof path, "%s/live.ancdu.base-a", T);
+  snprintf(tmp, sizeof tmp, "%s.tmp", path);
+  write_file(live, 5000);
+  CHECK(link(live, tmp) == 0);
+  arena a;
+  CHECK(arena_alloc_anon(&a, 8, 256, "/r", SRC_SCAN) == 0);
+  name_chunk ck = {0, 0};
+  arena_new_node(&a, &ck, ANCDU_NONE, "", 0, F_DIR);
+  atomic_store(&a.h->state, ST_DONE);
+  CHECK(arena_save_file(&a, path) == 0);
+  struct stat st;
+  CHECK(stat(live, &st) == 0);
+  CHECK_EQ_U(st.st_size, 5000);
+  CHECK_EQ_U(st.st_nlink, 1); /* ссылка-хвост снята, живой файл не тронут */
+  arena b;
+  CHECK(arena_open_file(&b, path) == 0);
+  arena_unmap(&b);
+  arena_unmap(&a);
+}
+
 int main(void) {
   test_nodes_and_paths();
   test_capacity_full();
   test_attach_rejects_garbage();
   test_caps_not_reread();
   test_hints();
+  test_save_over_stale_link();
   TEST_END();
 }
