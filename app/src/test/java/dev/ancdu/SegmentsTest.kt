@@ -26,4 +26,15 @@ class SegmentsTest {
         s.forEach { assert(it.bytes >= 0) { it } }
         assertEquals(0L, s.first { it.label == R.string.seg_system }.bytes)
     }
+
+    /** Сегменты хранят роль (считаются на рабочем потоке), цвет — из палитры при показе. */
+    @Test fun storesRolesResolvedByPalette() {
+        val s = Segments.compute(total = 256 * G, free = 17 * G, video = 20 * G, image = 10 * G, audio = 1 * G,
+            extApp = 0, extTotal = 40 * G, apps = 70 * G)
+        assertEquals(listOf(Role.AMBER, Role.BLUE, Role.AUDIO_FILL, Role.AMBER_DIM, Role.MUTED, Role.FRAME, Role.FREE),
+            s.map { it.role })
+        for (p in listOf(Palette.LIGHT, Palette.DARK)) {
+            assertEquals(listOf(p.amber, p.blue, p.audioFill, p.amberDim, p.muted, p.frame, p.free), s.map { it.role.color(p) })
+        }
+    }
 }

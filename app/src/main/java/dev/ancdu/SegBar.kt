@@ -76,13 +76,19 @@ class SegBar(ctx: Context) : View(ctx) {
  * контур FRAME, как у прочих полос. Без анимации.
  */
 class CatBar(ctx: Context) : View(ctx) {
+    /** Показанные сегменты (для тестов и описания). */
     var segs: List<Seg> = emptyList()
-        set(v) {
-            field = v
-            val t = context.tx
-            contentDescription = v.joinToString { "${t.s(it.label)} ${Fmt.size(it.bytes, t)}" }
-            invalidate()
-        }
+        private set
+    /** Цвета [segs] в палитре экрана (разрешены на главном потоке в [show]). */
+    private var colors = IntArray(0)
+
+    /** Главный поток: сегменты [v] и их цвета [cs] (по одному на сегмент). */
+    fun show(v: List<Seg>, cs: IntArray) {
+        segs = v; colors = cs
+        val t = context.tx
+        contentDescription = v.joinToString { "${t.s(it.label)} ${Fmt.size(it.bytes, t)}" }
+        invalidate()
+    }
     private val paint = Paint()
     private val one = ctx.dp(1).toFloat()
 
@@ -96,9 +102,9 @@ class CatBar(ctx: Context) : View(ctx) {
         val total = segs.sumOf { it.bytes }.coerceAtLeast(1)
         var x = one
         val inner = w - 2 * one
-        for (s in segs) {
+        for ((k, s) in segs.withIndex()) {
             val sw = inner * (s.bytes.toFloat() / total)
-            paint.color = s.color
+            paint.color = colors.getOrElse(k) { C.AMBER }
             c.drawRect(x, one, x + sw, h - one, paint)
             x += sw
         }

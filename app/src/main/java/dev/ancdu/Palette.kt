@@ -143,13 +143,22 @@ data class Palette(
     }
 }
 
-/** Роль цвета текста: цвет берётся из палитры при отрисовке, а не при создании. */
+/**
+ * Роль цвета (текст меток, заливки сегментов): цвет берётся из палитры при показе, а не при
+ * создании — то, что посчитано заранее или на рабочем потоке, хранит роль.
+ */
 enum class Role {
-    TEXT, MUTED, BLUE_HI;
+    TEXT, MUTED, BLUE_HI, AMBER, BLUE, AUDIO_FILL, AMBER_DIM, FRAME, FREE;
 
     fun color(p: Palette = C.p): Int = when (this) {
         TEXT -> p.text
         MUTED -> p.muted
         BLUE_HI -> p.blueHi
+        AMBER -> p.amber
+        BLUE -> p.blue
+        AUDIO_FILL -> p.audioFill
+        AMBER_DIM -> p.amberDim
+        FRAME -> p.frame
+        FREE -> p.free
     }
 }

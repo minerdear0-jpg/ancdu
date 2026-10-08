@@ -28,7 +28,9 @@ class AppsActivity : LangActivity() {
         override fun bind(index: Int, row: Row) {
             val r = rows[index]
             row.name = r.name; row.sub = r.sub; row.size = r.size; row.pct = r.pct
-            row.bar = r.bar; row.segs = r.segs; row.segColors = r.segColors; row.desc = r.desc
+            row.bar = r.bar; row.segs = r.segs; row.desc = r.desc
+            // Строки строятся на рабочем потоке; цвета долей (APK, данные, кэш) — здесь, при показе.
+            row.segColors = intArrayOf(C.BLUE, C.AMBER, C.MUTED)
         }
         override fun click(index: Int) {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

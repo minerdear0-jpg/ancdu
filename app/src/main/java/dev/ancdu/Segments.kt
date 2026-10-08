@@ -1,7 +1,7 @@
 package dev.ancdu
 
-/** [label] — ресурс подписи. */
-data class Seg(val label: Int, val bytes: Long, val color: Int)
+/** [label] — ресурс подписи; [role] — роль цвета заливки (цвет — на главном потоке, при показе). */
+data class Seg(val label: Int, val bytes: Long, val role: Role)
 
 object Segments {
     /**
@@ -16,13 +16,13 @@ object Segments {
         val known = video + image + audio + apps + other
         val system = (used - known).coerceAtLeast(0)
         return listOf(
-            Seg(R.string.seg_video, video, C.AMBER),
-            Seg(R.string.seg_photo, image, C.BLUE),
-            Seg(R.string.seg_audio, audio, C.AUDIO_FILL),
-            Seg(R.string.seg_apps, apps, C.AMBER_DIM),
-            Seg(R.string.seg_other, other, C.MUTED),
-            Seg(R.string.seg_system, system, C.FRAME),
-            Seg(R.string.seg_free, free.coerceAtLeast(0), C.FREE),
+            Seg(R.string.seg_video, video, Role.AMBER),
+            Seg(R.string.seg_photo, image, Role.BLUE),
+            Seg(R.string.seg_audio, audio, Role.AUDIO_FILL),
+            Seg(R.string.seg_apps, apps, Role.AMBER_DIM),
+            Seg(R.string.seg_other, other, Role.MUTED),
+            Seg(R.string.seg_system, system, Role.FRAME),
+            Seg(R.string.seg_free, free.coerceAtLeast(0), Role.FREE),
         )
     }
 }

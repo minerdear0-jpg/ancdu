@@ -150,10 +150,12 @@ class StorageCard(private val a: MainActivity) {
     fun showSegs(segs: List<Seg>) {
         val used = segs.filter { it.label != R.string.seg_free && it.bytes > 0 }.sortedByDescending { it.bytes }
         cats.visibility = if (used.isEmpty()) View.GONE else View.VISIBLE
-        catBar.segs = used
+        // Сегменты посчитаны на рабочем потоке с ролями; цвета — здесь, в палитре этого экрана.
+        val colors = IntArray(used.size) { used[it].role.color() }
+        catBar.show(used, colors)
         catLegend.removeAllViews()
-        for (s in used) catLegend.addView(a.hbox(5).apply {
-            addView(swatch(s.color))
+        for ((k, s) in used.withIndex()) catLegend.addView(a.hbox(5).apply {
+            addView(swatch(colors[k]))
             addView(a.label(t.s(s.label), 12f, C.MUTED))
             addView(a.label(Fmt.size(s.bytes, t), 12f, C.TEXT, mono = true))
         })
