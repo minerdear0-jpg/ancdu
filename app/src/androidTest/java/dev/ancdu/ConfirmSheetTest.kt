@@ -98,6 +98,32 @@ class ConfirmSheetTest {
         assertEquals(1, oks)
     }
 
+    /** Сообщение с одной кнопкой: её нажатие — TAP (не BACK), действие — ровно один раз; «назад» — BACK без действия. */
+    @Test fun loneOkTapsOnce() {
+        val a = launch()
+        var oks = 0
+        var s: ConfirmSheet? = null
+        ins.runOnMainSync { s = a.alert(a.tx.s(R.string.delete_cancelled_title), "x") { oks++ } }
+        sheet = s
+        assertTrue(waitFor { s!!.isShowing })
+        ins.runOnMainSync {
+            assertEquals(null, s!!.okButton)
+            assertTrue(s!!.cancelButton.performClick())
+            assertEquals(Cue.TAP, Feedback.lastCue)
+            s!!.cancelButton.performClick()
+        }
+        assertTrue(waitFor { !s!!.isShowing })
+        assertEquals(1, oks)
+        var s2: ConfirmSheet? = null
+        ins.runOnMainSync { s2 = a.alert(a.tx.s(R.string.delete_cancelled_title), "x") { oks++ } }
+        sheet = s2
+        assertTrue(waitFor { s2!!.isShowing })
+        ins.runOnMainSync { s2!!.cancel() }
+        assertTrue(waitFor { !s2!!.isShowing })
+        assertEquals(Cue.BACK, Feedback.lastCue)
+        assertEquals(1, oks)
+    }
+
     @Test fun bothPalettes() {
         val a = launch()
         val was = C.p

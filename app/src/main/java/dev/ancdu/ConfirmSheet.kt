@@ -32,7 +32,7 @@ import android.widget.TextView
  * DANGER_FILL и не принимает касаний первые [OPEN_GUARD_MS] после открытия (второй тап двойного
  * нажатия не подтверждает; performClick — намеренный, проходит). Фокус по умолчанию — [cancel].
  * Звуки: [openCue] при открытии (null — его уже дал вызвавший), BACK — отмена любым путём, TAP —
- * [ok]. [onDismiss] — после закрытия любым путём. Заголовок окна — [title] (TalkBack).
+ * [ok] и единственная кнопка сообщения. [onDismiss] — после закрытия любым путём. Заголовок окна — [title] (TalkBack).
  */
 class ConfirmSheet(
     private val act: Activity,
@@ -43,8 +43,11 @@ class ConfirmSheet(
     val danger: Boolean = false,
     private val openCue: Cue? = Cue.TAP,
     private val onDismiss: (() -> Unit)? = null,
-    /** Нажата сама кнопка [cancel] (не «назад» и не тап мимо): у сообщения с одной кнопкой — её действие. */
-    private val onCancelButton: () -> Unit = {},
+    /**
+     * Сообщение с одной кнопкой ([ok] null): нажата сама эта кнопка (не «назад» и не тап мимо) — TAP,
+     * лист закрывается, действие — один раз.
+     */
+    private val onLone: () -> Unit = {},
     private val onOk: () -> Unit = {},
 ) {
     val dialog = Dialog(act, R.style.Theme_Ancdu_Sheet)
@@ -75,7 +78,8 @@ class ConfirmSheet(
             addView(titleText, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = act.dp(10) })
             bodyText = act.label(body, 15f, C.MUTED)
             addView(ScrollView(act).apply { addView(bodyText) }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, 1f))
-            cancelButton = sheetButton(act, cancel, null, C.TEXT) { dialog.cancel(); onCancelButton() }
+            // Одна кнопка — подтверждение прочтения (TAP, [onLone] один раз); иначе — отмена (BACK).
+            cancelButton = sheetButton(act, cancel, null, C.TEXT) { if (ok == null) acknowledge() else dialog.cancel() }
             val okv = ok?.let { text ->
                 sheetButton(act, text, if (danger) C.DANGER_FILL else C.AMBER, if (danger) C.WHITE else C.INK) { confirm() }
             }
@@ -94,6 +98,14 @@ class ConfirmSheet(
             if (early && ev.actionMasked == MotionEvent.ACTION_UP) guardedTaps++
             early
         }
+    }
+
+    private fun acknowledge() {
+        if (okd) return
+        okd = true
+        Feedback.cue(cancelButton, Cue.TAP)
+        dialog.dismiss()
+        onLone()
     }
 
     private fun confirm() {

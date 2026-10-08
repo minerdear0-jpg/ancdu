@@ -114,7 +114,11 @@ object Feedback {
     }
 
     /** Событие [cue]; [v] — view для performHapticFeedback (null — вибрация только через Vibrator). Главный поток. */
+    /** Для тестов: последний запрошенный сигнал (и при выключенном звуке). */
+    @Volatile var lastCue: Cue? = null
+
     fun cue(v: View?, cue: Cue) {
+        lastCue = cue
         val a = app ?: return
         val e = if (mode == FxMode.OFF) FxEnv(FxMode.OFF, false, false, false, false) else env(a)
         val d = FeedbackPolicy.decide(cue, e, ticks, SystemClock.uptimeMillis())

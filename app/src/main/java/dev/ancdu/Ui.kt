@@ -387,5 +387,5 @@ fun Activity.alert(title: String, msg: String, ok: String = getString(android.R.
                    onDismiss: (() -> Unit)? = null, cue: Cue? = Cue.REFUSE, onOk: () -> Unit = {}): ConfirmSheet =
     // Одна кнопка — это [ok] на месте «Отмены» (фокус по умолчанию); её нажатие зовёт [onOk], «назад» — нет.
     if (cancel == null) ConfirmSheet(this, title, msg, ok = null, cancel = ok, openCue = cue, onDismiss = onDismiss,
-        onCancelButton = onOk).show()
+        onLone = onOk).show()
     else ConfirmSheet(this, title, msg, ok = ok, cancel = cancel, openCue = cue, onDismiss = onDismiss, onOk = onOk).show()
