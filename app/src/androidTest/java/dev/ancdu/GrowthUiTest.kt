@@ -199,9 +199,27 @@ class GrowthUiTest {
         scanIn(t)
         assertTrue(waitFor { Growth.forTree(Holder.h, Holder.gen) != null })
         val b = browser()
-        ins.runOnMainSync { b.setSort(SORT_DELTA) }
-        markAndWait()
-        assertTrue(waitFor { b.deltaShown && b.goneText == null })
+        var before = 0
+        ins.runOnMainSync {
+            b.setSort(SORT_DELTA)
+            // Плашка «Δ с …» — касаемая, 44dp; тап — лист точки отсчёта.
+            assertTrue(b.badge.isClickable)
+            assertTrue(b.badge.minHeight >= b.dp(44))
+            assertTrue(b.badge.performClick())
+            val sh = b.baselineSheet
+            assertNotNull(sh)
+            assertTrue(sh!!.dialog.isShowing)
+            val d = Growth.forTree(Holder.h, Holder.gen)!!
+            assertEquals(Freshness.date(b.tx, R.string.fmt_since_time, d.baseTime), sh.dateText.text.toString())
+            assertTrue(sh.infoText.text.toString().startsWith(b.getString(R.string.today)))
+            assertTrue(sh.markButton.height >= b.dp(56) || sh.markButton.minimumHeight >= b.dp(56))
+            before = Growth.computed
+            // «Отметить сейчас»: сразу, без подтверждения; лист закрывается.
+            assertTrue(sh.markButton.performClick())
+            assertFalse(sh.dialog.isShowing)
+        }
+        Holder.io.submit {}.get(30, TimeUnit.SECONDS)
+        assertTrue(waitFor { Growth.computed > before && b.deltaShown && b.goneText == null })
         ins.runOnMainSync {
             val r = rows(b)
             assertEquals(4, r.size)

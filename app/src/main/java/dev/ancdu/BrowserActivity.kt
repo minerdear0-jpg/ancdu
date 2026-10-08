@@ -66,6 +66,9 @@ class BrowserActivity : LangActivity() {
     /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
     var goneText: String? = null
         private set
+    /** Для тестов: открытый лист точки отсчёта. */
+    var baselineSheet: BaselineSheet? = null
+        private set
     /** Δ посчитана заново (новое дерево, удаление, «Отметить сейчас») или пропала. */
     private val onGrowth: () -> Unit = { growthChanged() }
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
@@ -476,6 +479,9 @@ class BrowserActivity : LangActivity() {
         badge = label("", 12f, C.AMBER_TEXT, mono = true).apply {
             maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER_VERTICAL
+            // В сортировке Δ — «Δ с 1 окт. 09:12»: тап открывает лист точки отсчёта (load включает касание).
+            feedbackClick { openBaseline() }
+            isClickable = false; isFocusable = false
         }
         newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
             gravity = Gravity.CENTER
@@ -646,7 +652,8 @@ class BrowserActivity : LangActivity() {
 
     /** Открыт лист удаления, карточка или панель пути: дерево не подставляется под ними (их id узлов устарели бы). */
     private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true || quickLook?.dialog?.isShowing == true ||
-        pathPanel?.dialog?.isShowing == true || errorsSheet?.dialog?.isShowing == true
+        pathPanel?.dialog?.isShowing == true || errorsSheet?.dialog?.isShowing == true ||
+        baselineSheet?.dialog?.isShowing == true
 
     /**
      * Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт.
@@ -708,6 +715,8 @@ class BrowserActivity : LangActivity() {
         badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
         badge.maxLines = if (active) 1 else BADGE_LINES
         badge.text = text
+        // Плашка Δ (касаемая) — с подсказкой «точка отсчёта»; ход скана поверх неё читается как есть.
+        badge.contentDescription = if (deltaShown && text == sourceBadge) txt.s(R.string.badge_delta_desc, text) else null
     }
 
     /** Обновлённое дерево готово: подставить (путь сохраняется) и показать итог запроса [r]. */
@@ -818,6 +827,7 @@ class BrowserActivity : LangActivity() {
         // Строки панели пути и листа ошибок — узлы старого дерева.
         pathPanel?.dismiss(); pathPanel = null
         errorsSheet?.dismiss(); errorsSheet = null
+        baselineSheet?.dismiss(); baselineSheet = null
         list.source = null
         promoting = true
         try { Holder.promote() } finally { promoting = false }
@@ -880,6 +890,7 @@ class BrowserActivity : LangActivity() {
         sheet?.dismiss(); sheet = null
         pathPanel?.dismiss(); pathPanel = null
         errorsSheet?.dismiss(); errorsSheet = null
+        baselineSheet?.dismiss(); baselineSheet = null
         quickLook?.dismiss(); quickLook = null
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
@@ -986,7 +997,9 @@ class BrowserActivity : LangActivity() {
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
         sourceBadge = if (deltaShown && d != null) GrowthText.badge(txt, d.baseTime) else Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
-
+        // Плашка Δ — касаемая (лист точки отсчёта), 44dp; иначе — просто текст.
+        badge.isClickable = deltaShown; badge.isFocusable = deltaShown
+        badge.minHeight = if (deltaShown) dp(44) else 0
         if (scanState == ScanState.NONE) setBadge(sourceBadge, active = false, polite = false)
         hint = if (showHint) txt.s(R.string.browser_hint) else ""
         setFooter(idleFooter())
@@ -1018,6 +1031,16 @@ class BrowserActivity : LangActivity() {
     private fun growthChanged() {
         if (h == 0L || busy || isFinishing || isDestroyed || !::list.isInitialized || list.source == null) return
         if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else renderChips()
+    }
+
+    /** Тап по плашке «Δ с …»: лист точки отсчёта (дата, возраст, размер; «Отметить сейчас»). */
+    fun openBaseline() {
+        val d = delta
+        if (busy || h == 0L || !deltaShown || d == null) return
+        baselineSheet?.dismiss()
+        baselineSheet = BaselineSheet(this, d.baseTime, d.baseBytes,
+            onMark = { baselineSheet?.dismiss(); Growth.markNow(this) },
+            onClose = { refreshPending() }).also { it.show() }
     }
 
     private fun samePath(a: List<ByteArray>, b: List<ByteArray>): Boolean =
