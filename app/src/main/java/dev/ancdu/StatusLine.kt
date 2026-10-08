@@ -82,15 +82,12 @@ object StatusLine {
 }
 
 /**
- * Чистый Kotlin: сколько из прерванного удаления — единственное место выбора «размер или число».
- * Одиночное: размер «4,8 из 10,3 ГиБ» (или «10,3 ГиБ»). Группа: число объектов «320 из 1 204»
- * (или «1 204 объекта») — предварительный выбор контроллера; сменить на размер — [GROUP_BY_COUNT].
+ * Чистый Kotlin: сколько из прерванного удаления. Одиночное: размер «4,8 из 10,3 ГиБ» (или «10,3 ГиБ»).
+ * Группа: число объектов «320 из 1 204» (или «1 204 объекта») — решение пользователя (2026-10-08).
  */
 object InterruptedAmount {
-    const val GROUP_BY_COUNT = true
-
     fun text(t: Txt, d: InterruptedDelete): String = when {
-        d.group && GROUP_BY_COUNT -> d.done?.let {
+        d.group -> d.done?.let {
             t.s(R.string.size_of, Fmt.count(it.toLong(), t.locale), Fmt.count(d.count.toLong(), t.locale))
         } ?: GroupSheet.objects(t, d.count)
         else -> d.freed?.let { Fmt.sizeOf(it, d.disk, t) } ?: Fmt.size(d.disk, t)

@@ -91,7 +91,7 @@ class StatusLineTest {
 
     /**
      * A group start without an end: the folder and the OBJECT count — «320 из 1 204» once the
-     * survivors are counted, else «1 204 объекта» (controller's provisional choice; one formatter).
+     * survivors are counted, else «1 204 объекта» (the user's decision, 2026-10-08; one formatter).
      */
     @Test fun interruptedGroup() {
         val g = InterruptedDelete(9, Scans.STORAGE, false, listOf("DCIM".toByteArray(), ".thumbnails".toByteArray()), true,
