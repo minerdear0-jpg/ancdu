@@ -342,11 +342,11 @@ class BrowserSelection(private val a: BrowserActivity) {
             GroupItem(name = a.nameOf(nd), dir = dir, disk = inf[4 * j], apparent = inf[4 * j + 1],
                 items = inf[4 * j + 2], flags = flags, owner = Owner.packageOf(path),
                 block = block, fast = a.fastAllowed(path), tag = a.tagOf(path, flags, block),
-                peek = if (dir) null else a.peekInfo(a.nameOf(nd), path, a.currentPath, inf[4 * j], flags), node = nd)
+                peek = if (dir) null else a.previews.peekInfo(a.nameOf(nd), path, a.currentPath, inf[4 * j], flags), node = nd)
         }
         val (p, g) = GroupSheet.preview(a.txt, items, a.currentPath, a.packageName, Holder.viaRoot, Holder.kind,
             if (Holder.kind == Kind.CACHE) Freshness.date(a.txt, R.string.fmt_day_time, Holder.time) else null, Root.state, gone,
-            contact = { a.contactSheet(handle, it.node, Native.str(Native.path(handle, it.node))) })
+            contact = { a.previews.contactSheet(handle, it.node, Native.str(Native.path(handle, it.node))) })
         a.sheet = DeleteSheet(a, p, onClose = { a.refreshPending() }, group = g) { fast ->
             startGroup(handle, folder, keys, fast)
         }.also { it.show() }

@@ -17,7 +17,6 @@ import android.view.View
 import android.view.animation.AnimationUtils
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.webkit.MimeTypeMap
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Button
@@ -100,9 +99,10 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: открытый лист удаления. */
     var sheet: DeleteSheet? = null
         internal set
+    /** Карточка быстрого просмотра и превью листа удаления. */
+    internal val previews = BrowserPreviews(this)
     /** Для тестов: открытая карточка быстрого просмотра. */
-    var quickLook: QuickLook? = null
-        private set
+    val quickLook get() = previews.quickLook
     private val scrollAt = HashMap<Int, Int>()
     /** Заголовок: имя текущей папки (на корне — PathText.rootTitle). */
     lateinit var title: TextView
@@ -196,7 +196,7 @@ class BrowserActivity : LangActivity() {
     private var showHint = true
 
     /** Режим выбора в одной папке, панель выбора и удаление группы. */
-    private val sel = BrowserSelection(this)
+    internal val sel = BrowserSelection(this)
     val selection get() = sel.selection
     /** Панель выбора внизу (вместо подвала): ✕, итог и число, «ВСЕ»/«НИЧЕГО», «УДАЛИТЬ…». */
     val selBar get() = sel.selBar
@@ -363,7 +363,7 @@ class BrowserActivity : LangActivity() {
             // В режиме выбора тап выбирает (и каталог: вглубь нельзя).
             if (selection.active) { sel.toggleRow(index); return }
             // Файл — карточка быстрого просмотра; долгое нажатие — режим выбора.
-            if (info[4 * index + 3].toInt() and F_DIR == 0) { openQuickLook(kids[index], value(index), info[4 * index + 3].toInt()); return }
+            if (info[4 * index + 3].toInt() and F_DIR == 0) { previews.openQuickLook(kids[index], value(index), info[4 * index + 3].toInt()); return }
             scrollAt[node] = list.scroll
             load(kids[index], 0, dir = 1)
         }
@@ -371,7 +371,7 @@ class BrowserActivity : LangActivity() {
             if (busy || index >= n) return
             if (!selection.active) { sel.enterSelection(index); return }
             val flags = info[4 * index + 3].toInt()
-            if (flags and F_DIR == 0) openQuickLook(kids[index], value(index), flags) else sel.toggleRow(index)
+            if (flags and F_DIR == 0) previews.openQuickLook(kids[index], value(index), flags) else sel.toggleRow(index)
         }
         // В режиме выбора звук даёт сам выбор: tick — выбран, tock — снят, refuse — запрет.
         override fun clickCue(index: Int): Cue? = if (selection.active || index >= n) null else Cue.TAP
@@ -688,7 +688,7 @@ class BrowserActivity : LangActivity() {
         val size = value(i)
         val handle = h
         // Карточка — после первого кадра экрана (окно Activity уже на месте).
-        ui.post { if (!isFinishing && !busy && h == handle && h != 0L) openQuickLook(target, size, flags) }
+        ui.post { if (!isFinishing && !busy && h == handle && h != 0L) previews.openQuickLook(target, size, flags) }
     }
 
     /** Узел по байтам имён от корня в дереве [h] (файл или каталог). */
@@ -776,7 +776,7 @@ class BrowserActivity : LangActivity() {
     override fun onPause() {
         super.onPause()
         // Плеер карточки не играет в фоне.
-        quickLook?.pause()
+        previews.pause()
         sheet?.pause()
         // «Назад»: Main.onResume идёт раньше нашего onDestroy — закрепление снимается здесь.
         if (isFinishing) unpin()
@@ -799,7 +799,7 @@ class BrowserActivity : LangActivity() {
         errorsSheet?.dismiss(); errorsSheet = null
         deltaLevel.dispose()
         sel.dispose()
-        quickLook?.dismiss(); quickLook = null
+        previews.dispose()
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
     }
@@ -1091,29 +1091,6 @@ class BrowserActivity : LangActivity() {
     fun askDelete(i: Int) { if (!busy && i in 0 until n) ask(kids[i]) }
 
     /**
-     * Карточка файла [target] дерева [h] ([size] — размер в показанном режиме). «Удалить…» открывает
-     * обычный лист удаления того же узла, если дерево за это время не сменилось.
-     */
-    private fun openQuickLook(target: Int, size: Long, flags: Int) {
-        sheet?.dismiss()
-        quickLook?.dismiss()
-        cancelAsk()
-        val handle = h
-        val path = Native.str(Native.path(handle, target))
-        val info = QuickLookInfo(name = nameOf(target), path = path,
-            parent = Native.str(Native.path(handle, Native.parent(handle, target))), size = size,
-            owner = Owner.packageOf(path), rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName), flags = flags)
-        // «ВЫБРАТЬ»: вне выбора — войти в него с этим файлом, в выборе — переключить файл.
-        val selected = selection.active && selection.contains(target)
-        // Закрыта карточка — подставить дерево, если оно пришло, пока она была открыта.
-        quickLook = QuickLook(this, info, onClose = { refreshPending() },
-            selectLabel = txt.s(if (selected) R.string.sel_deselect else R.string.ql_select),
-            onSelect = { if (!busy && h == handle && !isFinishing) sel.selectFromCard(target) }) {
-            if (!busy && h == handle && !isFinishing) ask(target, fromCard = true)
-        }.also { it.show() }
-    }
-
-    /**
      * Лист удаления узла [target]. Главный поток. Удаляется только из свежего дерева: ждёт более
      * новое — подставляется сразу (без скана), узел ищется в нём по байтам имён; каталог кэша или
      * индекса — экран сам пересканирует корень в том же режиме su, лист откроет [refreshPending].
@@ -1146,85 +1123,10 @@ class BrowserActivity : LangActivity() {
         val handle = h
         sheet?.dismiss()
         // Закрыт лист — подставить дерево, если оно пришло, пока лист был открыт.
-        sheet = DeleteSheet(this, preview(handle, target, nameOf(target)), onClose = { refreshPending() },
+        sheet = DeleteSheet(this, previews.preview(handle, target, nameOf(target)), onClose = { refreshPending() },
             fromCard = fromCard) { fast ->
             startDelete(handle, target, fast)
         }.also { it.show() }
-    }
-
-    private fun preview(handle: Long, target: Int, name: String): DeletePreview {
-        val path = Native.str(Native.path(handle, target))
-        val self = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }
-        val flags = self[3].toInt()
-        val dir = flags and F_DIR != 0
-        var top = emptyList<Pair<String, Long>>()
-        var topTags = emptyList<TagText?>()
-        var topPeek = emptyList<QuickLookInfo?>()
-        var topContact = emptyList<List<QuickLookInfo>>()
-        var more = 0
-        if (dir) {
-            val ch = IntArray(Native.childCount(handle, target))
-            val cn = maxOf(0, Native.children(handle, target, SORT_SIZE, false, ch))
-            val k = minOf(cn, 3)
-            if (k > 0) {
-                val ci = LongArray(4 * k).also { Native.nodeInfo(handle, ch, k, it) }
-                top = (0 until k).map { j ->
-                    val nm = Native.str(Native.name(handle, ch[j]))
-                    (if (ci[4 * j + 3].toInt() and F_DIR != 0) "$nm/" else nm) to ci[4 * j]
-                }
-                val paths = (0 until k).map { j -> Native.str(Native.path(handle, ch[j])) }
-                topTags = (0 until k).map { j ->
-                    val cf = ci[4 * j + 3].toInt()
-                    tagOf(paths[j], cf, blockReason(handle, ch[j], paths[j]))
-                }
-                topPeek = (0 until k).map { j ->
-                    val cf = ci[4 * j + 3].toInt()
-                    if (cf and F_DIR != 0) null
-                    else peekInfo(Native.str(Native.name(handle, ch[j])), paths[j], path, ci[4 * j], cf)
-                }
-                topContact = (0 until k).map { j ->
-                    if (ci[4 * j + 3].toInt() and F_DIR != 0) contactSheet(handle, ch[j], paths[j]) else emptyList()
-                }
-            }
-            more = cn - k
-        }
-        val block = blockReason(handle, target, path)
-        return DeletePreview(
-            name = name, path = path, dir = dir, disk = self[0], apparent = self[1], items = self[2],
-            flags = flags, top = top, more = more, owner = Owner.packageOf(path), viaRoot = Holder.viaRoot,
-            block = block, kind = Holder.kind,
-            cacheTime = if (Holder.kind == Kind.CACHE) Freshness.date(txt, R.string.fmt_day_time, Holder.time) else null,
-            fast = fastAllowed(path), root = Root.state, tag = tagOf(path, flags, block), topTags = topTags,
-            topPeek = topPeek, topContact = topContact,
-            selfContact = if (dir) contactSheet(handle, target, path) else emptyList(),
-            selfPeek = if (dir) null else peekInfo(name, path,
-                Native.str(Native.path(handle, Native.parent(handle, target))), self[0], flags))
-    }
-
-    /** Файл [path] (папка [parent]) для превью листа и карточки поверх него. */
-    internal fun peekInfo(name: String, path: String, parent: String, size: Long, flags: Int) =
-        QuickLookInfo(name = name, path = path, parent = parent, size = size, owner = Owner.packageOf(path),
-            rootOnly = Peek.rootOnly(path, Holder.viaRoot, packageName), flags = flags)
-
-    /**
-     * «Контактный лист» каталога [dir] ([path]): до 4 крупнейших картинок и видео поддерева
-     * ([ContactSheet]); путь только для root — пусто (такие пути не смотрим).
-     */
-    internal fun contactSheet(handle: Long, dir: Int, path: String): List<QuickLookInfo> {
-        if (dir < 0 || Peek.rootOnly(path, Holder.viaRoot, packageName)) return emptyList()
-        val picked = ContactSheet.pick(dir, { nd ->
-            // JNI требует массив на всех детей (меньший — отказ, -1); порядок SORT_SIZE по диску —
-            // готовый, так что сведения читаем только о первых KIDS_CAP — крупнейших.
-            val ch = IntArray(Native.childCount(handle, nd))
-            val n = minOf(maxOf(0, Native.children(handle, nd, SORT_SIZE, false, ch)), ContactSheet.KIDS_CAP)
-            val inf = LongArray(4 * maxOf(n, 1)).also { if (n > 0) Native.nodeInfo(handle, ch, n, it) }
-            (0 until n).map { ContactSheet.Kid(ch[it], inf[4 * it], inf[4 * it + 3].toInt()) }
-        }, { nd -> Native.str(Native.name(handle, nd)) }, { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) })
-        return picked.map { kid ->
-            val fp = Native.str(Native.path(handle, kid.id))
-            peekInfo(Native.str(Native.name(handle, kid.id)), fp,
-                Native.str(Native.path(handle, Native.parent(handle, kid.id))), kid.disk, kid.flags)
-        }.filterNot { it.rootOnly }
     }
 
     /** Главный поток, [handle] — живой дескриптор экрана. null — узел можно удалять. */
