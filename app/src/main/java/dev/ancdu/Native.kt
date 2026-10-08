@@ -16,6 +16,9 @@ const val F_SYMLINK = 16
 const val F_DELETED = 32
 const val SRC_SCAN = 0
 const val SRC_INDEX = 1
+const val DELTA_SAME = 0
+const val DELTA_NEW = 1
+const val DELTA_DEAD = 2
 
 /** Мост к нативному ядру. Дескриптор 0 — ошибка (код в err[0]). Имена и пути — байты.
  *  Потоки: чтения дерева — с главного потока, delete/saveCache/free — на Holder.io, никогда параллельно на одном h.
@@ -59,6 +62,15 @@ object Native {
     fun errorNodesWritten(total: Int, size: Int): Int = minOf(maxOf(total, 0), size, ERROR_NODES_MAX)
     /** Буфер [errorNodes] — на стеке ядра, не больше стольких id за вызов. */
     const val ERROR_NODES_MAX = 256
+    /** Узлов в дереве, с удалёнными (длина массивов [delta]); 0 — дерева нет. */
+    @JvmStatic external fun nodeCount(h: Long): Int
+    /** «Что выросло»: Δ дерева против файла базы [base] — в [dDisk], [dApp] и [st] (DELTA_*), не короче
+     *  [nodeCount]. Возвращает «ушло» плоско: [node, count, disk, apparent]…; null — ошибка (err[0]:
+     *  -ENOEXEC — база другой версии, -EXDEV — другого корня, -EINVAL — негодна…). Только чтение, на Holder.io. */
+    @JvmStatic external fun deltaBytes(h: Long, base: ByteArray, dDisk: LongArray, dApp: LongArray, st: ByteArray,
+                                       err: IntArray): LongArray?
+    fun delta(h: Long, base: String, dDisk: LongArray, dApp: LongArray, st: ByteArray, err: IntArray): LongArray? =
+        deltaBytes(h, b(base), dDisk, dApp, st, err)
     @JvmStatic external fun name(h: Long, node: Int): ByteArray
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int

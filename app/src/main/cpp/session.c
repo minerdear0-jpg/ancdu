@@ -122,6 +122,14 @@ int sess_save_cache(session *s, const char *path) {
   return a ? arena_save_file(a, path) : -EBUSY;
 }
 
+int sess_delta(session *s, const char *base, int64_t *d_disk, int64_t *d_app, uint8_t *st,
+               delta_gone **gone, uint32_t *gone_n) {
+  *gone = NULL;
+  *gone_n = 0;
+  arena *a = sess_arena(s);
+  return a ? delta_compute_file(a, base, d_disk, d_app, st, gone, gone_n) : -EBUSY;
+}
+
 void sess_progress(session *s, int64_t out[6], char *path, size_t cap) {
   int st = atomic_load_explicit(&s->state, memory_order_acquire);
   arena *a = atomic_load(&s->ap);

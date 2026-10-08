@@ -283,6 +283,65 @@ FN(jint, errorNodes)(JNIEnv *e, jclass c, jlong h, jintArray out) {
   return total > INT32_MAX ? INT32_MAX : (jint)total;
 }
 
+/* Узлов в дереве (с удалёнными): длина массивов [delta]. 0 — дерева нет. */
+FN(jint, nodeCount)(JNIEnv *e, jclass c, jlong h) {
+  (void)e; (void)c;
+  arena *a = tree(h, 0);
+  if (!a) return 0;
+  uint64_t n = atomic_load(&a->h->count);
+  return n > INT32_MAX ? 0 : (jint)n;
+}
+
+/* «Что выросло»: Δ дерева h против файла базы (sess_delta). dDisk, dApp, st — не короче nodeCount.
+ * Возвращает «ушло» плоско: [node, count, disk, apparent] на каждый каталог с ушедшим (пустой
+ * массив — ничего не ушло); NULL — ошибка, код в err[0] (-ENOEXEC — база другой версии, -EXDEV —
+ * другого корня, -EINVAL — негодна, -ENOENT, -EBUSY, -ENOMEM). Только чтение; на Holder.io. */
+FN(jlongArray, deltaBytes)(JNIEnv *e, jclass c, jlong h, jbyteArray base, jlongArray dDisk,
+                           jlongArray dApp, jbyteArray st, jintArray err) {
+  (void)c;
+  arena *a = tree(h, 0);
+  if (!a || !dDisk || !dApp || !st) { set_err(e, err, a ? -EINVAL : -EBUSY); return NULL; }
+  uint64_t n = atomic_load(&a->h->count);
+  if ((uint64_t)(*e)->GetArrayLength(e, dDisk) < n || (uint64_t)(*e)->GetArrayLength(e, dApp) < n ||
+      (uint64_t)(*e)->GetArrayLength(e, st) < n) {
+    set_err(e, err, -EINVAL);
+    return NULL;
+  }
+  int code;
+  char *p = cpath(e, base, &code);
+  if (!p) { set_err(e, err, code); return NULL; }
+  jlong *dd = (*e)->GetLongArrayElements(e, dDisk, NULL);
+  jlong *da = dd ? (*e)->GetLongArrayElements(e, dApp, NULL) : NULL;
+  jbyte *sb = da ? (*e)->GetByteArrayElements(e, st, NULL) : NULL;
+  delta_gone *g = NULL;
+  uint32_t gn = 0;
+  int r = sb ? sess_delta(SESS(h), p, (int64_t *)dd, (int64_t *)da, (uint8_t *)sb, &g, &gn) : -ENOMEM;
+  free(p);
+  int mode = r ? JNI_ABORT : 0;
+  if (sb) (*e)->ReleaseByteArrayElements(e, st, sb, mode);
+  if (da) (*e)->ReleaseLongArrayElements(e, dApp, da, mode);
+  if (dd) (*e)->ReleaseLongArrayElements(e, dDisk, dd, mode);
+  if (r) { set_err(e, err, r); return NULL; }
+  jlongArray out = gn <= INT32_MAX / 4 ? (*e)->NewLongArray(e, (jsize)gn * 4) : NULL;
+  if (out && gn) {
+    jlong *o = (*e)->GetLongArrayElements(e, out, NULL);
+    if (o) {
+      for (uint32_t i = 0; i < gn; i++) {
+        o[4 * i] = g[i].node;
+        o[4 * i + 1] = g[i].count;
+        o[4 * i + 2] = (jlong)g[i].disk;
+        o[4 * i + 3] = (jlong)g[i].apparent;
+      }
+      (*e)->ReleaseLongArrayElements(e, out, o, 0);
+    } else {
+      out = NULL;
+    }
+  }
+  free(g);
+  set_err(e, err, out ? 0 : -ENOMEM);
+  return out;
+}
+
 FN(jbyteArray, name)(JNIEnv *e, jclass c, jlong h, jint node) {
   (void)c;
   arena *a = tree(h, node);

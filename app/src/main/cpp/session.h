@@ -1,5 +1,6 @@
 #pragma once
 #include "arena.h"
+#include "delta.h"
 
 /* Сессия держит одно дерево: скан в процессе, root-скан, индекс или кэш. */
 typedef struct session session;
@@ -16,6 +17,10 @@ int sess_index_finish(session *s);
 /* *err: -ENOEXEC — кэш другой версии формата (забыть и сканировать заново), -EINVAL — негоден. */
 session *sess_open_cache(const char *path, int *err);
 int sess_save_cache(session *s, const char *path);
+/* Δ готового дерева против файла базы base (delta_compute_file); только чтение. -EBUSY — дерево
+ * не готово (идёт скан). Остальные коды и выходы — как у delta_compute_file. */
+int sess_delta(session *s, const char *base, int64_t *d_disk, int64_t *d_app, uint8_t *st,
+               delta_gone **gone, uint32_t *gone_n);
 
 /* out: [0] state ST_*, [1] files, [2] bytes, [3] errors, [4] elapsed ms,
  *      [5] 1 — root-скан идёт через memfd. path может быть NULL. */

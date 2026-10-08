@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 add_library(ancdu_core STATIC
   arena.c
   csr.c
+  delta.c
   scan.c
   index.c
   rmtree.c
