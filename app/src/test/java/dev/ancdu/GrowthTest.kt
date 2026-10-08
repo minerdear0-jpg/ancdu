@@ -104,4 +104,49 @@ class GrowthTest {
         assertEquals(10L, GrowthSort.maxAbs(longArrayOf(-10, 3, 0)))
         assertEquals(Long.MAX_VALUE, GrowthSort.maxAbs(longArrayOf(Long.MIN_VALUE)))
     }
+
+    private fun tree(vararg e: Triple<Int, Int, Pair<Long, Boolean>>): (Int) -> List<Mostly.Kid> {
+        // (родитель, узел, (Δ, каталог))
+        val by = e.groupBy { it.first }
+        return { nd -> by[nd].orEmpty().map { Mostly.Kid(it.second, it.third.first, it.third.second) } }
+    }
+
+    @Test fun mostlyPath() {
+        // Корень +100: A/ +80 (A1/ +45, A2/ +35), b +20 — A/ держит ≥50%, но ни один его ребёнок — нет.
+        val t1 = tree(Triple(0, 1, 80L to true), Triple(0, 2, 20L to false),
+            Triple(1, 3, 45L to true), Triple(1, 4, 35L to true))
+        assertEquals(listOf(1), Mostly.path(100, t1))
+        // Вглубь, пока один ребёнок держит ≥50% корня: A/ +90 → A1/ +60 → A1a/ +40 (меньше половины).
+        val t2 = tree(Triple(0, 1, 90L to true), Triple(1, 2, 60L to true), Triple(2, 3, 40L to true))
+        assertEquals(listOf(1, 2), Mostly.path(100, t2))
+        // Ровно 50% — спускаемся.
+        assertEquals(listOf(1), Mostly.path(100, tree(Triple(0, 1, 50L to true), Triple(0, 2, 50L to true))))
+        // Больше всего — файл: путь не дальше его папки.
+        assertEquals(emptyList<Int>(), Mostly.path(100, tree(Triple(0, 1, 70L to false), Triple(0, 2, 30L to true))))
+        // Сжатие: по наибольшему уменьшению.
+        assertEquals(listOf(1), Mostly.path(-100, tree(Triple(0, 1, -80L to true), Triple(0, 2, 10L to true))))
+        // Рост корня меньше роста ребёнка (другой сжался): ребёнок больше половины — спускаемся.
+        assertEquals(listOf(1), Mostly.path(10, tree(Triple(0, 1, 100L to true), Triple(0, 2, -90L to true))))
+        assertEquals(emptyList<Int>(), Mostly.path(0, t2))
+        assertEquals(emptyList<Int>(), Mostly.path(100, tree()))
+        // Предел глубины.
+        val chain = (0 until 10).map { Triple(it, it + 1, 100L to true) }.toTypedArray()
+        assertEquals(3, Mostly.path(100, tree(*chain), maxDepth = 3).size)
+    }
+
+    @Test fun homeLine() {
+        assertEquals("+2.1${N}GiB since Oct 1 · mostly Telegram/Video ›",
+            GrowthText.home(EN, (2.1 * gib).toLong(), oct1, "Telegram/Video", utc))
+        assertEquals("+2,1${N}ГиБ с 1 окт. · больше всего Telegram/Video ›",
+            GrowthText.home(RU, (2.1 * gib).toLong(), oct1, "Telegram/Video", utc))
+        assertEquals("−300,0${N}МиБ с 1 окт. ›", GrowthText.home(RU, -300 * mib, oct1, null, utc))
+        assertEquals("+5.0${N}MiB since Oct 1 ›", GrowthText.home(EN, 5 * mib, oct1, "", utc))
+        // Скрыта, если |Δ| < 1 МиБ.
+        assertEquals(false, GrowthText.homeShown(mib - 1))
+        assertEquals(false, GrowthText.homeShown(-(mib - 1)))
+        assertEquals(true, GrowthText.homeShown(mib))
+        assertEquals(true, GrowthText.homeShown(-mib))
+        assertEquals(Role.AMBER_TEXT, GrowthText.homeRole(mib))
+        assertEquals(Role.MUTED, GrowthText.homeRole(-mib))
+    }
 }

@@ -34,6 +34,12 @@ class StorageCard(private val a: MainActivity) {
     lateinit var freshTxt: TextView
         private set
     private lateinit var deltaTxt: TextView
+    /** «+2,1 ГиБ с 1 окт. · больше всего Telegram/Video ›»: Δ против точки отсчёта; тап — браузер в сортировке Δ. */
+    lateinit var growthTxt: TextView
+        private set
+    /** Для тестов: последняя показанная строка «что выросло» (null — скрыта). */
+    var growth: HomeGrowth? = null
+        private set
     private lateinit var scanLine: ScanLine
     /** Скан хранилища шёл (или ждал) при прошлом [render]: конец — по итогу именно его. */
     private var scanWas = ScanState.NONE
@@ -124,6 +130,14 @@ class StorageCard(private val a: MainActivity) {
                 isClickable = false
             }
             addView(freshTxt)
+            growthTxt = a.label("", 12f, C.AMBER_TEXT, mono = true).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                minHeight = a.dp(48)
+                visibility = View.GONE
+                isClickable = true; isFocusable = true
+                feedbackClick { growth?.let { a.openFocused(it.names, delta = true) } }
+            }
+            addView(growthTxt)
             deltaTxt = a.label("", 12f, C.MUTED, mono = true).apply { visibility = View.GONE }
             addView(deltaTxt)
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -217,6 +231,7 @@ class StorageCard(private val a: MainActivity) {
             storeArrow.setTextColor(C.AMBER_TEXT)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
+            growthTxt.visibility = View.GONE
             scanLine.hide(); scanWas = ScanState.NONE
             view.contentDescription = t.s(R.string.card_desc_need_access, t.s(R.string.card_desc))
             return
@@ -273,6 +288,20 @@ class StorageCard(private val a: MainActivity) {
         } else {
             deltaTxt.visibility = View.GONE
         }
+    }
+
+    /**
+     * Строка «что выросло» под строкой свежести (общее хранилище, есть точка отсчёта, |Δ| ≥ 1 МиБ —
+     * иначе [g] null и строки нет). Рост — AMBER_TEXT, сжатие — MUTED. Главный поток.
+     */
+    fun showGrowth(g: HomeGrowth?) {
+        growth = g
+        if (g == null || !Perms.files()) { growthTxt.visibility = View.GONE; return }
+        val text = GrowthText.home(t, g.delta, g.baseTime, g.path.ifEmpty { null })
+        growthTxt.text = text
+        growthTxt.setTextColor(GrowthText.homeRole(g.delta).color())
+        growthTxt.contentDescription = "${text.removeSuffix(" ›")}, ${t.s(R.string.growth_open_desc)}"
+        growthTxt.visibility = View.VISIBLE
     }
 
     /** «обновить ›»: скан вручную — энергосбережение и нагрев не мешают явной просьбе. */

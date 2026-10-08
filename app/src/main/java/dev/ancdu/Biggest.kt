@@ -5,7 +5,9 @@ package dev.ancdu
  * корня (для [EXTRA_FOCUS]) и метка безопасности с меткой приложения.
  */
 class BigFile(val name: String, val disk: Long, val parent: String, val names: List<ByteArray>,
-              val tag: Tag?, val tagLabel: String?)
+              val tag: Tag?, val tagLabel: String?,
+              /** Новый с точки отсчёта «что выросло» (значок NEW). */
+              val isNew: Boolean = false)
 
 /** Чистый Kotlin: тексты «крупнейших файлов» главного экрана. */
 object Biggest {
@@ -29,6 +31,8 @@ object Biggest {
         relParent(root, parent).ifEmpty { PathText.rootTitle(root, t.s(R.string.internal_storage)) }
 
     /** TalkBack: «<имя>, <размер>, в <папка>» и метка («, загрузки»). */
-    fun desc(t: Txt, name: String, size: String, parent: String, tag: Tag?, label: String? = null): String =
-        t.s(R.string.big_desc, name, size, parent) + (tag?.desc(t, label) ?: "")
+    fun desc(t: Txt, name: String, size: String, parent: String, tag: Tag?, label: String? = null,
+             isNew: Boolean = false): String =
+        t.s(R.string.big_desc, name, size, parent) + (tag?.desc(t, label) ?: "") +
+            (if (isNew) ", " + t.s(R.string.desc_new) else "")
 }

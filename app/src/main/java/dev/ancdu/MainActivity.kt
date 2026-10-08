@@ -54,6 +54,8 @@ class MainActivity : LangActivity() {
     /** Новое дерево (фоновый скан, подстановка ждущего) или конец удаления: пересчитать крупнейшие. */
     private val onTree: () -> Unit = { biggest.refresh(force = true) }
     private val onDeleted: (Int) -> Unit = { biggest.refresh(force = true) }
+    /** Δ показанного дерева посчитана заново: строка «что выросло» и значки NEW (ключ — сама Δ). */
+    private val onGrowth: () -> Unit = { biggest.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +88,7 @@ class MainActivity : LangActivity() {
         Root.addListener(onRoot)
         Holder.addSessionListener(onTree)
         Holder.addDeleteListener(onDeleted)
+        Growth.addListener(onGrowth)
         // Скан закончился, пока был открыт браузер: здесь его уже никто не держит — подставляем.
         BgScan.promoteOnMain()
         storage.gate = BgScan.maybeStart(this)
@@ -109,6 +112,7 @@ class MainActivity : LangActivity() {
         Root.removeListener(onRoot)
         Holder.removeSessionListener(onTree)
         Holder.removeDeleteListener(onDeleted)
+        Growth.removeListener(onGrowth)
         super.onPause()
     }
 
@@ -229,7 +233,7 @@ class MainActivity : LangActivity() {
      * [time] — время скана из записи «caches»: оно и становится временем дерева (Holder.time).
      * [focus] — [EXTRA_FOCUS] для браузера (файл в фокусе) или null.
      */
-    fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null) {
+    fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null, delta: Boolean = false) {
         if (opening) return
         opening = true
         val app = applicationContext
@@ -265,7 +269,10 @@ class MainActivity : LangActivity() {
                     return@runOnUiThread
                 }
                 Holder.set(h, Kind.CACHE, root, su, time)
-                startActivity(Intent(this, BrowserActivity::class.java).apply { if (focus != null) putExtra(EXTRA_FOCUS, focus) })
+                startActivity(Intent(this, BrowserActivity::class.java).apply {
+                    if (focus != null) putExtra(EXTRA_FOCUS, focus)
+                    if (delta) putExtra(EXTRA_DELTA, true)
+                })
             }
         }
     }
@@ -275,15 +282,19 @@ class MainActivity : LangActivity() {
      * корня), строка видна, карточка открыта. Дерево — как у тапа по карточке: ждущее
      * подставляется, готовое живое — сразу, иначе кэш.
      */
-    fun openFocused(names: List<ByteArray>) {
+    fun openFocused(names: List<ByteArray>, delta: Boolean = false) {
         if (Holder.deleting || opening) return
         if (BgScan.pendingStorage()) Holder.promote()
-        val focus = Focus.encode(names)
+        // [delta] — строка «что выросло»: папка «больше всего» (пусто — корень) в сортировке Δ.
+        val focus = if (names.isEmpty()) null else Focus.encode(names)
         val shown = storage.storageShown()
-        val browser = Intent(this, BrowserActivity::class.java).putExtra(EXTRA_FOCUS, focus)
+        val browser = Intent(this, BrowserActivity::class.java).apply {
+            if (focus != null) putExtra(EXTRA_FOCUS, focus)
+            if (delta) putExtra(EXTRA_DELTA, true)
+        }
         if (shown && Holder.kind != Kind.INDEX) { startActivity(browser); return }
         val meta = Scans.meta(this, Scans.STORAGE, false)
-        if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus); return }
+        if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus, delta); return }
         if (shown) { startActivity(browser); return }
         // Ни дерева, ни записи кэша (её забыли, пока строки были на экране): строки — заново, и сказать.
         biggest.refresh(force = true)

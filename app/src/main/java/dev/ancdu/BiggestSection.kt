@@ -67,7 +67,9 @@ class BiggestSection(private val a: MainActivity) {
         val self = a.packageName
         val txt = t
         if (a.storage.storageShown()) {
-            val k = "tree:${Holder.gen}:${Holder.deletes}"
+            // Δ дерева посчитана Growth заранее (на io); новая Δ — новый ключ.
+            val d = Growth.forTree(Holder.h, Holder.gen)
+            val k = "tree:${Holder.gen}:${Holder.deletes}:${d?.let { System.identityHashCode(it) }}"
             if (!force && k == key) return
             key = k
             loads++
@@ -76,24 +78,33 @@ class BiggestSection(private val a: MainActivity) {
             val kind = Holder.kind
             val time = Holder.time
             Holder.io.execute {
-                val r = runCatching { load(app, txt, h, self) }.getOrDefault(emptyList())
-                a.runOnUiThread { show(my, r, kind, time) }
+                val r = runCatching { load(app, txt, h, self, d) }.getOrDefault(emptyList())
+                val g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
+                a.runOnUiThread { show(my, r, kind, time, g) }
             }
             return
         }
         val meta = Scans.meta(a, Scans.STORAGE, false) ?: run { hide(); return }
         val file = Holder.cacheFile(a, Scans.STORAGE, false)
-        val k = "cache:${meta.time}:${file.length()}:${file.lastModified()}"
+        val base = Baseline.files(a, Scans.STORAGE, false)
+        val k = "cache:${meta.time}:${file.length()}:${file.lastModified()}:${base.a.length()}:${base.a.lastModified()}"
         if (!force && k == key) return
         key = k
         loads++
         val my = ++seq
         Holder.io.execute {
+            var g: HomeGrowth? = null
             val r = runCatching {
                 val h = Native.openCache(file.path, IntArray(1))
-                if (h == 0L) emptyList() else try { load(app, txt, h, self) } finally { Native.free(h) }
+                if (h == 0L) emptyList() else try {
+                    // Кэш открыт только на этот ответ: Δ против точки отсчёта — здесь же, на io.
+                    val d = runCatching { Growth.compute(h, 0L, base) }.getOrNull()
+                    g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
+                    load(app, txt, h, self, d)
+                } finally { Native.free(h) }
             }.getOrDefault(emptyList())
-            a.runOnUiThread { show(my, r, Kind.CACHE, meta.time) }
+            val gg = g
+            a.runOnUiThread { show(my, r, Kind.CACHE, meta.time, gg) }
         }
     }
 
@@ -101,6 +112,7 @@ class BiggestSection(private val a: MainActivity) {
     private fun hide() {
         key = null
         clear()
+        a.storage.showGrowth(null)
     }
 
     /** Секция пуста (ответ io: файлов нет); ключ остаётся — тот же источник не перечитывается. */
@@ -111,9 +123,10 @@ class BiggestSection(private val a: MainActivity) {
         box.visibility = View.GONE
     }
 
-    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long) {
+    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long, growth: HomeGrowth?) {
         if (my != seq || a.isDestroyed) return
         shown++
+        a.storage.showGrowth(growth)
         if (r.isEmpty()) { clear(); return }
         rows = r
         list.removeAllViews(); rowViews.clear()
@@ -138,7 +151,7 @@ class BiggestSection(private val a: MainActivity) {
          * На Holder.io: крупнейшие файлы дерева [h] (только чтения: name, path, parent, nodeInfo).
          * Метки — как в браузере ([Tag.of]; корень дерева — «хранилище»).
          */
-        fun load(ctx: Context, t: Txt, h: Long, self: String): List<BigFile> {
+        fun load(ctx: Context, t: Txt, h: Long, self: String, d: Delta? = null): List<BigFile> {
             val ids = IntArray(Biggest.K)
             val k = Native.topFiles(h, ids)
             if (k <= 0) return emptyList()
@@ -156,7 +169,7 @@ class BiggestSection(private val a: MainActivity) {
                 val block = DeletePolicy.blockReason(path, false, parent == 0, root, flags, Kind.SCAN)
                 val tag = Tag.of(path, flags, Owner.packageOf(path), block, root, self)
                 BigFile(Native.str(Native.name(h, nd)), inf[4 * i], Biggest.parentText(t, root, Native.str(Native.path(h, parent))),
-                    names, tag, tag?.pkg?.let { AppLabels.get(ctx, it) })
+                    names, tag, tag?.pkg?.let { AppLabels.get(ctx, it) }, isNew = d?.isNew(nd) == true)
             }
         }
     }
@@ -176,6 +189,8 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
     private val fitPaint = TextPaint(sizePaint)
     private val small = TextPaint(mono).apply { textSize = sp(12f); color = C.MUTED }
     private val tagPaint = TextPaint(small)
+    private val badgePaint = TextPaint(small).apply { textSize = sp(10f); color = C.TEXT }
+    private val frame = Paint().apply { color = C.FRAME }
     private val gap = ctx.dp(10)
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val compact = resources.configuration.fontScale > 1.3f
@@ -187,6 +202,8 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
     private val name = Bidi.visible(file.name)
     private val parent = Bidi.visible(file.parent)
     private val tag = file.tag?.resolve(t, file.tagLabel)
+    /** Значок «NEW»: файл новый с точки отсчёта; null — нет. */
+    val badge: String? = if (file.isNew) t.s(R.string.new_badge) else null
     /** Для тестов: показанная метка (после [Tag.fit]) или null. */
     var tagShown: String? = null
         private set
@@ -194,7 +211,7 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
     init {
         background = ctx.pressable(C.BG)
         isClickable = true; isFocusable = true
-        contentDescription = Biggest.desc(t, file.name, size, file.parent, file.tag, file.tagLabel)
+        contentDescription = Biggest.desc(t, file.name, size, file.parent, file.tag, file.tagLabel, file.isNew)
     }
 
     override fun onMeasure(ws: Int, hs: Int) =
@@ -214,11 +231,27 @@ class BigRow(ctx: Context, val file: BigFile, t: Txt) : View(ctx) {
         else { fitPaint.textSize = sizePaint.textSize * col / sw; c.drawText(size, 0f, base, fitPaint) }
         val x = (col + gap).toFloat()
         var avail = maxOf(w - x, 0f)
+        // «NEW» в контуре FRAME — у правого края, метка — левее.
+        var right = w.toFloat()
+        badge?.let { b ->
+            val one = context.dp(1).toFloat(); val padX = context.dp(4).toFloat()
+            val fm = badgePaint.fontMetricsInt
+            val th = (fm.descent - fm.ascent).toFloat()
+            val bw = badgePaint.measureText(b) + 2 * padX
+            val bh = th + context.dp(2)
+            val l = right - bw
+            val tp = base + mono.fontMetricsInt.ascent / 2f - bh / 2f + mono.fontMetricsInt.descent / 2f
+            c.drawText(b, l + padX, tp + (bh - th) / 2f - fm.ascent, badgePaint)
+            c.drawRect(l, tp, l + bw, tp + one, frame); c.drawRect(l, tp + bh - one, l + bw, tp + bh, frame)
+            c.drawRect(l, tp, l + one, tp + bh, frame); c.drawRect(l + bw - one, tp, l + bw, tp + bh, frame)
+            right = l - gap
+            avail = maxOf(avail - bw - gap, 0f)
+        }
         tagShown = tag?.let { Tag.fit(name, it.text, avail, gap.toFloat(), mono::measureText, tagPaint::measureText) }
         tagShown?.let {
             val tw = tagPaint.measureText(it)
             tagPaint.color = tag!!.color
-            c.drawText(it, w - tw, base, tagPaint)
+            c.drawText(it, right - tw, base, tagPaint)
             avail = maxOf(avail - tw - gap, 0f)
         }
         c.drawText(Ellipsis.stemKeepExt(name, avail, mono::measureText), x, base, mono)

@@ -76,6 +76,19 @@ object GrowthText {
     /** [gone] или null — ничего не ушло (строки нет). */
     fun goneOrNull(t: Txt, count: Int, bytes: Long): String? = if (count <= 0) null else gone(t, count, bytes)
 
+    private const val MIB = 1L shl 20
+
+    /** Строка главного экрана видна: |Δ корня| не меньше 1 МиБ. */
+    fun homeShown(delta: Long): Boolean = delta >= MIB || delta <= -MIB
+
+    /** Цвет строки главного экрана: рост — AMBER_TEXT (касаемая, как «обновить ›»), сжатие — MUTED. */
+    fun homeRole(delta: Long): Role = if (delta < 0) Role.MUTED else Role.AMBER_TEXT
+
+    /** «+2,1 ГиБ с 1 окт. · больше всего Telegram/Video ›»; без [mostly] — «+2,1 ГиБ с 1 окт. ›». */
+    fun home(t: Txt, delta: Long, base: Long, mostly: String?, tz: TimeZone = TimeZone.getDefault()): String =
+        if (mostly.isNullOrEmpty()) t.s(R.string.growth_home_plain, signed(delta, t), since(t, base, tz))
+        else t.s(R.string.growth_home, signed(delta, t), since(t, base, tz), mostly)
+
     /** TalkBack строки в сортировке Δ: «имя, +1 МиБ с 1 окт., сейчас 3 МиБ[, каталог][, новое]». */
     fun rowDesc(t: Txt, name: String, delta: Long, size: Long, base: Long, isNew: Boolean, dir: Boolean,
                 tz: TimeZone = TimeZone.getDefault()): String = buildString {
@@ -86,6 +99,36 @@ object GrowthText {
         if (isNew) { append(", "); append(t.s(R.string.desc_new)) }
     }
 }
+
+/**
+ * Чистый Kotlin: «больше всего …» — самый глубокий каталог на пути наибольшей Δ, у которого Δ ≥ 50%
+ * Δ корня: от корня вниз, пока ребёнок с наибольшей Δ (по знаку корня) — каталог и держит не меньше
+ * половины. Пусто — Δ корня 0 или половину держит файл / никто.
+ */
+object Mostly {
+    class Kid(val node: Int, val delta: Long, val dir: Boolean)
+
+    /** Узлы пути от корня (без него); [kids] — дети узла с их Δ. Не глубже [maxDepth]. */
+    fun path(rootDelta: Long, kids: (Int) -> List<Kid>, maxDepth: Int = 256): List<Int> {
+        if (rootDelta == 0L) return emptyList()
+        val sign = if (rootDelta > 0) 1L else -1L
+        val whole = if (rootDelta == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(rootDelta)
+        val out = ArrayList<Int>()
+        var cur = 0
+        while (out.size < maxDepth) {
+            val best = kids(cur).maxByOrNull { it.delta * sign } ?: break
+            val part = best.delta * sign
+            // part ≥ whole / 2 без переполнения: part ≥ whole − part.
+            if (!best.dir || part <= 0 || part < whole - part) break
+            out += best.node
+            cur = best.node
+        }
+        return out
+    }
+}
+
+/** Строка «что выросло» главного экрана: Δ корня, время точки отсчёта, путь «больше всего» (байты имён и текст). */
+class HomeGrowth(val delta: Long, val baseTime: Long, val names: List<ByteArray>, val path: String)
 
 /** Чистый Kotlin: порядок и полоса в сортировке Δ. */
 object GrowthSort {
@@ -226,6 +269,23 @@ object Growth {
         }
         Log.i("ancdu", "delta: $n nodes in $ms ms")
         return Delta(h, gen, dd, da, st, Delta.goneMap(flat), files.time(), files.a.length(), ms)
+    }
+
+    /**
+     * На Holder.io: строка главного экрана по Δ [d] дерева [h] (на диске) — null, если |Δ| < 1 МиБ.
+     * Только чтения дерева: дети каталогов на пути «больше всего» и их имена.
+     */
+    fun home(h: Long, d: Delta): HomeGrowth? {
+        val root = d.of(0, false)
+        if (!GrowthText.homeShown(root)) return null
+        val path = Mostly.path(root, { nd ->
+            val c = IntArray(Native.childCount(h, nd))
+            val k = maxOf(0, Native.children(h, nd, SORT_SIZE, false, c))
+            val inf = LongArray(4 * maxOf(k, 1)).also { if (k > 0) Native.nodeInfo(h, c, k, it) }
+            (0 until k).filter { d.known(c[it]) }.map { Mostly.Kid(c[it], d.of(c[it], false), inf[4 * it + 3].toInt() and F_DIR != 0) }
+        })
+        val names = path.map { Native.name(h, it) }
+        return HomeGrowth(root, d.baseTime, names, names.joinToString("/") { Bidi.visible(Native.str(it)) })
     }
 
     private const val EINVAL = 22

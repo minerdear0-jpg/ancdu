@@ -229,4 +229,67 @@ class GrowthUiTest {
             }
         }
     }
+
+    private fun mainActivity(): MainActivity =
+        (ins.startActivitySync(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity)
+            .also { opened += it; ins.waitForIdleSync() }
+
+    /**
+     * Главный экран: дерево песочницы — как дерево общего хранилища (ключ STORAGE, точка отсчёта — в
+     * песочнице). Без точки отсчёта строки нет; после роста в Telegram/Video — «+… с … · больше всего
+     * Telegram/Video ›», у нового крупнейшего файла — NEW; тап — браузер в Telegram/Video в сортировке Δ.
+     */
+    @Test fun homeShowsGrowthLineAndTapLandsOnMostly() {
+        val t = inBox("store").apply { assertTrue(mkdirs()) }
+        inBox("store/Telegram/Video").mkdirs()
+        inBox("store/Telegram/Video/a.bin").writeBytes(ByteArray(100_000))
+        inBox("store/Other").mkdirs()
+        inBox("store/Other/x.bin").writeBytes(ByteArray(50_000))
+        scanIn(t, Scans.STORAGE)
+        val m = mainActivity()
+        assertTrue(waitFor { m.biggest.rows.isNotEmpty() })
+        ins.runOnMainSync {
+            assertNull(m.storage.growth)
+            assertEquals(android.view.View.GONE, m.storage.growthTxt.visibility)
+        }
+        markAndWait()
+        inBox("store/Telegram/Video/new.mp4").writeBytes(ByteArray(3 shl 20))
+        inBox("store/Other/x.bin").writeBytes(ByteArray(60_000))
+        scanIn(t, Scans.STORAGE)
+        assertTrue("Δ не посчитана", waitFor { Growth.forTree(Holder.h, Holder.gen) != null })
+        assertTrue("строки «что выросло» нет", waitFor { m.storage.growth != null })
+        ins.runOnMainSync {
+            val g = m.storage.growth!!
+            val d = Growth.forTree(Holder.h, Holder.gen)!!
+            assertEquals(d.of(0, false), g.delta)
+            assertTrue(g.delta >= 3L shl 20)
+            assertEquals("Telegram/Video", g.path)
+            assertEquals(GrowthText.home(m.tx, g.delta, d.baseTime, "Telegram/Video"), m.storage.growthTxt.text.toString())
+            assertEquals(C.AMBER_TEXT, m.storage.growthTxt.currentTextColor)
+            assertTrue(m.storage.growthTxt.minHeight >= m.dp(48))
+        }
+        assertTrue(waitFor { m.biggest.rows.firstOrNull()?.name == "new.mp4" })
+        ins.runOnMainSync {
+            assertTrue(m.biggest.rows[0].isNew)
+            assertEquals(m.getString(R.string.new_badge), (m.biggest.rowViews[0] as BigRow).badge)
+            assertFalse(m.biggest.rows.first { it.name == "x.bin" }.isNew)
+        }
+        val mon = ins.addMonitor(BrowserActivity::class.java.name, null, false)
+        try {
+            ins.runOnMainSync { assertTrue(m.storage.growthTxt.performClick()) }
+            val b = ins.waitForMonitorWithTimeout(mon, 10_000) as BrowserActivity?
+            assertNotNull("браузер не открылся", b)
+            opened += b!!
+            assertTrue(waitFor { b.list.source != null && b.deltaShown })
+            ins.runOnMainSync {
+                assertEquals("Video", b.title.text.toString())
+                val r = rows(b)
+                assertEquals("new.mp4", r[0].name)
+                assertEquals(b.getString(R.string.new_badge), r[0].badge)
+                assertTrue(r[0].size.startsWith("+"))
+            }
+        } finally {
+            ins.removeMonitor(mon)
+        }
+    }
 }
