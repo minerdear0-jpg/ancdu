@@ -45,6 +45,11 @@
     <string name="fx_system">Как в системе</string>
     <string name="fx_on">Вкл</string>
     <string name="fx_off">Выкл</string>
+    <string name="theme_title">Тема</string>
+    <string name="theme_item">Тема: %1$s</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_light">Светлая</string>
 
     <string name="back">Назад</string>
     <string name="cancel">Отмена</string>

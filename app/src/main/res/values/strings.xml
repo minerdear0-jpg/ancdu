@@ -47,6 +47,11 @@
     <string name="fx_system">System</string>
     <string name="fx_on">On</string>
     <string name="fx_off">Off</string>
+    <string name="theme_title">Theme</string>
+    <string name="theme_item">Theme: %1$s</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
 
     <!-- Common. -->
     <string name="back">Back</string>

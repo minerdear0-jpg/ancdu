@@ -65,14 +65,19 @@ object Lang {
     /** Для тестов: масштаб шрифта экранов, создаваемых дальше (null — системный). */
     @Volatile var fontScale: Float? = null
 
-    /** attachBaseContext каждой Activity на API 30–32: ресурсы в выбранном языке. */
+    /**
+     * attachBaseContext каждой Activity: на API 30–32 ресурсы в выбранном языке, на API 30 — и в
+     * выбранной теме (ночные биты uiMode; на 31+ тему ставит UiModeManager).
+     */
     fun wrap(base: Context): Context {
         val scale = fontScale
         val loc = LangPrefs.wrapLocale(Build.VERSION.SDK_INT, stored(base))
-        if (scale == null) return if (loc == null) base else withLocale(base, loc)
+        val night = ThemePrefs.wrapNight(Build.VERSION.SDK_INT, Theme.stored(base))
+        if (scale == null && night == null) return if (loc == null) base else withLocale(base, loc)
         val cfg = Configuration(base.resources.configuration)
         if (loc != null) cfg.setLocales(LocaleList(loc))
-        cfg.fontScale = scale
+        if (scale != null) cfg.fontScale = scale
+        if (night != null) cfg.uiMode = ThemePrefs.withNight(cfg.uiMode, night)
         return base.createConfigurationContext(cfg)
     }
 
@@ -125,11 +130,15 @@ object Lang {
 }
 
 /**
- * Activity приложения: на API 30–32 ресурсы в выбранном языке ([Lang.wrap]); язык сменили на
- * другом экране — пересоздаётся при возврате.
+ * Activity приложения: на API 30–32 ресурсы в выбранном языке ([Lang.wrap]), на API 30 — и в
+ * выбранной теме; язык или тему сменили на другом экране — пересоздаётся при возврате. Палитра
+ * [C.p] — по ночному режиму конфигурации экрана. Смена ночного режима системы пересоздаёт экран
+ * (uiMode нет в configChanges манифеста).
  */
 abstract class LangActivity : Activity() {
     private var lang: String? = null
+    /** API 30: выбор темы, с которым построен экран (сменили на другом — пересоздаётся в onResume). */
+    private var themeKey: String? = null
     /** onResume этого экземпляра уже вызвал recreate(): подклассы второй раз не пересоздают. */
     protected var relaunching = false
         private set
@@ -141,6 +150,7 @@ abstract class LangActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         lang = Lang.stored(this)
+        themeKey = Theme.stored(this)
         applyPalette()
         super.onCreate(savedInstanceState)
         Feedback.init(this)
@@ -183,6 +193,8 @@ abstract class LangActivity : Activity() {
         // Экран под этим мог поставить свою палитру: отрисовка этого читает токены заново.
         applyPalette()
         super.onResume()
-        if (Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang) { relaunching = true; recreate() }
+        val langChanged = Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang
+        val themeChanged = Build.VERSION.SDK_INT < 31 && Theme.stored(this) != themeKey
+        if (langChanged || themeChanged) { relaunching = true; recreate() }
     }
 }

@@ -156,14 +156,14 @@ class LangTest {
         assertEquals("63${Fmt.NBSP}761 файл", ResTxt(r).q(R.plurals.files, 63_761, Fmt.count(63_761, Locale.forLanguageTag("ru"))))
     }
 
-    /** Меню «···»: пункт [k] (0 — язык, 1 — звук, 2 — о приложении); меню закрывается. */
+    /** Меню «···»: пункт [k] (0 — язык, 1 — звук, 2 — тема, 3 — о приложении); меню закрывается. */
     private fun pick(a: MainActivity, k: Int, text: String) {
         ins.runOnMainSync { a.menuButton.performClick() }
         ins.waitForIdleSync()
         ins.runOnMainSync {
             val m = a.menu!!
             assertTrue(m.dialog.isShowing)
-            assertEquals(3, m.rows.size)
+            assertEquals(4, m.rows.size)
             assertEquals(text, m.rows[k].text.toString())
             assertTrue("пункт ниже 48dp", m.rows[k].height >= a.dp(48))
             m.rows[k].performClick()
@@ -241,7 +241,7 @@ class LangTest {
     @Test fun menuOpensAbout() {
         setLang("en")
         val a = main()
-        pick(a, 2, "About")
+        pick(a, 3, "About")
         ins.runOnMainSync {
             val s = a.about!!
             assertTrue(s.dialog.isShowing)

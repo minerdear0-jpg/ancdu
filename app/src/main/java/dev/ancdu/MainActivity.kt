@@ -30,7 +30,7 @@ class MainActivity : LangActivity() {
     var opening = false
         private set
     private var dialog: AlertDialog? = null
-    /** Кнопка меню «···» в шапке: язык, звук и вибрация, о приложении. */
+    /** Кнопка меню «···» в шапке: язык, звук и вибрация, тема, о приложении. */
     lateinit var menuButton: TextView
         private set
     /** Для тестов: открытое меню «···» и лист «О приложении». */
@@ -43,6 +43,9 @@ class MainActivity : LangActivity() {
         private set
     /** Для тестов: открытый диалог «Звук и вибрация». */
     var fxDialog: AlertDialog? = null
+        private set
+    /** Для тестов: открытый диалог «Тема». */
+    var themeDialog: AlertDialog? = null
         private set
 
     /** Тик/итог фонового скана или снятие закрепления браузером: подставить ждущее, перерисовать. */
@@ -146,6 +149,7 @@ class MainActivity : LangActivity() {
         menu = MenuSheet(this,
             onLang = { dialog = Lang.ask(this).also { langDialog = it } },
             onFx = { dialog = Lang.askFx(this).also { fxDialog = it } },
+            onTheme = { dialog = Theme.ask(this).also { themeDialog = it } },
             onAbout = { about = AboutSheet(this).also { it.show() } }).also { it.show() }
     }
 

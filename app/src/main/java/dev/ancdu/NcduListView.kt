@@ -140,6 +140,8 @@ class NcduListView(ctx: Context) : View(ctx) {
         strokeCap = Paint.Cap.SQUARE; strokeJoin = Paint.Join.MITER
     }
     private val tickPath = Path()
+    /** Для тестов: цвета постоянных красок — процент (TEXT), подпись (MUTED), галочка (INK). */
+    val paintColors: IntArray get() = intArrayOf(pctPaint.color, small.color, tick.color)
     /** Строка, которую показать целиком после смены высоты (вход в режим выбора); -1 — нет. */
     private var revealRow = -1
     /** Нажатая строка (PANEL2 и амберная скобка слева); -1 — нет. */
