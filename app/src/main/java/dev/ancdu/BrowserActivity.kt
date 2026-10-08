@@ -919,9 +919,13 @@ class BrowserActivity : LangActivity() {
     /** Состояние, из которого собраны переключатели (сортировка, режим размера, есть ли Δ); null — не собраны. */
     private var chipsFor: Triple<Int, Boolean, Boolean>? = null
 
-    /** Сегмент Δ есть: для дерева посчитана Δ против точки отсчёта (или считается, а Δ уже выбрана). */
+    /**
+     * Сегмент Δ есть: для дерева посчитана Δ против точки отсчёта. Пока она считается (новое дерево того
+     * же экрана), сегмент держится, если Δ выбрана или уже была предложена — без мигания.
+     */
     private fun deltaOffered(): Boolean =
-        h != 0L && (Growth.forTree(h, gen) != null || (sort == SORT_DELTA && Growth.pending(h, gen)))
+        h != 0L && (Growth.forTree(h, gen) != null ||
+            (Growth.pending(h, gen) && (sort == SORT_DELTA || chipsFor?.third == true)))
 
     private fun renderChips() {
         // Вход в папку не меняет ни сортировку, ни режим: пересборка шапки (новые view, шрифты,

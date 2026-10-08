@@ -69,6 +69,8 @@ class BiggestSection(private val a: MainActivity) {
         if (a.storage.storageShown()) {
             // Δ дерева посчитана Growth заранее (на io); новая Δ — новый ключ.
             val d = Growth.forTree(Holder.h, Holder.gen)
+            // Δ нового дерева ещё считается — прежняя строка «что выросло» остаётся (без мигания).
+            val keep = d == null && Growth.pending(Holder.h, Holder.gen)
             val k = "tree:${Holder.gen}:${Holder.deletes}:${d?.let { System.identityHashCode(it) }}"
             if (!force && k == key) return
             key = k
@@ -80,7 +82,7 @@ class BiggestSection(private val a: MainActivity) {
             Holder.io.execute {
                 val r = runCatching { load(app, txt, h, self, d) }.getOrDefault(emptyList())
                 val g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
-                a.runOnUiThread { show(my, r, kind, time, g) }
+                a.runOnUiThread { show(my, r, kind, time, g, keepGrowth = keep) }
             }
             return
         }
@@ -123,10 +125,11 @@ class BiggestSection(private val a: MainActivity) {
         box.visibility = View.GONE
     }
 
-    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long, growth: HomeGrowth?) {
+    /** [keepGrowth] — Δ дерева ещё считается: строку «что выросло» не трогать (её обновит ответ Growth). */
+    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long, growth: HomeGrowth?, keepGrowth: Boolean = false) {
         if (my != seq || a.isDestroyed) return
         shown++
-        a.storage.showGrowth(growth)
+        if (!keepGrowth) a.storage.showGrowth(growth)
         if (r.isEmpty()) { clear(); return }
         rows = r
         list.removeAllViews(); rowViews.clear()

@@ -280,9 +280,19 @@ class StorageCard(private val a: MainActivity) {
         freshTxt.minHeight = if (tappable) a.dp(48) else 0
         freshTxt.setTextColor(if (tappable) C.AMBER_TEXT else C.MUTED)
         freshTxt.contentDescription = if (tappable) t.s(R.string.refresh_desc) else null
-        // Дельта — только к показанному дереву этого самого скана.
+        renderDelta()
+    }
+
+    /**
+     * «±X с прошлого скана» — только к показанному дереву этого самого скана и только когда нет строки
+     * «что выросло» (нет точки отсчёта или |Δ| < 1 МиБ): две строки о росте не показываются вместе.
+     */
+    private fun renderDelta() {
+        val last = Scans.lastStorage
         val prev = last?.prevDisk
-        if (shown && last != null && prev != null && Holder.kind == Kind.SCAN && Holder.time == last.time) {
+        val shown = storageShown() && !Holder.deleting
+        if (growthTxt.visibility != View.VISIBLE && shown && last != null && prev != null &&
+            Holder.kind == Kind.SCAN && Holder.time == last.time) {
             deltaTxt.text = Freshness.delta(t, last.disk - prev)
             deltaTxt.visibility = View.VISIBLE
         } else {
@@ -296,12 +306,13 @@ class StorageCard(private val a: MainActivity) {
      */
     fun showGrowth(g: HomeGrowth?) {
         growth = g
-        if (g == null || !Perms.files()) { growthTxt.visibility = View.GONE; return }
+        if (g == null || !Perms.files()) { growthTxt.visibility = View.GONE; if (Perms.files()) renderDelta(); return }
         val text = GrowthText.home(t, g.delta, g.baseTime, g.path.ifEmpty { null })
         growthTxt.text = text
         growthTxt.setTextColor(GrowthText.homeRole(g.delta).color())
         growthTxt.contentDescription = "${text.removeSuffix(" ›")}, ${t.s(R.string.growth_open_desc)}"
         growthTxt.visibility = View.VISIBLE
+        deltaTxt.visibility = View.GONE
     }
 
     /** «обновить ›»: скан вручную — энергосбережение и нагрев не мешают явной просьбе. */
