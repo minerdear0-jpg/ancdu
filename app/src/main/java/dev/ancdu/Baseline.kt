@@ -30,7 +30,7 @@ object BaselineRules {
  * Файлы A и B ключа [cacheName] в каталоге [dir]: «<кэш>.base-a» и «<кэш>.base-b» — копии кэш-файла
  * (тот же формат и версия). Не пересериализуются: жёсткая ссылка на только что записанный кэш,
  * иначе копия; на место — rename (атомарно). Кэш пишется новым inode (tmp + rename), так что
- * ссылка A/B его следующим сохранением не меняется. Трогает только свои файлы (и их .tmp).
+ * ссылка A/B его следующим сохранением не меняется. Трогает только свои файлы (и их .tmp/.link).
  * Вызывать на Holder.io (FIFO с saveCache, delete, free и расчётом Δ).
  */
 class BaselineFiles(dir: File, cacheName: String) {
@@ -59,6 +59,9 @@ class BaselineFiles(dir: File, cacheName: String) {
      * Код [write] (0 — готово).
      */
     fun markFrom(time: Long, write: (String) -> Int): Int {
+        // Стоячий «A.tmp» (прерванное сохранение) мог бы оказаться ссылкой на живой кэш — убрать до записи.
+        tmp(a).delete()
+        link(a).delete()
         val r = write(a.path)
         if (r != 0) return r
         if (time > 0) a.setLastModified(time)
@@ -66,16 +69,29 @@ class BaselineFiles(dir: File, cacheName: String) {
         return 0
     }
 
-    /** Забыть точку отсчёта (кэш забыт, другая версия формата, файл негоден): A, B и их .tmp. */
-    fun forget() {
-        for (f in listOf(a, b, tmp(a), tmp(b))) f.delete()
+    /**
+     * A негодна (другая версия формата, повреждена): удалить только её; годный кандидат B становится
+     * точкой отсчёта (rename B → A). true — B повышен (его стоит проверить тем же расчётом).
+     */
+    fun dropA(): Boolean {
+        a.delete()
+        return b.isFile && b.renameTo(a)
     }
 
+    /** Забыть точку отсчёта (кэш забыт, другая версия формата, файл негоден): A, B и их временные файлы. */
+    fun forget() {
+        for (f in listOf(a, b, tmp(a), tmp(b), link(a), link(b))) f.delete()
+    }
+
+    /** Временный файл Native.saveCache (arena_save_file) для [f]. */
     private fun tmp(f: File) = File(f.path + ".tmp")
+
+    /** Временный файл ссылки/копии [place] — свой суффикс: сохранение (O_TRUNC по «.tmp») его не коснётся. */
+    private fun link(f: File) = File(f.path + ".link")
 
     /** [src] → [dst]: ссылка или копия во временный файл рядом, затем rename. */
     private fun place(src: File, dst: File): Boolean {
-        val t = tmp(dst)
+        val t = link(dst)
         t.delete()
         val ok = runCatching { Files.createLink(t.toPath(), src.toPath()) }.isSuccess || runCatching {
             Files.copy(src.toPath(), t.toPath(), StandardCopyOption.COPY_ATTRIBUTES)
@@ -91,6 +107,15 @@ class BaselineFiles(dir: File, cacheName: String) {
 object Baseline {
     /** Для тестов: каталог точек отсчёта вместо filesDir (null — filesDir). */
     @Volatile var dirOverride: File? = null
+
+    /**
+     * Кэш не открылся с кодом [err]: точка отсчёта забывается вместе с ним только при другой версии
+     * формата (-ENOEXEC) или негодном файле (-EINVAL), не при временных сбоях (-ENOMEM, -EMFILE…).
+     */
+    fun dropOnCacheError(err: Int): Boolean = err == -ENOEXEC || err == -EINVAL
+
+    private const val ENOEXEC = 8
+    private const val EINVAL = 22
 
     fun files(ctx: Context, root: String, viaRoot: Boolean): BaselineFiles =
         BaselineFiles(dirOverride ?: ctx.filesDir, Holder.cacheFile(ctx, root, viaRoot).name)

@@ -264,15 +264,19 @@ object Growth {
         val st = ByteArray(n)
         val err = IntArray(1)
         val t0 = System.nanoTime()
-        val flat = Native.delta(h, files.a.path, dd, da, st, err)
-        val ms = (System.nanoTime() - t0) / 1_000_000
-        if (flat == null) {
+        var flat: LongArray?
+        // Не больше двух попыток: A, затем повышенный на её место кандидат B.
+        while (true) {
+            flat = Native.delta(h, files.a.path, dd, da, st, err)
+            if (flat != null) break
             Log.i("ancdu", "baseline rejected: ${err[0]}")
-            // Другая версия формата или негодный файл — забыть, как кэш. Чужой корень (-EXDEV) так не
-            // возникает (ключ — из корня); не удаляется: точка отсчёта просто не подходит этому дереву.
-            if (err[0] == -NativeErr.ENOEXEC || err[0] == -EINVAL) files.forget()
-            return null
+            // Другая версия формата или негодный файл — удаляется только A; годный кандидат B занимает
+            // её место (и проверяется тем же расчётом). Чужой корень (-EXDEV) так не возникает (ключ —
+            // из корня) и не удаляется: точка отсчёта просто не подходит этому дереву.
+            if (err[0] != -NativeErr.ENOEXEC && err[0] != -EINVAL) return null
+            if (!files.dropA()) return null
         }
+        val ms = (System.nanoTime() - t0) / 1_000_000
         Log.i("ancdu", "delta: $n nodes in $ms ms")
         return Delta(h, gen, dd, da, st, Delta.goneMap(flat), files.time(), files.a.length(), ms)
     }

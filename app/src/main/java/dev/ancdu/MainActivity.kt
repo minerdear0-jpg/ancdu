@@ -244,8 +244,9 @@ class MainActivity : LangActivity() {
             if (h == 0L) {
                 app.getSharedPreferences(Scans.PREFS, MODE_PRIVATE).edit().remove(name).commit()
                 file.delete()
-                // Кэш забыт (повреждён или другой версии формата) — и его точка отсчёта.
-                Baseline.files(app, root, su).forget()
+                // Кэш другой версии формата или негодный — забыть и его точку отсчёта; временный сбой
+                // (нет памяти, дескрипторов) её не трогает.
+                if (Baseline.dropOnCacheError(err[0])) Baseline.files(app, root, su).forget()
             }
             runOnUiThread {
                 opening = false

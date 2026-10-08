@@ -112,4 +112,56 @@ class BaselineTest {
         f.forget()
         assertEquals(BaselineRules.Step.SET_A, f.onSaved(cache, 3_000_000L))
     }
+
+    /** Как arena_save_file до исправления: O_TRUNC по «<путь>.tmp», затем rename. */
+    private fun truncatingWriter(path: String): Int {
+        val tmp = File("$path.tmp")
+        java.io.FileOutputStream(tmp).use { it.write(byteArrayOf(42, 42)) }
+        return if (tmp.renameTo(File(path))) 0 else -5
+    }
+
+    @Test fun markNowNeverWritesThroughALinkToTheCache() {
+        val cache = File(box, "last-app_x.ancdu")
+        save(cache, byteArrayOf(1, 2, 3), 1_000_000L)
+        val f = BaselineFiles(box, cache.name)
+        // Стоячий tmp A — жёсткая ссылка на живой кэш (прерванное сохранение/старая версия).
+        Files.createLink(File(f.a.path + ".tmp").toPath(), cache.toPath())
+        assertEquals(0, f.markFrom(2_000_000L, ::truncatingWriter))
+        assertArrayEquals(byteArrayOf(1, 2, 3), cache.readBytes())
+        assertArrayEquals(byteArrayOf(42, 42), f.a.readBytes())
+        // Временные файлы ссылок — свой суффикс, не «.tmp» сохранения.
+        save(cache, byteArrayOf(4), 3_000_000L)
+        f.forget()
+        f.onSaved(cache, 3_000_000L)
+        assertFalse(File(f.a.path + ".tmp").exists() || File(f.a.path + ".link").exists())
+        assertEquals(setOf(cache.name, f.a.name), box.list()!!.toSet())
+        File(f.a.path + ".link").writeBytes(byteArrayOf(0))
+        f.forget()
+        assertFalse(File(f.a.path + ".link").exists())
+    }
+
+    @Test fun dropAPromotesB() {
+        val cache = File(box, "last-app_y.ancdu")
+        val f = BaselineFiles(box, cache.name)
+        save(cache, byteArrayOf(1), 1_000_000L); f.onSaved(cache, 1_000_000L)
+        save(cache, byteArrayOf(2), 2_000_000L); f.onSaved(cache, 2_000_000L)
+        // A негодна: на её место — B; кандидата больше нет.
+        assertTrue(f.dropA())
+        assertArrayEquals(byteArrayOf(2), f.a.readBytes())
+        assertFalse(f.b.exists())
+        assertEquals(2_000_000L, f.time())
+        // Негодна и она: B нет — точки отсчёта нет.
+        assertFalse(f.dropA())
+        assertFalse(f.a.exists())
+        assertTrue(cache.exists())
+    }
+
+    @Test fun cacheErrorsThatDropTheBaseline() {
+        assertTrue(Baseline.dropOnCacheError(-8))    // -ENOEXEC: другая версия формата
+        assertTrue(Baseline.dropOnCacheError(-22))   // -EINVAL: негоден
+        assertFalse(Baseline.dropOnCacheError(-12))  // -ENOMEM
+        assertFalse(Baseline.dropOnCacheError(-24))  // -EMFILE
+        assertFalse(Baseline.dropOnCacheError(-2))   // -ENOENT
+        assertFalse(Baseline.dropOnCacheError(0))    // исключение до кода
+    }
 }
