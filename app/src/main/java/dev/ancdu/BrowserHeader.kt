@@ -134,9 +134,6 @@ class BrowserHeader(private val a: BrowserActivity) {
         badge.setTextColor(if (badgeActive || a.deltaShown && !newerOutlined) C.AMBER_TEXT else C.MUTED)
     }
 
-    /** Для тестов: цвет плашки — амбер (иначе приглушённая). */
-    val badgeAmber: Boolean get() = badge.currentTextColor == C.AMBER_TEXT
-
     /** Чип «новее» сейчас в контуре (не амберная заливка). */
     var newerOutlined = false
         private set
