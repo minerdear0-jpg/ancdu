@@ -61,24 +61,42 @@ class HomeBudgetTest {
     private fun cut() = InterruptedDelete(1, Scans.STORAGE, false, listOf("Download".toByteArray()), dir = true,
         disk = 10 * gib, time = System.currentTimeMillis() - 60_000)
 
-    /** fontScale 1.0, no usage access (tier 0 off): label, hero, free, shared, status — 5 lines at most. */
-    @Test fun cardHasAtMostFiveTextLines() {
-        AppOps.set(ins, "GET_USAGE_STATS", "ignore")
+    /**
+     * fontScale 1.0, with and without usage access: label, hero, free, shared, status — 5 lines at
+     * most. With access the tier-0 category bar shows, but no legend lines (TalkBack has them).
+     */
+    private fun cardLines(usageMode: String) {
+        AppOps.set(ins, "GET_USAGE_STATS", usageMode)
         assertEquals(1.0f, ctx.resources.configuration.fontScale)
         cache(System.currentTimeMillis())
         val a = launch()
+        // Tier 0 has answered (the apps row exists) before counting.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            var ready = false
+            ins.runOnMainSync { ready = a.appsTotal != null }
+            if (ready) break
+            Thread.sleep(50)
+        }
         ins.runOnMainSync { a.storage.interrupted = cut(); a.storage.render() }
         ins.waitForIdleSync()
         ins.runOnMainSync {
             assertTrue(a.storage.status is Status.Interrupted)
             val n = a.storage.textLines()
-            assertTrue("card lines: $n", n <= 5)
+            assertTrue("card lines ($usageMode): $n", n <= 5)
             // The status line is one line, never wraps.
             assertEquals(1, a.storage.statusTxt.lineCount)
             // Default states are silent: no «только что», no item count on the shared row.
             assertFalse(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.contains(" · "))
+            val bar = a.window.decorView.findViewWithTag<View>("catbar")
+            if (usageMode == "allow" && bar != null && (bar.parent as View).visibility == View.VISIBLE)
+                assertFalse("category bar without a TalkBack legend", bar.contentDescription.isNullOrEmpty())
         }
     }
+
+    @Test fun cardHasAtMostFiveTextLinesWithoutUsageAccess() = cardLines("ignore")
+
+    @Test fun cardHasAtMostFiveTextLinesWithUsageAccess() = cardLines("allow")
 
     /** interrupted > stale >= 24 h > nothing; the slot collapses when there is nothing. */
     @Test fun statusLinePriorities() {

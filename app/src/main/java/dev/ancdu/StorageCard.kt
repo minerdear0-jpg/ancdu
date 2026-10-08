@@ -28,10 +28,12 @@ class StorageCard(private val a: MainActivity) {
     lateinit var freeTxt: TextView
         private set
     private lateinit var bar: SegBar
-    /** Ярус 0: вторичная полоса категорий и её легенда (скрыты без сегментов). */
+    /**
+     * Ярус 0: вторичная полоса категорий (скрыта без сегментов). Легенды на карточке нет (≤ 5 строк):
+     * числа — в строке «Приложения и система», подписи и размеры — у TalkBack (описание полосы).
+     */
     private lateinit var cats: LinearLayout
     private lateinit var catBar: CatBar
-    private lateinit var catLegend: Flow
     /** Нижняя строка: «Общее хранилище» или амберный запрос доступа. */
     lateinit var storeTitle: TextView
         private set
@@ -126,10 +128,8 @@ class StorageCard(private val a: MainActivity) {
         // Ярус 0 (только с доступом к истории использования): категории занятого.
         cats = a.vbox().apply {
             visibility = View.GONE
-            catBar = CatBar(a)
+            catBar = CatBar(a).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES }
             addView(catBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            catLegend = Flow(a, a.dp(12), a.dp(4))
-            addView(catLegend, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(8) })
         }
         addView(cats, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(14) })
         hairline(topDp = 14)
@@ -180,26 +180,14 @@ class StorageCard(private val a: MainActivity) {
         addView(permBox)
     }
 
-    /** Категории яруса 0 (без «свободно», ненулевые, по убыванию) под главной полосой. */
+    /** Категории яруса 0 (без «свободно», ненулевые, по убыванию) под главной полосой; без легенды. */
     fun showSegs(segs: List<Seg>) {
         val used = segs.filter { it.label != R.string.seg_free && it.bytes > 0 }.sortedByDescending { it.bytes }
         cats.visibility = if (used.isEmpty()) View.GONE else View.VISIBLE
         // Сегменты посчитаны на рабочем потоке с ролями; цвета — здесь, в палитре этого экрана.
         val colors = IntArray(used.size) { used[it].role.color() }
         catBar.show(used, colors)
-        catLegend.removeAllViews()
-        for ((k, s) in used.withIndex()) catLegend.addView(a.hbox(5).apply {
-            addView(swatch(colors[k]))
-            addView(a.label(t.s(s.label), 12f, C.MUTED))
-            addView(a.label(Fmt.size(s.bytes, t), 12f, C.TEXT, mono = true))
-        })
-    }
-
-    /** Квадрат 8dp цвета полосы (не текст). */
-    private fun swatch(color: Int): View = View(a).apply {
-        background = a.box(color)
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        layoutParams = LinearLayout.LayoutParams(a.dp(8), a.dp(8))
+        a.layoutChanged()
     }
 
     /**
