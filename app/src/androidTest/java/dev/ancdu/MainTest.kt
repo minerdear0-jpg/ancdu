@@ -149,7 +149,13 @@ class MainTest {
             ins.runOnMainSync {
                 val shown = actions(a)
                 assertEquals(emptyList<String>(), shown.filterNot(::secondary))
-                assertEquals(2, shown.count { it.startsWith(a.prefixOf(R.string.last_scan)) })
+                // One section of past scans: the newest row plus «ещё 1 ›»; the tap shows the rest.
+                assertEquals(1, shown.count { it.startsWith(a.prefixOf(R.string.last_scan)) })
+                assertTrue(a.scansMore!!.performClick())
+            }
+            ins.runOnMainSync {
+                assertNull(a.scansMore)
+                assertEquals(2, actions(a).count { it.startsWith(a.prefixOf(R.string.last_scan)) })
             }
             assertEquals(listOf(a.getString(R.string.last_scan, "/some/dir")), a.lastScans())
             assertEquals(listOf(a.getString(R.string.last_scan, "/data")), a.rootScans())
@@ -369,6 +375,7 @@ class MainTest {
             prefs.edit().putString(name, "/corrupt/test|false|1|1|1759700000000").commit()
             val a = launch().also { act = it }
             val before = Holder.h
+            ins.runOnMainSync { a.expandScans() }
             val row = findDesc(a, a.getString(R.string.last_scan, "/corrupt/test"))
             assertNotNull(row)
             ins.runOnMainSync { row!!.performClick() }

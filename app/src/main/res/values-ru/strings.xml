@@ -396,4 +396,11 @@
         <item quantity="many">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
         <item quantity="other">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
     </plurals>
+    <string name="scans_more">ещё %1$s ›</string>
+    <plurals name="scans_more_desc">
+        <item quantity="one">Показать ещё %1$s прошлый скан</item>
+        <item quantity="few">Показать ещё %1$s прошлых скана</item>
+        <item quantity="many">Показать ещё %1$s прошлых сканов</item>
+        <item quantity="other">Показать ещё %1$s прошлого скана</item>
+    </plurals>
 </resources>

@@ -400,4 +400,9 @@
         <item quantity="one">%1$s entry. This does not bring back deleted files — only the history and the interrupted-delete notice are erased.</item>
         <item quantity="other">%1$s entries. This does not bring back deleted files — only the history and the interrupted-delete notice are erased.</item>
     </plurals>
+    <string name="scans_more">more %1$s ›</string>
+    <plurals name="scans_more_desc">
+        <item quantity="one">Show %1$s more past scan</item>
+        <item quantity="other">Show %1$s more past scans</item>
+    </plurals>
 </resources>

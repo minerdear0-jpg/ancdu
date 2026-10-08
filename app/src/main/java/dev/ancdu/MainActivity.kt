@@ -213,7 +213,7 @@ class MainActivity : LangActivity() {
         if (!fold) return
         val x = tx
         val parts = listOfNotNull(x.s(R.string.more_apps), rootPanel.block?.let { x.s(R.string.more_root) },
-            if (lastBox.childCount > 0) x.s(R.string.more_scans) else null)
+            if (scansCount > 0) x.s(R.string.more_scans) else null)
         val text = x.s(R.string.more_row, parts.joinToString(" · "))
         if ((moreRow.getChildAt(0) as? TextView)?.text?.toString() == text) return
         moreRow.removeAllViews()
@@ -273,6 +273,17 @@ class MainActivity : LangActivity() {
         layoutChanged()
     }
 
+    /** Строк прошлых сканов (видна самая свежая; остальные — после «ещё N ›»). */
+    private var scansCount = 0
+    /** «ещё N ›» раскрыто (до пересоздания экрана). */
+    private var scansOpen = false
+    /** Для тестов: строка «ещё N ›» (null — прошлых сканов не больше одного или раскрыто). */
+    var scansMore: TextView? = null
+        private set
+
+    /** «ещё N ›»: показать все строки прошлых сканов. */
+    fun expandScans() { scansOpen = true; renderLast() }
+
     /** Заголовки строк «Последний скан» без root (для тестов); общее хранилище — на карточке. */
     fun lastScans(): List<String> = titles.toList()
     /** Заголовки строк кэшей root-сканов в блоке Root (для тестов). */
@@ -289,8 +300,11 @@ class MainActivity : LangActivity() {
             if (file == storageName) null else file to m
         }.sortedByDescending { it.second.time }
         val t = tx
+        // Один раздел под карточкой: строки прошлых сканов (и root, и без) — в блоке Root, если он
+        // есть, иначе отдельно; видна самая свежая и «ещё N ›», остальные — по тапу.
+        val box = rootPanel.caches ?: lastBox
+        scansCount = 0
         for ((file, m) in rows) {
-            val box = (if (m.su) rootPanel.caches else lastBox) ?: continue
             val title = t.s(R.string.last_scan, m.root)
             if (m.su) rootTitles += title else titles += title
             val sub = listOfNotNull(Freshness.date(t, R.string.fmt_day_time, m.time),
@@ -299,9 +313,29 @@ class MainActivity : LangActivity() {
             // Одна строка «ПОСЛЕДНИЙ /путь · N файлов · 6,1 с · дата ›»; описание — как прежде.
             val line = listOf(m.root, t.q(R.plurals.files, m.files, Fmt.count(m.files, t.locale)), Fmt.secs(m.ms, t),
                 Freshness.date(t, R.string.fmt_day_time, m.time)).joinToString(" · ")
-            box.addView(navRow(t.s(R.string.last_short), line, "$title, $sub") { openCache(file, m.root, m.su, m.time) })
-            box.hairline()
+            val first = scansCount == 0
+            box.addView(navRow(t.s(R.string.last_short), line, "$title, $sub") { openCache(file, m.root, m.su, m.time) }.apply {
+                if (!first && !scansOpen) visibility = View.GONE
+            })
+            box.addView(View(this).apply {
+                setBackgroundColor(C.LINE)
+                if (!first && !scansOpen) visibility = View.GONE
+            }, LinearLayout.LayoutParams(MATCH_PARENT, dp(1)))
+            scansCount++
         }
+        val more = scansCount - 1
+        if (more > 0 && !scansOpen) {
+            val text = t.s(R.string.scans_more, Fmt.count(more.toLong(), t.locale))
+            box.addView(label(text, 13f, C.MUTED, mono = true).apply {
+                minHeight = dp(48)
+                gravity = Gravity.CENTER_VERTICAL
+                background = pressable(C.BG)
+                isClickable = true; isFocusable = true
+                contentDescription = t.q(R.plurals.scans_more_desc, more.toLong(), Fmt.count(more.toLong(), t.locale))
+                feedbackClick { expandScans() }
+            }.also { scansMore = it }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            box.hairline()
+        } else scansMore = null
         layoutChanged()
     }
 
