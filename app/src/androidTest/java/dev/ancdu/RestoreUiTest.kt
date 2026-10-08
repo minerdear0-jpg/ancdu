@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // onBackPressed: the browser still overrides the Activity API
+
 package dev.ancdu
 
 import android.content.Context
@@ -204,12 +206,16 @@ class RestoreUiTest {
         assertTrue(scroll > 0)
         val picked = selectedNames(b)
         assertEquals(2, picked.size)
-        val oldH = b.h
+        // Не адрес дескриптора: free старой сессии и openCache идут подряд на Holder.io, и calloc того же
+        // размера может вернуть тот же адрес. Переоткрытие доказывают вид дерева и поколение Holder.
+        var gen0 = 0L
+        ins.runOnMainSync { gen0 = Holder.gen; assertEquals(Kind.SCAN, Holder.kind) }
         dieOnRecreate()
         ins.runOnMainSync { b.recreate() }
         val c = next(b)
         ins.runOnMainSync {
-            assertNotEquals("дерево открыто заново (кэш), не старый дескриптор", oldH, c.h)
+            assertEquals("дерево открыто заново из кэша (сессия снята и поставлена)", gen0 + 2, Holder.gen)
+            assertEquals(c.gen, Holder.gen)
             assertEquals(Kind.CACHE, Holder.kind)
             assertEquals(t.path, Holder.root)
             assertEquals(File(t, "A/B").path, c.currentPath)
@@ -344,6 +350,36 @@ class RestoreUiTest {
             assertEquals("f11.bin", rows(b)[k].name)
             assertNotEquals(DeleteProgress.gone(b.tx, "f10.bin"), b.footerText.toString())
             assertFalse(b.footerText.toString(), b.footerText.contains(DeleteProgress.gone(b.tx, "f10.bin")))
+        }
+    }
+
+    /** Пересоздание посреди удаления: курсор (цепочка в памяти) переживает его и встаёт на место удалённого. */
+    @Test fun cursorSurvivesRecreateDuringDelete() {
+        val t = fixture()
+        cached(t)
+        val b = browse()
+        open(b, "A/"); open(b, "B/")
+        val k = index(b, "f12.bin")
+        // Заслонка на io: удаление встанет за ней и не начнётся, пока её не откроем.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        Holder.io.execute { gate.await(30, TimeUnit.SECONDS) }
+        var r = Int.MIN_VALUE
+        val deleter = Thread { r = b.deleteBlocking(k) }.apply { start() }
+        assertTrue(waitFor { Holder.deleting })
+        ins.runOnMainSync { b.recreate() }
+        assertTrue(waitFor { resumedBrowser().let { it != null && it !== b } })
+        lateinit var c: BrowserActivity
+        ins.runOnMainSync { c = resumedBrowser()!!; assertTrue(c.busy); assertEquals(k, c.cursorRow) }
+        gate.countDown()
+        deleter.join(30_000)
+        assertFalse(deleter.isAlive)
+        assertEquals(0, r)
+        assertFalse(inBox("tree/A/B/f12.bin").exists())
+        assertTrue(waitFor { !c.busy && c.list.source != null })
+        ins.runOnMainSync {
+            assertEquals(k, c.cursorRow)
+            assertEquals("f13.bin", rows(c)[k].name)
+            assertFalse(c.footerText.contains(DeleteProgress.gone(c.tx, "f12.bin")))
         }
     }
 
