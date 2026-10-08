@@ -254,19 +254,23 @@ uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
   return m;
 }
 
+static uint64_t sat_add(uint64_t x, uint64_t y) { return x > UINT64_MAX - y ? UINT64_MAX : x + y; }
+
 uint32_t csr_giants(const arena *a, uint64_t min_bytes, uint32_t max_count, uint32_t *out,
-                    uint64_t *total) {
+                    uint64_t *total, uint64_t sums[2]) {
   uint64_t n = atomic_load(&a->h->count);
   if (min_bytes == 0) min_bytes = 1; /* disk 0 — никогда не «гигант» */
   int any = 0;
   uint8_t *dead = n > 1 ? dead_map(a, n, &any) : NULL;
-  uint64_t t = 0;
+  uint64_t t = 0, sd = 0, sa = 0;
   uint32_t m = 0; /* out[0..m) — min-куча, не больше max_count */
   for (uint64_t i = 1; i < n; i++) {
     uint32_t x = (uint32_t)i;
     if (a->disk[x] < min_bytes || a->flags[x] & (F_DIR | F_HLDUP | F_DELETED)) continue;
     if (dead ? dead[x] : any && under_deleted(a, x)) continue;
     t++;
+    sd = sat_add(sd, a->disk[x]);
+    sa = sat_add(sa, a->apparent[x]);
     if (m < max_count) {
       out[m] = x;
       sift_up(a, out, m++);
@@ -278,6 +282,7 @@ uint32_t csr_giants(const arena *a, uint64_t min_bytes, uint32_t max_count, uint
   free(dead);
   heap_to_desc(a, out, m);
   if (total) *total = t;
+  if (sums) { sums[0] = sd; sums[1] = sa; }
   return m;
 }
 

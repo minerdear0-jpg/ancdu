@@ -12,9 +12,10 @@ class GiantsLevel(private val a: BrowserActivity) {
     /** Сколько файлов не меньше порога во всём дереве (может быть больше показанных: предел [Giants.MAX]). */
     var total = 0L
         private set
-    /** Сумма размеров показанных строк (в показанном режиме размера). */
-    var sum = 0L
-        private set
+    /** Суммы disk и apparent ВСЕХ файлов не меньше порога (ядро считает и сверх [Giants.MAX]). */
+    private var sums = LongArray(2)
+    /** Сумма размеров всех «гигантов» в показанном режиме размера. */
+    val sum: Long get() = sums[if (a.apparent) 1 else 0]
     /** Папки строк относительно корня («DCIM/Camera/»; файл в корне — заголовок корня) — лениво. */
     private var subs = arrayOfNulls<String>(0)
     /** Пути строк — лениво (метки, превью). */
@@ -26,15 +27,20 @@ class GiantsLevel(private val a: BrowserActivity) {
      */
     fun read(): Int {
         val ids = IntArray(Giants.MAX)
-        val tot = LongArray(1)
+        // Порог и предел — по размеру на диске (и в режиме «видимый»): что считать «гигантом», решает диск.
+        val tot = LongArray(3)
         val k = maxOf(0, Native.giants(a.h, minBytes, Giants.MAX, ids, tot))
         total = tot[0]
+        sums = longArrayOf(tot[1], tot[2])
         a.kids = ids.copyOf(k)
         subs = arrayOfNulls(k); paths = arrayOfNulls(k)
         return k
     }
 
-    /** После nodeInfo: в режиме «видимый» — порядок по видимому размеру (ядро отдаёт по диску); сумма. */
+    /**
+     * После nodeInfo: в режиме «видимый» — порядок по видимому размеру (ядро отдаёт по диску). Набор
+     * строк тот же: порог и предел — по диску.
+     */
     fun order() {
         val n = a.n
         if (a.apparent && n > 1) {
@@ -44,7 +50,6 @@ class GiantsLevel(private val a: BrowserActivity) {
             for ((j, p) in pos.withIndex()) { k2[j] = a.kids[p]; System.arraycopy(a.info, 4 * p, i2, 4 * j, 4) }
             a.kids = k2; a.info = i2
         }
-        sum = DeletePolicy.sum((0 until n).map { a.value(it) })
     }
 
     /** Путь строки [i] (полный). */

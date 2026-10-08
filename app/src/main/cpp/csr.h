@@ -26,11 +26,13 @@ uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out);
 
 /* «Гиганты»: ФАЙЛЫ с disk ≥ min_bytes (0 считается как 1: пустые не попадают) по убыванию disk, при
  * равенстве — меньший id первым; в out не больше max_count. В *total (если не NULL) — сколько таких
- * всего. Пропуски — как у csr_top_files: каталоги, F_HLDUP, F_DELETED и всё под удалённым предком.
+ * всего, в sums[0] / sums[1] (если не NULL) — их суммы disk и apparent (по ВСЕМ совпавшим, не только
+ * записанным; с насыщением). Порог и cap — по disk. Пропуски — как у csr_top_files: каталоги, F_HLDUP,
+ * F_DELETED и всё под удалённым предком.
  * O(n) фильтр плюс min-куча на max_count (O(m log max_count) по совпавшим); память — out плюс O(n)
  * байт, только если в дереве есть удалённое. Только чтение арены. Возвращает число записанных. */
 uint32_t csr_giants(const arena *a, uint64_t min_bytes, uint32_t max_count, uint32_t *out,
-                    uint64_t *total);
+                    uint64_t *total, uint64_t sums[2]);
 
 /* Узлы с F_ERR (каталог не открылся или не дочитался при скане; частичное удаление) без F_DELETED
  * и не под удалённым предком, по возрастанию id (родитель раньше детей). Пишет первые cap в out,

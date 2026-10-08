@@ -58,7 +58,8 @@ object Native {
     @JvmStatic external fun topFiles(h: Long, out: IntArray): Int
     /** «Гиганты»: файлы с disk ≥ [minBytes] по убыванию disk (при равенстве — меньший id), без каталогов,
      *  F_HLDUP, удалённого и пустых. Пишет в [out] РОВНО возвращённое число id (≤ min([maxCount], out.size));
-     *  в total[0] — сколько совпало всего (может быть больше записанного). Только чтение, на Holder.io. */
+     *  в total — [сколько совпало всего (может быть больше записанного), сумма disk, сумма apparent] по ВСЕМ
+     *  совпавшим, сколько влезает в массив. Порог и предел — по disk. Только чтение. */
     @JvmStatic external fun giants(h: Long, minBytes: Long, maxCount: Int, out: IntArray, total: LongArray): Int
     /** Узлы с ошибкой скана или частичного удаления (F_ERR, не удалённые), по возрастанию id: первые
      *  min(out.size, [ERROR_NODES_MAX]) в out. Возвращает их общее число; записано ровно
