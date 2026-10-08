@@ -55,8 +55,8 @@ class FlowReserveTest {
             heightOf(flow, 1000)
             flow.layout(0, 0, 1000, flow.measuredHeight)
             assertEquals(0, a.left)
-            // Позиция второго учитывает запас первого (место под будущий сегмент), строка одна.
-            assertEquals(140, b.left)
+            // Запас не сдвигает соседей: только решение о переносе; строка одна.
+            assertEquals(110, b.left)
             assertEquals(40, flow.measuredHeight)
         }
     }
