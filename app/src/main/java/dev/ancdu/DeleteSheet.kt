@@ -3,6 +3,7 @@ package dev.ancdu
 import android.app.Activity
 import android.app.Dialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.StateListDrawable
 import android.os.Handler
@@ -78,7 +79,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                   val group: GroupInfo? = null, val fromCard: Boolean = false, private val onDelete: (Boolean) -> Unit) {
     private val ui = Handler(Looper.getMainLooper())
     private val t: Txt = act.tx
-    val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+    val dialog = Dialog(act, R.style.Theme_Ancdu_Sheet)
     /** null — удаление запрещено ([blockText] вместо кнопки). */
     var deleteButton: TextView? = null
         private set
@@ -175,7 +176,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     private fun enable(b: TextView) {
         val was = b.isEnabled
         b.isEnabled = true
-        b.alpha = 1f
         b.text = readyLabel
         b.contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
         if (was) return
@@ -194,7 +194,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         val ms = tier.pauseMs
         if (ms <= 0) { enable(b); return }
         b.isEnabled = false
-        b.alpha = 0.5f
         enableAt = SystemClock.uptimeMillis() + ms
         tick.run()
     }
@@ -496,7 +495,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
         cancelButton = button(t.s(if (b == null) R.string.cancel else R.string.close), null, C.TEXT, Cue.BACK) { dialog.dismiss() }
         if (b != null) { addView(cancelButton, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)); return@apply }
-        val del = button(readyLabel, C.DANGER_FILL, Color.WHITE, cue = null) {
+        val del = button(readyLabel, C.DANGER_FILL, C.WHITE, cue = null) {
             val b = deleteButton
             if (guarded()) { guardedTaps++; return@button }
             if (b?.isEnabled == true) {
@@ -505,22 +504,28 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             }
         }.apply {
             contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
-            if (tier.pauseMs > 0) { isEnabled = false; alpha = 0.5f }
+            if (tier.pauseMs > 0) isEnabled = false
         }
         deleteButton = del
         addView(ButtonPair(act, del, cancelButton, listOf(readyLabel, t.s(R.string.delete_in, Fmt.count(9, t.locale)))),
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
-    /** Кнопка 56dp: [bg] — заливка, null — контур FRAME. [cue] — звук касания (null — его даёт [onClick]). */
+    /**
+     * Кнопка 56dp: [bg] — заливка, null — контур FRAME. [cue] — звук касания (null — его даёт [onClick]).
+     * Заливная выключенная (отсчёт) — DIS_FILL / DIS_TEXT, фокус — контур FOCUS.
+     */
     private fun button(text: String, bg: Int?, fg: Int, cue: Cue?, onClick: () -> Unit): TextView =
         act.label(text, 15f, fg, bold = true).apply {
+            if (bg != null) setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                intArrayOf(C.DIS_TEXT, fg)))
             gravity = Gravity.CENTER
             minHeight = act.dp(56)
             setPadding(act.dp(12), act.dp(8), act.dp(12), act.dp(8))
             background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else StateListDrawable().apply {
+                addState(intArrayOf(-android.R.attr.state_enabled), act.box(C.DIS_FILL))
                 addState(intArrayOf(android.R.attr.state_pressed), act.box(C.DANGER_PRESSED))
-                addState(intArrayOf(android.R.attr.state_focused), act.box(bg, Color.WHITE))
+                addState(intArrayOf(android.R.attr.state_focused), act.box(bg, C.FOCUS))
                 addState(intArrayOf(), act.box(bg))
             }
             isClickable = true; isFocusable = true

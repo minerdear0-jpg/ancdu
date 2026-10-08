@@ -63,8 +63,6 @@ data class Palette(
 ) {
     companion object {
         private fun argb(c: Long) = c.toInt()
-        /** [c] с альфой [a] (0..1). */
-        fun alpha(c: Int, a: Float): Int = (c and 0x00FFFFFF) or ((a * 255 + 0.5f).toInt() shl 24)
 
         private const val D_BG = 0xFF0A0D10
         private const val D_TEXT = 0xFFE8E6E1

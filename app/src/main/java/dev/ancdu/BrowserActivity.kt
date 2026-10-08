@@ -411,7 +411,7 @@ class BrowserActivity : LangActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        darkBars()
+        systemBars()
         h = Holder.h
         gen = Holder.gen
         if (h == 0L) { finish(); return }
@@ -890,6 +890,7 @@ class BrowserActivity : LangActivity() {
         chips.addView(hbox(6).apply {
             addView(ImageView(this@BrowserActivity).apply {
                 setImageResource(R.drawable.ic_sort)
+                imageTintList = android.content.res.ColorStateList.valueOf(C.MUTED)
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(dp(24), dp(24)))
             addView(sorts)
@@ -1558,7 +1559,7 @@ class BrowserActivity : LangActivity() {
         }
         waitBar = bar; waitText = text; waitStop = stop
         lastDecile = -1
-        wait = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        wait = AlertDialog.Builder(this, R.style.Theme_Ancdu_Alert)
             .setView(body).setCancelable(false).create().apply {
                 window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
                 // Заголовок окна — для TalkBack (видимый заголовок — в теле).

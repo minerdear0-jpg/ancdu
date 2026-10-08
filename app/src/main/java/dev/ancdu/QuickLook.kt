@@ -67,7 +67,7 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
                 val fromSheet: Boolean = false, private val onDelete: () -> Unit) {
     private val t: Txt = act.tx
     private val ui = Handler(Looper.getMainLooper())
-    val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+    val dialog = Dialog(act, R.style.Theme_Ancdu_Sheet)
     private val ext = Ellipsis.ext(info.name)
     private val mime = ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.lowercase(Locale.ROOT)) }
     /**
@@ -175,7 +175,7 @@ class QuickLook(private val act: Activity, val info: QuickLookInfo, private val 
         info.owner?.let { addView(act.ownerRow(it, t)) }
         if (kind != PeekKind.NONE) {
             box = FrameLayout(act).apply {
-                background = act.box(C.BG, C.LINE)
+                background = act.box(C.BG, C.THUMB_LINE)
                 val one = act.dp(1)
                 setPadding(one, one, one, one)
             }

@@ -179,8 +179,9 @@ internal class VideoBox(private val act: Activity, private val path: String, pri
     private fun playFailed() {
         stopPlayer()
         if (closed) return
-        cantPlay = act.label(t.s(R.string.ql_cant_play), 12f, C.TEXT, mono = true).apply {
-            setBackgroundColor(0xCC101214.toInt())
+        // Надпись поверх кадра — на сцене, всегда тёмной (и в светлой теме).
+        cantPlay = act.label(t.s(R.string.ql_cant_play), 12f, C.STAGE_TEXT, mono = true).apply {
+            setBackgroundColor(C.STAGE_SCRIM)
             setPadding(act.dp(8), act.dp(4), act.dp(8), act.dp(4))
         }
         main.addView(cantPlay, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))

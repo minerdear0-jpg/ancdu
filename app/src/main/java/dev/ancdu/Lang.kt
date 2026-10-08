@@ -101,7 +101,7 @@ object Lang {
     fun ask(a: Activity): AlertDialog {
         val all = LangChoice.entries
         val cur = choice(a)
-        return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        return AlertDialog.Builder(a, R.style.Theme_Ancdu_Alert)
             .setTitle(a.tx.s(R.string.lang_title))
             .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
                 d.dismiss()
@@ -114,7 +114,7 @@ object Lang {
     fun askFx(a: Activity): AlertDialog {
         val all = FxMode.entries
         val cur = Feedback.mode
-        return AlertDialog.Builder(a, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        return AlertDialog.Builder(a, R.style.Theme_Ancdu_Alert)
             .setTitle(a.tx.s(R.string.fx_title))
             .setSingleChoiceItems(all.map { a.tx.s(it.label) }.toTypedArray(), all.indexOf(cur)) { d, which ->
                 d.dismiss()

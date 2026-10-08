@@ -32,7 +32,7 @@ class ErrorsSheet(private val act: Activity, val list: ErrList, private val root
                   /** Лист закрыт любым путём: отложенная подстановка дерева перепроверяется. */
                   private val onClose: () -> Unit = {}) {
     private val t: Txt = act.tx
-    val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+    val dialog = Dialog(act, R.style.Theme_Ancdu_Sheet)
     /** Для тестов: строки по порядку ([list].rows), их причины, кнопка root (null — нет). */
     val rows = ArrayList<View>()
     val reasons = ArrayList<TextView>()

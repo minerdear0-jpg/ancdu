@@ -85,7 +85,7 @@ internal class SheetThumbs(private val act: Activity) {
     }
 
     private fun frame(): FrameLayout = FrameLayout(act).apply {
-        background = act.box(C.BG, C.LINE)
+        background = act.box(C.BG, C.THUMB_LINE)
         val one = act.dp(1)
         setPadding(one, one, one, one)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO

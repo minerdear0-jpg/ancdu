@@ -22,7 +22,7 @@ class PathPanel(private val act: Activity, val path: String, private val crumbs:
                 /** Панель закрыта любым путём: отложенная подстановка дерева перепроверяется. */
                 private val onClose: () -> Unit = {}) {
     private val t: Txt = act.tx
-    val dialog = Dialog(act, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+    val dialog = Dialog(act, R.style.Theme_Ancdu_Sheet)
     lateinit var pathText: TextView
         private set
     lateinit var copyButton: View

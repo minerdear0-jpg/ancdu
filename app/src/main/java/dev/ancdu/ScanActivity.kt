@@ -78,7 +78,7 @@ class ScanActivity : LangActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        darkBars()
+        systemBars()
         root = intent.getStringExtra(EXTRA_ROOT) ?: "/storage/emulated/0"
         su = intent.getBooleanExtra(EXTRA_SU, false)
         attach = intent.getBooleanExtra(EXTRA_ATTACH, false)

@@ -43,7 +43,7 @@ class AppsActivity : LangActivity() {
     /** Экран строится один раз; onResume только перечитывает данные и обновляет список на месте. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        darkBars()
+        systemBars()
         list = NcduListView(this).apply { withSub = true; source = src }
         listBox = vbox().apply {
             addView(legend())

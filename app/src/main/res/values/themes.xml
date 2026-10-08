@@ -11,6 +11,10 @@
         <item name="android:windowLightNavigationBar">@bool/light_bars</item>
     </style>
 
+    <!-- Диалоги (AlertDialog) и окна листов: светлые здесь, тёмные — values-night. -->
+    <style name="Theme.Ancdu.Alert" parent="@android:style/Theme.DeviceDefault.Light.Dialog.Alert" />
+    <style name="Theme.Ancdu.Sheet" parent="@android:style/Theme.DeviceDefault.Light.Dialog.NoActionBar" />
+
     <!-- Окно листа удаления: въезд снизу и уход вниз; затемнение гаснет вместе с окном. -->
     <style name="SheetAnim">
         <item name="android:windowEnterAnimation">@anim/sheet_enter</item>

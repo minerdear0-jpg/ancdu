@@ -60,8 +60,8 @@ class Brackets(ctx: Context, private val fill: Int, private val bottom: Boolean 
 }
 
 /**
- * Развёртка скана: амберная линия 1dp бежит сверху вниз по панели (1200 мс, по кругу) со
- * шлейфом ≤8dp и альфой ≤0.35 над ней. Ставится как foreground панели; только пока идёт скан.
+ * Развёртка скана: линия 1dp (тёмная — AMBER, светлая — AMBER_TEXT) бежит сверху вниз по панели
+ * (1200 мс, по кругу) со шлейфом ≤8dp и альфой ≤0.35 (светлая — ≤0.20) над ней. Ставится как foreground панели; только пока идёт скан.
  * Анимации выключены ([Motion]) — [start] ничего не делает, линии нет.
  */
 class Sweep(ctx: Context) : Drawable() {
@@ -71,10 +71,10 @@ class Sweep(ctx: Context) : Drawable() {
     private var pos = 0f
     private val one = ctx.dp(1).toFloat()
     private val trail = ctx.dp(8).toFloat()
-    private val line = Paint().apply { color = C.AMBER }
+    private val line = Paint().apply { color = C.p.sweepLine }
     private val glow = Paint().apply {
-        shader = LinearGradient(0f, 0f, 0f, trail, C.AMBER and 0x00FFFFFF, (C.AMBER and 0x00FFFFFF) or 0x59000000,
-            Shader.TileMode.CLAMP)
+        val c = C.p.sweepLine and 0x00FFFFFF
+        shader = LinearGradient(0f, 0f, 0f, trail, c, c or (C.p.sweepGlowAlpha shl 24), Shader.TileMode.CLAMP)
     }
 
     fun start() {
@@ -119,7 +119,7 @@ class Sweep(ctx: Context) : Drawable() {
  * Полоса 2dp фонового скана (шапка браузера, карточка главного экрана); всегда держит место
  * (INVISIBLE, не GONE). Есть доля — определённая (заполнение слева, к новой доле — за 100 мс), нет —
  * неопределённая (амберный отрезок бежит по кругу). Без анимаций ([Motion]) определённая двигается
- * шагами, неопределённая — статичная линия с альфой 40%. Для доступности её нет.
+ * шагами, неопределённая — статичная линия с альфой 40% (в светлой — непрозрачная). Для доступности её нет.
  */
 class ScanLine(ctx: Context) : View(ctx) {
     /** Показанная доля; null — неопределённая. */
@@ -217,7 +217,7 @@ class ScanLine(ctx: Context) : View(ctx) {
                 val x = pos * (w + seg) - seg
                 c.drawRect(maxOf(x, 0f), 0f, minOf(x + seg, w), h, paint)
             }
-            else -> { paint.alpha = 102; c.drawRect(0f, 0f, w, h, paint) }
+            else -> { paint.alpha = C.p.idleLineAlpha; c.drawRect(0f, 0f, w, h, paint) }
         }
     }
 }

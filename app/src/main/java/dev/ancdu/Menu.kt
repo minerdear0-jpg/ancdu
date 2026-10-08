@@ -27,7 +27,7 @@ object About {
 
 /** Лист у нижнего края (как панель пути): скобки сверху, затемнение, не выше 85% экрана; «назад» — BACK. */
 private fun Activity.sheetDialog(title: String, body: View): Dialog =
-    Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar).apply {
+    Dialog(this, R.style.Theme_Ancdu_Sheet).apply {
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(MaxHeightBox(this@sheetDialog, 0.85f).apply {
             background = Brackets(this@sheetDialog, C.PANEL, bottom = false)

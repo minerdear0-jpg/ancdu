@@ -54,7 +54,7 @@ class MainActivity : LangActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        darkBars()
+        systemBars()
         Root.load(this)
         val prefs = getSharedPreferences(Scans.PREFS, MODE_PRIVATE)
         val rootCaches = prefs.all.values.any { CacheMeta.parse(it as? String)?.su == true }

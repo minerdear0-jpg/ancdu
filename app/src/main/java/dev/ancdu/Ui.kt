@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
 import android.widget.ImageView
@@ -331,7 +332,7 @@ fun Context.backButton(onClick: () -> Unit): TextView = label("‹", 28f).apply 
 }
 
 /**
- * Окно листа у нижнего края во всю ширину: затемнение 60%, въезд снизу (SheetAnim; без анимаций — 0).
+ * Окно листа у нижнего края во всю ширину: затемнение [C.SCRIM] (тёмная — 60%, светлая — 40%), въезд снизу (SheetAnim; без анимаций — 0).
  * Вызывать после setContentView.
  */
 fun Dialog.bottomSheet() {
@@ -341,7 +342,8 @@ fun Dialog.bottomSheet() {
         setLayout(MATCH_PARENT, WRAP_CONTENT)
         setGravity(Gravity.BOTTOM)
         addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        setDimAmount(0.6f)
+        // Затемнение окна — всегда чёрное: от SCRIM берётся сила (альфа); светлый INK почти чёрный.
+        setDimAmount((C.SCRIM ushr 24) / 255f)
         setWindowAnimations(Motion.sheet())
     }
 }
@@ -361,15 +363,21 @@ class MaxHeightBox(ctx: Context, private val fraction: Float) : LinearLayout(ctx
     }
 }
 
-fun Activity.darkBars() {
+/**
+ * Полосы системы под палитру экрана: фон BG; в светлой — тёмные значки (LIGHT_*_BARS), в тёмной —
+ * светлые. Вызывать в onCreate после выбора палитры ([LangActivity]).
+ */
+fun Activity.systemBars() {
     window.statusBarColor = C.BG
     window.navigationBarColor = C.BG
+    val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+    window.insetsController?.setSystemBarsAppearance(if (C.p.dark) 0 else mask, mask)
 }
 
 /** [onDismiss] — после закрытия любым путём (кнопка, «назад», тап вне диалога). */
 fun Activity.alert(title: String, msg: String, ok: String = getString(android.R.string.ok), cancel: String? = null,
                    onDismiss: (() -> Unit)? = null, onOk: () -> Unit = {}): AlertDialog =
-    AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+    AlertDialog.Builder(this, R.style.Theme_Ancdu_Alert)
         .setTitle(title).setMessage(msg)
         .setPositiveButton(ok) { _, _ -> onOk() }
         .apply { if (cancel != null) setNegativeButton(cancel, null) }
