@@ -136,7 +136,8 @@ class ConfirmSheet(
 /**
  * Выбор одного из [options] (язык, тема, звук) — тот же лист, что [ConfirmSheet]: заголовок, строки
  * 48dp через волосяные линии, у выбранной [checked] — амберный флажок справа (как флажок режима
- * выбора), внизу «Закрыть». Тап по строке — TAP, лист закрывается, затем [onPick]. Фокус — на
+ * выбора), внизу «Закрыть». Тап по строке — TAP, лист закрывается, затем [onPick]; «Закрыть»,
+ * «назад» — BACK; звук открытия — у пункта меню, открывшего выбор. Фокус — на
  * выбранной строке. TalkBack: строки — RadioButton с состоянием.
  */
 class ChoiceSheet(private val act: Activity, val title: String, val options: List<String>, val checked: Int,
@@ -198,7 +199,7 @@ class ChoiceSheet(private val act: Activity, val title: String, val options: Lis
         val focus = rows.getOrNull(checked) ?: closeButton
         focus.requestFocus()
         dialog.window?.decorView?.post { if (dialog.isShowing) focus.requestFocus() }
-        Feedback.cue(focus, Cue.TAP)
+        // TAP открытия дал пункт меню, открывший выбор.
         return this
     }
 

@@ -168,7 +168,8 @@ class DeleteLogSheet(private val act: Activity, entries: List<LogEntry>) {
         val body = t.q(if (DeleteLog.notice != null) R.plurals.log_clear_body_notice else R.plurals.log_clear_body, count.toLong(), n)
         // Опасный вариант листа: «Очистить» — красная заливка, первые OPEN_GUARD_MS касания мимо; фокус — «Отмена».
         confirm = ConfirmSheet(act, t.s(R.string.log_clear_title), body, ok = t.s(R.string.log_clear_ok),
-            cancel = t.s(R.string.cancel), danger = true) {
+            // TAP открытия уже дала «Очистить…».
+            cancel = t.s(R.string.cancel), danger = true, openCue = null) {
             DeleteLog.clear { done -> if (done && dialog.isShowing) cleared() }
         }.show()
     }
