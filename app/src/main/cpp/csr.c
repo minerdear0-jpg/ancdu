@@ -303,3 +303,36 @@ uint32_t csr_error_nodes(const arena *a, uint32_t cap, uint32_t *out, uint64_t *
   if (total) *total = t;
   return w;
 }
+
+uint32_t csr_child_named(const arena *a, uint32_t node, const char *name, size_t len, int dir_only) {
+  uint64_t n = atomic_load(&a->h->count);
+  if ((uint64_t)node >= n || len == 0 || len > ANCDU_MAX_NAME) return ANCDU_NONE;
+  uint32_t s = a->child_start[node], c = a->child_count[node];
+  for (uint32_t j = 0; j < c; j++) {
+    uint32_t x = a->order[s + j];
+    uint8_t f = a->flags[x];
+    if (f & F_DELETED || (dir_only && !(f & F_DIR))) continue;
+    if (a->name_len[x] == len && memcmp(arena_name(a, x), name, len) == 0) return x;
+  }
+  return ANCDU_NONE;
+}
+
+uint32_t csr_resolve(const arena *a, const char *chain, size_t len, int dir_only, uint32_t *depth) {
+  uint32_t cur = 0, d = 0;
+  if (len > 0 && atomic_load(&a->h->count) > 0) {
+    size_t start = 0;
+    for (;;) {
+      const char *z = memchr(chain + start, 0, len - start);
+      size_t end = z ? (size_t)(z - chain) : len;
+      int last = end == len;
+      uint32_t x = csr_child_named(a, cur, chain + start, end - start, dir_only || !last);
+      if (x == ANCDU_NONE) break;
+      cur = x;
+      d++;
+      if (last) break;
+      start = end + 1;
+    }
+  }
+  if (depth) *depth = d;
+  return cur;
+}

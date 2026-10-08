@@ -80,6 +80,24 @@ object Native {
         deltaBytes(h, b(base), dDisk, dApp, st, err)
     @JvmStatic external fun name(h: Long, node: Int): ByteArray
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
+    /** Ребёнок [node] без удалённых с именем ровно [name] (байты), каталог, если [dirOnly]; -1 — нет. Только чтение. */
+    @JvmStatic external fun childNamed(h: Long, node: Int, name: ByteArray, dirOnly: Boolean): Int
+    /** Путь [chain] (байты имён от корня через \u0000, [Focus.encode]): out[0] — самый глубокий найденный
+     *  узел, out[1] — сколько имён найдено (промежуточные — каталоги, последний — каталог, если [dirOnly]).
+     *  0 или <0 (нет дерева, out короче 2, цепочка длиннее [Focus.MAX_BYTES]). Только чтение. */
+    @JvmStatic external fun resolveBytes(h: Long, chain: ByteArray, dirOnly: Boolean, out: IntArray): Int
+    /** [resolveBytes] по именам [names]: узел и найден ли весь путь; ошибка — корень, не весь путь. */
+    fun resolve(h: Long, names: List<ByteArray>, dirOnly: Boolean): PathWalk.Hit {
+        val out = IntArray(2)
+        if (resolveBytes(h, Focus.encode(names), dirOnly, out) != 0) return PathWalk.Hit(0, names.isEmpty())
+        return PathWalk.Hit(out[0], out[1] == names.size)
+    }
+    /** Сколько имён [names] найдено по [resolveBytes] (для «Папки уже нет: <имя>»); ошибка — 0. */
+    fun resolveDepth(h: Long, names: List<ByteArray>, dirOnly: Boolean): Pair<Int, Int> {
+        val out = IntArray(2)
+        if (resolveBytes(h, Focus.encode(names), dirOnly, out) != 0) return 0 to 0
+        return out[0] to out[1]
+    }
     @JvmStatic external fun parent(h: Long, node: Int): Int
     @JvmStatic external fun source(h: Long): Int
     /** 0 — удалено; -EINTR (-4) — остановлено [deleteStop], удалено частично; -ESTALE (-116) —

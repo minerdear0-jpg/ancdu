@@ -626,9 +626,8 @@ class BrowserActivity : LangActivity() {
         ui.post { if (!isFinishing && !busy && h == handle && h != 0L) previews.openQuickLook(target, size, flags) }
     }
 
-    /** Узел по байтам имён от корня в дереве [h] (файл или каталог). */
-    private fun resolveNode(names: List<ByteArray>): PathWalk.Hit =
-        PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = false) }
+    /** Узел по байтам имён от корня в дереве [h] (файл или каталог) — одним вызовом ядра. */
+    private fun resolveNode(names: List<ByteArray>): PathWalk.Hit = Native.resolve(h, names, dirOnly = false)
 
     /** Байты имён пути узла [nd] дерева [handle] от корня (без самого корня). */
     internal fun pathNames(handle: Long, nd: Int): List<ByteArray> {
@@ -676,7 +675,7 @@ class BrowserActivity : LangActivity() {
         scrollAt.clear()
         if (h == 0L) { finish(); return }
         list.source = src
-        val hit = PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = true) }
+        val hit = Native.resolve(h, names, dirOnly = true)
         // «Гиганты»: список заново из нового дерева, затем выбор — по цепочкам; пропавшие выбрасываются.
         if (giant.on) {
             sel.rebindChains()
@@ -701,17 +700,6 @@ class BrowserActivity : LangActivity() {
         val m = HashMap<NameKey, Int>(k * 2)
         for (i in 0 until k) m[NameKey(Native.name(h, c[i]))] = c[i]
         return m
-    }
-
-    /** Ребёнок [nd] с именем ровно [nm] (байты) в дереве [h] — каталог, если [dirOnly], — или null. */
-    private fun child(nd: Int, nm: ByteArray, dirOnly: Boolean): Int? {
-        val c = IntArray(Native.childCount(h, nd))
-        val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
-        if (k == 0) return null
-        val inf = LongArray(4 * k).also { Native.nodeInfo(h, c, k, it) }
-        for (i in 0 until k)
-            if ((!dirOnly || inf[4 * i + 3].toInt() and F_DIR != 0) && Native.name(h, c[i]).contentEquals(nm)) return c[i]
-        return null
     }
 
     override fun onPause() {

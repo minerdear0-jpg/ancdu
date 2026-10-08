@@ -391,6 +391,50 @@ FN(jbyteArray, name)(JNIEnv *e, jclass c, jlong h, jint node) {
   return bytes(e, arena_name(a, (uint32_t)node), a->name_len[node]);
 }
 
+/* Байты массива [b] (до cap) в новый буфер (free — вызывающий); *n — длина. NULL — массива нет,
+ * длиннее cap или нет памяти (у пустого — непустой указатель). */
+static char *raw(JNIEnv *e, jbyteArray b, jsize cap, jsize *n) {
+  *n = b ? (*e)->GetArrayLength(e, b) : -1;
+  if (*n < 0 || *n > cap) return NULL;
+  char *p = malloc((size_t)*n + 1);
+  if (p && *n) (*e)->GetByteArrayRegion(e, b, 0, *n, (jbyte *)p);
+  if (p && (*e)->ExceptionCheck(e)) {
+    free(p);
+    return NULL;
+  }
+  return p;
+}
+
+/* Ребёнок [node] с именем ровно [name] (байты; csr_child_named); -1 — нет. Только чтение. */
+FN(jint, childNamed)(JNIEnv *e, jclass c, jlong h, jint node, jbyteArray name, jboolean dirOnly) {
+  (void)c;
+  arena *a = tree(h, node);
+  jsize n;
+  char *p = a ? raw(e, name, ANCDU_MAX_NAME, &n) : NULL;
+  if (!p) return -1;
+  uint32_t x = csr_child_named(a, (uint32_t)node, p, (size_t)n, dirOnly);
+  free(p);
+  return x == ANCDU_NONE ? -1 : (jint)x;
+}
+
+/* Путь по цепочке имён от корня ([chain] — Focus.encode, до 64 КиБ; csr_resolve): out[0] — самый
+ * глубокий найденный узел, out[1] — сколько имён найдено. 0 или -EINVAL (нет дерева, out короче 2,
+ * цепочка длиннее предела; out не тронут), -ENOMEM. Только чтение. */
+FN(jint, resolveBytes)(JNIEnv *e, jclass c, jlong h, jbyteArray chain, jboolean dirOnly, jintArray out) {
+  (void)c;
+  arena *a = tree(h, 0);
+  if (!a || !out || (*e)->GetArrayLength(e, out) < 2) return -EINVAL;
+  jsize n;
+  char *p = raw(e, chain, 65536, &n);
+  if (!p) return n < 0 || n > 65536 ? -EINVAL : -ENOMEM;
+  uint32_t d = 0;
+  uint32_t x = csr_resolve(a, p, (size_t)n, dirOnly, &d);
+  free(p);
+  jint r[2] = {(jint)x, (jint)d};
+  (*e)->SetIntArrayRegion(e, out, 0, 2, r);
+  return 0;
+}
+
 FN(jbyteArray, path)(JNIEnv *e, jclass c, jlong h, jint node) {
   (void)c;
   arena *a = tree(h, node);

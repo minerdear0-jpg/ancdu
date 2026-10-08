@@ -39,3 +39,15 @@ uint32_t csr_giants(const arena *a, uint64_t min_bytes, uint32_t max_count, uint
  * в *total (если не NULL) — сколько их всего. Только чтение арены; O(n), плюс O(n) байт памяти,
  * только если в дереве есть удалённое. Возвращает число записанных (≤ cap). */
 uint32_t csr_error_nodes(const arena *a, uint32_t cap, uint32_t *out, uint64_t *total);
+
+/* Ребёнок node без F_DELETED с именем ровно name[0..len) (байты, без \0); dir_only — только
+ * каталог. ANCDU_NONE — нет (и при len 0, len > ANCDU_MAX_NAME, node вне дерева). O(детей node).
+ * Только чтение арены. */
+uint32_t csr_child_named(const arena *a, uint32_t node, const char *name, size_t len, int dir_only);
+
+/* Путь по именам от корня: chain[0..len) — имена через \0 (без завершающего; len 0 — корень), как
+ * Focus.encode. Каждый шаг — csr_child_named; промежуточные — каталоги, последний — каталог, если
+ * dir_only. Пустое имя (два \0 подряд, \0 в начале или в конце) дальше не ищется. Возвращает самый
+ * глубокий найденный узел (0 — корень); в *depth (если не NULL) — сколько имён найдено: равно
+ * числу имён — найден весь путь. Только чтение арены. */
+uint32_t csr_resolve(const arena *a, const char *chain, size_t len, int dir_only, uint32_t *depth);

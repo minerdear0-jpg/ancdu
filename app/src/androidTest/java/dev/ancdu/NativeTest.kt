@@ -50,6 +50,32 @@ class NativeTest {
         return out[0]
     }
 
+    /** Путь по байтам имён и ребёнок по имени — одним вызовом ядра (ничего не удаляет). */
+    @Test fun resolveAndChildNamed() {
+        val h = Native.scanStart(dir.path, true, 2, IntArray(1))
+        assertNotEquals(0L, h)
+        try {
+            assertEquals(ST_DONE, waitDone(h))
+            val b = { s: String -> s.toByteArray(Charsets.UTF_8) }
+            val sub = Native.childNamed(h, 0, b("sub"), true)
+            assertTrue(sub > 0)
+            assertEquals("sub", Native.str(Native.name(h, sub)))
+            val big = Native.childNamed(h, sub, b("big.bin"), false)
+            assertEquals(File(dir, "sub/big.bin").path, Native.str(Native.path(h, big)))
+            assertEquals(-1, Native.childNamed(h, sub, b("big.bin"), true))
+            assertEquals(-1, Native.childNamed(h, 0, b("nope"), false))
+            assertTrue(Native.childNamed(h, 0, b("🎉 party.txt"), false) > 0)
+            assertEquals(PathWalk.Hit(big, true), Native.resolve(h, listOf(b("sub"), b("big.bin")), dirOnly = false))
+            assertEquals(PathWalk.Hit(sub, false), Native.resolve(h, listOf(b("sub"), b("big.bin")), dirOnly = true))
+            assertEquals(PathWalk.Hit(0, true), Native.resolve(h, emptyList(), dirOnly = true))
+            assertEquals(sub to 1, Native.resolveDepth(h, listOf(b("sub"), b("gone"), b("x")), dirOnly = true))
+            // Нет дерева — ошибка, не исключение.
+            assertEquals(-1, Native.childNamed(0L, 0, b("sub"), false))
+            assertTrue(Native.resolveBytes(0L, ByteArray(0), true, IntArray(2)) < 0)
+            assertTrue(Native.resolveBytes(h, ByteArray(0), true, IntArray(1)) < 0)
+        } finally { Native.free(h) }
+    }
+
     @Test fun scanBrowseDelete() {
         val err = IntArray(1)
         val h = Native.scanStart(dir.path, true, 2, err)
