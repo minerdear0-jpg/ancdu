@@ -74,8 +74,6 @@
     <!-- Storage card. -->
     <string name="internal_title">Internal storage · /data</string>
     <string name="shared_title">Shared storage</string>
-    <string name="hero_of">of %1$s</string>
-    <string name="legend_used">Used</string>
     <string name="files_access_explain">To measure folders in internal storage, give ancdu “All files access”. ancdu sends nothing anywhere and deletes only after you confirm.</string>
     <string name="open_tree_need_access">Open tree: allow all files access</string>
     <string name="card_desc">Open shared storage tree</string>
@@ -95,16 +93,9 @@
     <string name="seg_free">Free</string>
 
     <!-- Freshness line (ScanGate). -->
-    <string name="fresh_cache">cache %1$s</string>
-    <string name="fresh_scan">scan %1$s</string>
-    <string name="fresh_updating">updating… %1$s</string>
-    <string name="fresh_first">%1$s · first scan</string>
     <string name="fresh_refresh">refresh ›</string>
-    <string name="fresh_approx">approximate · %1$s</string>
-    <string name="just_now">just now</string>
     <string name="min_ago">%1$s\u00A0min ago</string>
     <string name="h_ago">%1$s\u00A0h ago</string>
-    <string name="delta">%1$s since last scan</string>
 
     <!-- Root panel. -->
     <string name="su_desc_ask">su: request root</string>
@@ -366,4 +357,21 @@
     <string name="growth_home">%1$s since %2$s · mostly %3$s ›</string>
     <string name="growth_home_plain">%1$s since %2$s ›</string>
     <string name="growth_open_desc">opens the folder sorted by growth</string>
+    <string name="size_of">%1$s of %2$s</string>
+    <string name="status_interrupted">⚠ interrupted: %1$s · %2$s ›</string>
+    <string name="status_stale">scan %1$s · refresh ›</string>
+    <string name="status_approx">approximate · refresh ›</string>
+    <string name="growth_home_short">%1$s since %2$s · %3$s ›</string>
+    <string name="card_free">free %1$s</string>
+    <string name="card_low">low space · used %1$s</string>
+    <string name="hero_free">⚠ free</string>
+    <string name="shared_updating">updating</string>
+    <string name="apps_system">Apps &amp; system</string>
+    <string name="apps_access">access ›</string>
+    <string name="more_row">more: %1$s ›</string>
+    <string name="more_apps">apps</string>
+    <string name="more_root">root</string>
+    <string name="more_scans">scans</string>
+    <string name="more_desc">Show apps, root and past scans</string>
+    <string name="interrupted_open_desc">opens the folder; the rest is listed there</string>
 </resources>

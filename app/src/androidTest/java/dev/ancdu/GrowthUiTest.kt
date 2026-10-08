@@ -261,7 +261,7 @@ class GrowthUiTest {
         assertTrue(waitFor { m.biggest.rows.isNotEmpty() })
         ins.runOnMainSync {
             assertNull(m.storage.growth)
-            assertEquals(android.view.View.GONE, m.storage.growthTxt.visibility)
+            assertFalse(m.storage.status is Status.Grew)
         }
         markAndWait()
         inBox("store/Telegram/Video/new.mp4").writeBytes(ByteArray(3 shl 20))
@@ -275,9 +275,12 @@ class GrowthUiTest {
             assertEquals(d.of(0, false), g.delta)
             assertTrue(g.delta >= 3L shl 20)
             assertEquals("Telegram/Video", g.path)
-            assertEquals(GrowthText.home(m.tx, g.delta, d.baseTime, "Telegram/Video"), m.storage.growthTxt.text.toString())
-            assertEquals(C.AMBER_TEXT, m.storage.growthTxt.currentTextColor)
-            assertTrue(m.storage.growthTxt.minHeight >= m.dp(48))
+            assertTrue(m.storage.status is Status.Grew)
+            val full = GrowthText.home(m.tx, g.delta, d.baseTime, "Telegram/Video")
+            val short = StatusLine.text(m.tx, m.storage.status, System.currentTimeMillis(), wide = false)
+            assertTrue(m.storage.statusTxt.text.toString(), m.storage.statusTxt.text.toString() in setOf(full, short))
+            assertEquals(C.AMBER_TEXT, m.storage.statusTxt.currentTextColor)
+            assertTrue(m.storage.statusTxt.minHeight >= m.dp(48))
         }
         assertTrue(waitFor { m.biggest.rows.firstOrNull()?.name == "new.mp4" })
         ins.runOnMainSync {
@@ -287,7 +290,7 @@ class GrowthUiTest {
         }
         val mon = ins.addMonitor(BrowserActivity::class.java.name, null, false)
         try {
-            ins.runOnMainSync { assertTrue(m.storage.growthTxt.performClick()) }
+            ins.runOnMainSync { assertTrue(m.storage.statusTxt.performClick()) }
             val b = ins.waitForMonitorWithTimeout(mon, 10_000) as BrowserActivity?
             assertNotNull("браузер не открылся", b)
             opened += b!!

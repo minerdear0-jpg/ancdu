@@ -155,8 +155,9 @@ class MainTest {
             assertEquals(listOf(a.getString(R.string.last_scan, "/data")), a.rootScans())
             ins.runOnMainSync {
                 assertEquals(a.getString(R.string.shared_title), a.storage.storeTitle.text.toString())
-                assertEquals("${Fmt.size(123456, a.tx)} · ${a.tx.items(5000)}", a.storage.storeTotal.text.toString())
-                assertTrue(a.storage.freshTxt.text.toString(), a.storage.freshTxt.text.startsWith(a.prefixOf(R.string.fresh_cache)))
+                // Объём без числа элементов; кэш старше суток — «скан N дней назад · обновить ›» (или идёт скан).
+                assertTrue(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.startsWith(Fmt.size(123456, a.tx)))
+                assertTrue(a.storage.status.toString(), a.storage.status is Status.Stale || BgScan.storageActive)
                 assertNotNull(a.window.decorView.findViewWithTag<SegBar>("segbar"))
                 assertTrue(a.storage.view.isClickable)
             }
@@ -204,10 +205,10 @@ class MainTest {
                 CacheMeta(Scans.STORAGE, false, 999, 1, System.currentTimeMillis(), 999_999_999, 999).format()).commit()
             val a = launch().also { act = it }
             ins.runOnMainSync {
-                val line = a.storage.freshTxt.text.toString()
-                assertTrue(line, line.startsWith(a.prefixOf(R.string.fresh_cache)))
-                assertFalse(line, line.endsWith(a.getString(R.string.just_now)))
-                assertTrue(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.endsWith(" · " + a.tx.items(2)))
+                // Возраст — показанного дерева (старого): «устарело», а не тишина свежей записи.
+                val s = a.storage.status
+                assertTrue(s.toString(), s is Status.Stale && s.ageMs!! >= System.currentTimeMillis() - old - 60_000)
+                assertFalse(a.storage.storeTotal.text.toString(), a.storage.storeTotal.text.contains(Fmt.size(999_999_999, a.tx)))
             }
         } finally {
             act?.let { a -> ins.runOnMainSync { a.finish() } }
@@ -238,7 +239,8 @@ class MainTest {
                 onMain { !BgScan.active && (Scans.lastStorage?.time ?: 0) >= t0 }
             })
             assertTrue("карточка не обновилась", waitFor(5_000) {
-                onMain { a.storage.freshTxt.text.endsWith(a.getString(R.string.just_now)) && a.storage.storeTotal.text.contains(" · ") }
+                onMain { a.storage.status !is Status.Stale && a.storage.storeTotal.text.isNotEmpty() &&
+                    !a.storage.storeTotal.text.contains(a.getString(R.string.shared_updating)) }
             })
             ins.runOnMainSync {
                 assertEquals(Scans.STORAGE, Holder.root)

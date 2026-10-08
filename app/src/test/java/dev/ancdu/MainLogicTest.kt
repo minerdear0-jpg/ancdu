@@ -7,7 +7,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.TimeZone
 
 class ScanGateTest {
     private val moderate = ScanGate.THERMAL_MODERATE
@@ -38,48 +37,7 @@ class ScanGateTest {
 }
 
 class FreshnessTest {
-    private val utc = TimeZone.getTimeZone("UTC")
     private val t = 1_759_700_000_000L       // 21:33:20 UTC
-    private fun line(running: Boolean = false, live: Long = 0, cache: Long? = null, scanned: Boolean = false,
-                     blocked: Boolean = false, approx: Boolean = false, now: Long = t) =
-        Freshness.line(RU, running, live, cache, scanned, blocked, approx, now, utc)
-
-    @Test fun fresh() {
-        assertEquals("скан 21:33 · только что", line(cache = t - 5_000, scanned = true))
-        assertEquals("скан 21:33 · 5${Fmt.NBSP}мин назад", line(cache = t, scanned = true, now = t + 5 * 60_000))
-        assertEquals("кэш 21:33 · 2${Fmt.NBSP}ч назад", line(cache = t, now = t + 2 * 3_600_000 + 1))
-        assertEquals("кэш 21:33 · 05.10", line(cache = t, now = t + 2 * 86_400_000L))
-    }
-
-    @Test fun refreshingAndFirst() {
-        assertEquals("кэш 21:33 · обновляю… 1${Fmt.NBSP}234 эл.", line(running = true, live = 1234, cache = t))
-        assertEquals("4${Fmt.NBSP}980 эл. · первый скан", line(running = true, live = 4980))
-    }
-
-    @Test fun blockedAndNothing() {
-        assertEquals("обновить ›", line(blocked = true))
-        assertEquals("кэш 21:33 · обновить ›", line(blocked = true, cache = t))
-        assertEquals("обновить ›", line())
-        // идущий скан важнее запрета
-        assertEquals("0 эл. · первый скан", line(running = true, blocked = true))
-    }
-
-    @Test fun english() {
-        fun en(running: Boolean = false, live: Long = 0, cache: Long? = null, scanned: Boolean = false,
-               blocked: Boolean = false, approx: Boolean = false, now: Long = t) =
-            Freshness.line(EN, running, live, cache, scanned, blocked, approx, now, utc)
-        assertEquals("scan 21:33 · just now", en(cache = t - 5_000, scanned = true))
-        assertEquals("cache 21:33 · 5${Fmt.NBSP}min ago", en(cache = t, now = t + 5 * 60_000))
-        assertEquals("cache 21:33 · Oct 5", en(cache = t, now = t + 2 * 86_400_000L))
-        assertEquals("cache 21:33 · updating… 1,234 items", en(running = true, live = 1234, cache = t))
-        assertEquals("1 item · first scan", en(running = true, live = 1))
-        assertEquals("approximate · refresh ›", en(approx = true))
-    }
-
-    @Test fun approximate() {
-        assertEquals("приблизительно · 10 эл. · первый скан", line(running = true, live = 10, approx = true))
-        assertEquals("приблизительно · обновить ›", line(approx = true))
-    }
 
     /** Индекс — не скан: у него нет времени, даже если в Holder записано «сейчас». */
     @Test fun indexTreeHasNoTime() {
@@ -89,23 +47,12 @@ class FreshnessTest {
         assertEquals(t, Freshness.treeTime(Kind.CACHE, t))
     }
 
-    /** Карточка с индексом: после неудачного скана — повтор «обновить ›», пока идёт — «первый скан». */
-    @Test fun indexLinesFailedAndRunning() {
-        val idx = Freshness.treeTime(Kind.INDEX, t)
-        val failed = line(cache = idx, scanned = false, approx = true)
-        assertEquals("приблизительно · обновить ›", failed)
-        assertTrue(failed.endsWith(Freshness.refresh(RU)))     // тап по строке — ручной повтор
-        assertEquals("приблизительно · 1${Fmt.NBSP}234 эл. · первый скан",
-            line(running = true, live = 1234, cache = idx, approx = true))
-        // и под энергосбережением — тот же повтор
-        assertEquals("приблизительно · обновить ›", line(cache = idx, blocked = true, approx = true))
-    }
-
-    @Test fun delta() {
-        assertEquals("+1,5${Fmt.NBSP}МиБ с прошлого скана", Freshness.delta(RU, 1_572_864))
-        assertEquals("−2,0${Fmt.NBSP}КиБ с прошлого скана", Freshness.delta(RU, -2048))
-        assertEquals("±0${Fmt.NBSP}Б с прошлого скана", Freshness.delta(RU, 0))
-        assertEquals("+1.5${Fmt.NBSP}MiB since last scan", Freshness.delta(EN, 1_572_864))
+    /** Карточка с индексом: строка статуса — ручной повтор «приблизительно · обновить ›». */
+    @Test fun indexLineIsManualRefresh() {
+        val s = StatusLine.pick(null, false, Freshness.treeTime(Kind.INDEX, t), approx = true, growth = null, now = t)
+        assertEquals("приблизительно · обновить ›", StatusLine.text(RU, s, t, true))
+        assertEquals("approximate · refresh ›", StatusLine.text(EN, s, t, true))
+        assertEquals("обновить ›", Freshness.refresh(RU))
     }
 }
 

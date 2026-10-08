@@ -26,6 +26,15 @@ object Fmt {
         return one(v, t.locale) + NBSP + t.s(UNITS[u])
     }
 
+    /** «4,8 из 10,3 ГиБ»: единица одна — только у второго числа; разные — у обоих. */
+    fun sizeOf(part: Long, whole: Long, t: Txt): String {
+        val a = size(part, t)
+        val b = size(whole, t)
+        val ua = a.substringAfterLast(NBSP, "")
+        val same = ua.isNotEmpty() && ua == b.substringAfterLast(NBSP, "")
+        return t.s(R.string.size_of, if (same) a.substring(0, a.length - ua.length - 1) else a, b)
+    }
+
     fun pct(part: Long, whole: Long): String {
         if (whole <= 0) return ""
         if (part <= 0) return "0%"

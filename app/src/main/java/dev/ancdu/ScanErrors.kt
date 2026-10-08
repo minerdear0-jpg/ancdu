@@ -105,6 +105,9 @@ object ScanErrors {
     /** Ссылка подвала «⚠ 2 ошибки ›». */
     fun link(t: Txt, n: Int): String = "⚠ " + t.q(R.plurals.errors, n.toLong(), Fmt.count(n.toLong(), t.locale)) + " ›"
 
+    /** Карточка главного экрана: «⚠ 3» (слово — у TalkBack, [linkDesc]). */
+    fun short(t: Txt, n: Int): String = "⚠ " + Fmt.count(n.toLong(), t.locale)
+
     /** Её описание для TalkBack: «Ошибки сканирования: 2. Открыть список». */
     fun linkDesc(t: Txt, n: Int): String = t.s(R.string.scan_errors_desc, Fmt.count(n.toLong(), t.locale))
 }

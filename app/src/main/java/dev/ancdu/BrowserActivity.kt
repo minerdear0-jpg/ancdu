@@ -438,6 +438,8 @@ class BrowserActivity : LangActivity() {
             if (st != null) sel.restoreSelection(st)
             // Только при первом создании: пересоздание держит свою папку и прокрутку.
             else if (savedInstanceState == null) Focus.parse(intent.getByteArrayExtra(EXTRA_FOCUS))?.let { focus(it) }
+            // «⚠ N» на карточке главного экрана: сразу лист ошибок (после первого кадра).
+            if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_ERRORS, false)) ui.post { if (!isFinishing) errors.openErrors() }
         }
         head.renderProgress()
     }

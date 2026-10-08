@@ -1,24 +1,32 @@
 package dev.ancdu
 
+import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Фокусная панель главного экрана (со скобками): statfs раздела /data — число «занято», доля,
- * «из N», полоса и легенда; под волосяной линией — строка «Общее хранилище <объём> · <N> эл. ›»
- * со строкой свежести и дельтой: единственная точка входа в дерево общего хранилища. Всё — главный поток.
+ * Фокусная панель главного экрана (со скобками), не больше пяти строк текста и полоса: подпись,
+ * statfs раздела /data (занято и доля; места нет — свободно), полоса, «свободно X из Y»; под
+ * волосяной линией — «Общее хранилище <объём> · ⚠ N ›» (единственная точка входа в дерево общего
+ * хранилища) и одна строка статуса ([StatusLine]). Всё — главный поток.
  */
 class StorageCard(private val a: MainActivity) {
     private lateinit var usedTxt: TextView
     private lateinit var pctTxt: TextView
-    private lateinit var ofTxt: TextView
-    private lateinit var usedVal: TextView
-    private lateinit var freeVal: TextView
+    /** «свободно 142,4 из 224,5 ГиБ»; места нет — «мало места · занято X из Y». */
+    lateinit var freeTxt: TextView
+        private set
     private lateinit var bar: SegBar
     /** Ярус 0: вторичная полоса категорий и её легенда (скрыты без сегментов). */
     private lateinit var cats: LinearLayout
@@ -27,19 +35,25 @@ class StorageCard(private val a: MainActivity) {
     /** Нижняя строка: «Общее хранилище» или амберный запрос доступа. */
     lateinit var storeTitle: TextView
         private set
+    /** «35,0 ГиБ» или «35,0 ГиБ · обновляется». */
     lateinit var storeTotal: TextView
         private set
+    /** «⚠ 3» — ошибки скана показанного дерева (только если их больше 0); тап — браузер с листом ошибок. */
+    lateinit var errTxt: TextView
+        private set
     private lateinit var storeArrow: TextView
-    /** Приглушённая строка свежести («скан HH:MM · только что», «обновить ›», …). */
-    lateinit var freshTxt: TextView
+    /** Единственная строка статуса: прервано > устарело > рост > ничего (тогда GONE). */
+    lateinit var statusTxt: TwoFormText
         private set
-    private lateinit var deltaTxt: TextView
-    /** «+2,1 ГиБ с 1 окт. · больше всего Telegram/Video ›»: Δ против точки отсчёта; тап — браузер в сортировке Δ. */
-    lateinit var growthTxt: TextView
+    /** Для тестов: показанное состояние строки статуса. */
+    var status: Status = Status.None
         private set
-    /** Для тестов: последняя показанная строка «что выросло» (null — скрыта). */
+    /** Для тестов: последняя строка «что выросло» (null — нет). */
     var growth: HomeGrowth? = null
         private set
+    /** Непросмотренное прерванное удаление (журнал удалений); тап по нему — [onInterrupted]. */
+    var interrupted: InterruptedDelete? = null
+    var onInterrupted: (InterruptedDelete) -> Unit = {}
     private lateinit var scanLine: ScanLine
     /** Скан хранилища шёл (или ждал) при прошлом [render]: конец — по итогу именно его. */
     private var scanWas = ScanState.NONE
@@ -52,6 +66,21 @@ class StorageCard(private val a: MainActivity) {
         private set
     /** Решение автоскана при последнем onResume (POWER — «обновить ›» вручную). */
     var gate = Gate.FRESH
+    /** Занято на /data (statfs; -1 — неизвестно). */
+    var dataUsed = -1L
+        private set
+    /** Объём общего хранилища, показанный в нижней строке (null — неизвестен). */
+    var sharedDisk: Long? = null
+        private set
+    /** Места нет ([HomeMath.storageFull]): герой — свободное место, строки под карточкой свёрнуты. */
+    var full = false
+        private set
+    /** Ошибок скана в показанном дереве (Native.errorNodes на io). */
+    var errCount = 0
+        private set
+    /** Для какого дерева посчитан [errCount]: поколение сессии и счётчик удалений. */
+    private var errKey: String? = null
+    private var errSeq = 0
 
     /** Тексты в языке экрана. */
     private val t: Txt = a.tx
@@ -82,19 +111,18 @@ class StorageCard(private val a: MainActivity) {
                 text = "—"; setTextColor(C.TEXT); typeface = Fonts.get(a, mono = true, bold = true)
             }
             addView(usedTxt, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            pctTxt = a.label("", 20f, C.AMBER_TEXT, mono = true, bold = true).apply { setPadding(0, 0, 0, a.dp(6)) }
+            // Доля — текст (вес 500), не акцент: амбер — только «изменилось / действуй».
+            pctTxt = a.label("", 20f, C.TEXT, mono = true).apply {
+                typeface = Typeface.create(Fonts.get(a, mono = true, bold = false), 500, false)
+                setPadding(0, 0, 0, a.dp(6))
+            }
             addView(pctTxt)
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(6) })
-        ofTxt = a.label("", 14f, C.MUTED, mono = true)
-        addView(ofTxt)
         bar = SegBar(a)
         addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(14) })
-        addView(Flow(a, a.dp(14), a.dp(4)).apply {
-            usedVal = a.label("", 13f, C.TEXT, mono = true)
-            freeVal = a.label("", 13f, C.BLUE_HI, mono = true)
-            addView(legendItem(C.AMBER, R.string.legend_used, usedVal))
-            addView(legendItem(C.FREE, R.string.seg_free, freeVal, outline = true))
-        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(10) })
+        // Легенда сложена в одну строку: «свободно 142,4 из 224,5 ГиБ» (свободное — BLUE_HI).
+        freeTxt = a.label("", 13f, C.MUTED, mono = true)
+        addView(freeTxt, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(10) })
         // Ярус 0 (только с доступом к истории использования): категории занятого.
         cats = a.vbox().apply {
             visibility = View.GONE
@@ -113,7 +141,7 @@ class StorageCard(private val a: MainActivity) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, a.dp(4), 0, a.dp(6))
             addView(a.hbox(8).apply {
-                minimumHeight = a.dp(40)
+                minimumHeight = a.dp(44)
                 // Название и итог — Flow: не помещаются в строку — итог переносится, ничто не сжимается.
                 addView(Flow(a, a.dp(12), a.dp(2), endLast = true).apply {
                     storeTitle = a.caps(t.s(R.string.shared_title), C.TEXT)
@@ -121,25 +149,27 @@ class StorageCard(private val a: MainActivity) {
                     storeTotal = a.label("", 13f, C.TEXT, mono = true)
                     addView(storeTotal)
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                errTxt = a.label("", 13f, C.AMBER_TEXT, mono = true, bold = true).apply {
+                    gravity = Gravity.CENTER
+                    minHeight = a.dp(44); minWidth = a.dp(44)
+                    background = a.pressable(android.graphics.Color.TRANSPARENT)
+                    isClickable = true; isFocusable = true
+                    visibility = View.GONE
+                    feedbackClick { open(errors = true) }
+                }
+                addView(errTxt)
                 storeArrow = a.label("›", 18f, C.MUTED)
                 addView(storeArrow)
             })
-            freshTxt = a.label("", 12f, C.MUTED, mono = true).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                setOnClickListener { refreshNow() }
-                isClickable = false
-            }
-            addView(freshTxt)
-            growthTxt = a.label("", 12f, C.AMBER_TEXT, mono = true).apply {
+            statusTxt = TwoFormText(a).apply {
+                textSize = 12f; setTextColor(C.MUTED); typeface = Fonts.get(a, mono = true, bold = false)
                 gravity = Gravity.CENTER_VERTICAL
                 minHeight = a.dp(48)
                 visibility = View.GONE
                 isClickable = true; isFocusable = true
-                feedbackClick { growth?.let { a.openFocused(it.names, delta = true) } }
+                feedbackClick { statusTapped() }
             }
-            addView(growthTxt)
-            deltaTxt = a.label("", 12f, C.MUTED, mono = true).apply { visibility = View.GONE }
-            addView(deltaTxt)
+            addView(statusTxt, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         permBox = a.vbox(12).apply {
             visibility = View.GONE
@@ -148,16 +178,6 @@ class StorageCard(private val a: MainActivity) {
             addView(a.action(t.s(R.string.open_settings), null, true) { Perms.askFiles(a) })
         }
         addView(permBox)
-    }
-
-    /**
-     * «■ ПОДПИСЬ значение»: квадрат цвета полосы, подпись прописными, значение — данные.
-     * [outline] — квадрат в контуре FRAME, как сама полоса (бледное «свободно»).
-     */
-    private fun legendItem(color: Int, labelRes: Int, value: TextView, outline: Boolean = false): LinearLayout = a.hbox(6).apply {
-        addView(swatch(color, outline))
-        addView(a.caps(t.s(labelRes)))
-        addView(value)
     }
 
     /** Категории яруса 0 (без «свободно», ненулевые, по убыванию) под главной полосой. */
@@ -176,22 +196,47 @@ class StorageCard(private val a: MainActivity) {
     }
 
     /** Квадрат 8dp цвета полосы (не текст). */
-    private fun swatch(color: Int, outline: Boolean = false): View = View(a).apply {
-        background = a.box(color, if (outline) C.FRAME else null)
+    private fun swatch(color: Int): View = View(a).apply {
+        background = a.box(color)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams = LinearLayout.LayoutParams(a.dp(8), a.dp(8))
     }
 
+    /**
+     * statfs /data: герой, доля, полоса и строка «свободно». Места нет (< 1 ГиБ или < 5%) — герой
+     * показывает свободное (DANGER_TEXT, «⚠ свободно»), строка — «мало места · занято X из Y».
+     */
     fun showStatfs() {
-        val s = LongArray(3)
-        if (Native.statfs("/data", s) != 0) return
+        val s = fakeStatfs?.copyOf() ?: LongArray(3).also { if (Native.statfs("/data", it) != 0) return }
+        val total = s[0]
         val used = s[0] - s[1]
-        usedTxt.text = Fmt.size(used, t)
-        pctTxt.text = Fmt.pct(used, s[0])
-        ofTxt.text = t.s(R.string.hero_of, Fmt.size(s[0], t))
-        usedVal.text = Fmt.size(used, t)
-        freeVal.text = Fmt.size(s[2], t)
-        bar.used = ListMath.bar(used, s[0])
+        val free = s[2]
+        dataUsed = used
+        full = HomeMath.storageFull(free, total)
+        bar.used = ListMath.bar(used, total)
+        if (full) {
+            usedTxt.text = Fmt.size(free, t); usedTxt.setTextColor(C.DANGER_TEXT)
+            pctTxt.text = t.s(R.string.hero_free); pctTxt.setTextColor(C.DANGER_TEXT)
+            freeTxt.text = t.s(R.string.card_low, Fmt.sizeOf(used, total, t))
+        } else {
+            usedTxt.text = Fmt.size(used, t); usedTxt.setTextColor(C.TEXT)
+            pctTxt.text = Fmt.pct(used, total); pctTxt.setTextColor(C.TEXT)
+            freeTxt.text = freeLine(free, total)
+        }
+        a.layoutChanged()
+    }
+
+    /** «свободно 142,4 из 224,5 ГиБ»: число свободного — BLUE_HI (данные), остальное приглушено. */
+    private fun freeLine(free: Long, total: Long): CharSequence {
+        val of = Fmt.sizeOf(free, total, t)
+        val line = t.s(R.string.card_free, of)
+        val f = Fmt.size(free, t)
+        val num = if (of.startsWith(f)) f else f.substringBeforeLast(Fmt.NBSP)
+        val at = line.indexOf(of)
+        if (at < 0) return line
+        return SpannableString(line).apply {
+            setSpan(ForegroundColorSpan(C.BLUE_HI), at, at + num.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     /** Есть ли в Holder дерево общего хранилища (без root). */
@@ -217,9 +262,9 @@ class StorageCard(private val a: MainActivity) {
     }
 
     /**
-     * Нижняя строка. Объём, элементы и время — всегда из ОДНОГО источника (не statfs): дерева в
-     * Holder (его собственное время — Holder.time), иначе итога скана этого процесса, иначе
-     * записи кэша. Новое время рядом со старыми итогами не появляется.
+     * Нижняя строка и строка статуса. Объём и время — всегда из ОДНОГО источника (не statfs):
+     * дерева в Holder (его собственное время — Holder.time), иначе итога скана этого процесса,
+     * иначе записи кэша.
      */
     fun render() {
         if (!Perms.files()) {
@@ -229,11 +274,13 @@ class StorageCard(private val a: MainActivity) {
             storeTitle.isAllCaps = false; storeTitle.letterSpacing = 0f; storeTitle.textSize = 14f
             storeTotal.text = ""
             storeArrow.setTextColor(C.AMBER_TEXT)
-            freshTxt.visibility = View.GONE
-            deltaTxt.visibility = View.GONE
-            growthTxt.visibility = View.GONE
+            errTxt.visibility = View.GONE
+            status = Status.None
+            statusTxt.visibility = View.GONE
+            sharedDisk = null
             scanLine.hide(); scanWas = ScanState.NONE
             view.contentDescription = t.s(R.string.card_desc_need_access, t.s(R.string.card_desc))
+            a.layoutChanged()
             return
         }
         permBox.visibility = View.GONE
@@ -244,75 +291,120 @@ class StorageCard(private val a: MainActivity) {
         storeArrow.setTextColor(C.MUTED)
         val last = Scans.lastStorage
         var disk: Long? = null
-        var items: Long? = null
         var time: Long? = null
-        var scanned = false
         var approx = false
         val shown = storageShown() && !Holder.deleting
         if (shown) {
             // Главный поток, опубликованный дескриптор — обычное чтение дерева.
             val inf = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(0), 1, it) }
-            disk = inf[0]; items = inf[2]
+            disk = inf[0]
             time = Freshness.treeTime(Holder.kind, Holder.time)
-            scanned = Holder.kind == Kind.SCAN
             approx = Holder.kind == Kind.INDEX
         } else if (last != null) {
-            disk = last.disk; items = last.items; time = last.time; scanned = true
+            disk = last.disk; time = last.time
         } else {
             val meta = Scans.meta(a, Scans.STORAGE, false)
-            if (meta != null) { disk = meta.disk; items = meta.items ?: meta.files; time = meta.time }
+            if (meta != null) { disk = meta.disk; time = meta.time }
         }
-        storeTotal.text = when {
-            items == null -> ""
-            disk == null -> t.items(items)
-            else -> "${Fmt.size(disk, t)} · ${t.items(items)}"
-        }
+        sharedDisk = disk
         // Только скан общего хранилища (идёт или в очереди за обновлением другого корня).
         val running = BgScan.storageActive
+        storeTotal.text = listOfNotNull(disk?.let { Fmt.size(it, t) }, if (running) t.s(R.string.shared_updating) else null)
+            .joinToString(" · ")
         renderLine()
-        val line = Freshness.line(t, running, if (BgScan.storageRunning) BgScan.p[1] else 0L, time, scanned, gate == Gate.POWER, approx,
-            System.currentTimeMillis())
-        freshTxt.visibility = View.VISIBLE
-        freshTxt.text = line
-        // «обновить ›» — своя цель касания: скан вручную.
-        val tappable = !running && line.endsWith(Freshness.refresh(t))
-        freshTxt.isClickable = tappable; freshTxt.isFocusable = tappable
-        freshTxt.minHeight = if (tappable) a.dp(48) else 0
-        freshTxt.setTextColor(if (tappable) C.AMBER_TEXT else C.MUTED)
-        freshTxt.contentDescription = if (tappable) t.s(R.string.refresh_desc) else null
-        renderDelta()
+        refreshErrors(shown)
+        renderStatus(running, time, approx)
+        a.layoutChanged()
+    }
+
+    /** Строка статуса: один факт по приоритету ([StatusLine.pick]); нет факта — строки нет. */
+    private fun renderStatus(running: Boolean, time: Long?, approx: Boolean) {
+        val now = System.currentTimeMillis()
+        val i = interrupted?.let { withFreed(it) }
+        val s = StatusLine.pick(i, running, time, approx, growth, now)
+        status = s
+        val full = StatusLine.text(t, s, now, wide = true)
+        if (full == null) { statusTxt.visibility = View.GONE; return }
+        statusTxt.set(full, StatusLine.text(t, s, now, wide = false) ?: full)
+        statusTxt.setTextColor(when (s) {
+            is Status.Grew -> GrowthText.homeRole(s.g.delta).color()
+            else -> C.AMBER_TEXT
+        })
+        statusTxt.contentDescription = when (s) {
+            is Status.Interrupted -> "${full.removeSuffix(" ›")}, ${t.s(R.string.interrupted_open_desc)}"
+            is Status.Stale -> "${full.removeSuffix(" ›")}, ${t.s(R.string.refresh_desc)}"
+            is Status.Grew -> "${full.removeSuffix(" ›")}, ${t.s(R.string.growth_open_desc)}"
+            Status.None -> null
+        }
+        statusTxt.visibility = View.VISIBLE
     }
 
     /**
-     * «±X с прошлого скана» — только к показанному дереву этого самого скана и только когда нет строки
-     * «что выросло» (нет точки отсчёта или |Δ| < 1 МиБ): две строки о росте не показываются вместе.
+     * Прерванное удаление в показанном дереве общего хранилища, более новом, чем оно: сколько
+     * освобождено — размер на момент удаления минус то, что осталось (узла нет — всё).
      */
-    private fun renderDelta() {
-        val last = Scans.lastStorage
-        val prev = last?.prevDisk
-        val shown = storageShown() && !Holder.deleting
-        if (growthTxt.visibility != View.VISIBLE && shown && last != null && prev != null &&
-            Holder.kind == Kind.SCAN && Holder.time == last.time) {
-            deltaTxt.text = Freshness.delta(t, last.disk - prev)
-            deltaTxt.visibility = View.VISIBLE
-        } else {
-            deltaTxt.visibility = View.GONE
+    private fun withFreed(d: InterruptedDelete): InterruptedDelete {
+        if (d.freed != null || d.su || d.root != Scans.STORAGE || !storageShown() || Holder.deleting ||
+            Holder.kind == Kind.INDEX || Holder.time <= d.time) return d
+        val hit = PathWalk.resolve(d.names) { nd, nm -> child(nd, nm) }
+        val left = if (hit.exact) LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(hit.node), 1, it) }[0] else 0L
+        return d.withFreed(maxOf(0L, d.disk - left))
+    }
+
+    /** Ребёнок [nd] показанного дерева с именем ровно [nm] (байты) или null. Главный поток. */
+    private fun child(nd: Int, nm: ByteArray): Int? {
+        val h = Holder.h
+        val c = IntArray(Native.childCount(h, nd))
+        val k = maxOf(0, Native.children(h, nd, SORT_NAME, false, c))
+        for (i in 0 until k) if (Native.name(h, c[i]).contentEquals(nm)) return c[i]
+        return null
+    }
+
+    /**
+     * Число ошибок скана показанного дерева — на io (Native.errorNodes, O(n)), раз на дерево и после
+     * каждого удаления; во время удаления дерево не читается. Нет дерева — нет и «⚠ N».
+     */
+    private fun refreshErrors(shown: Boolean) {
+        if (!shown) { errKey = null; errCount = 0; renderErr(); return }
+        val k = "${Holder.gen}:${Holder.deletes}"
+        if (k == errKey) { renderErr(); return }
+        errKey = k
+        errCount = 0
+        renderErr()
+        val handle = Holder.h
+        val my = ++errSeq
+        Holder.io.execute {
+            val n = runCatching { Native.errorNodes(handle, IntArray(0)) }.getOrDefault(0)
+            a.runOnUiThread {
+                if (my != errSeq || Holder.h != handle || a.isDestroyed) return@runOnUiThread
+                errCount = n
+                renderErr()
+                a.layoutChanged()
+            }
         }
     }
 
-    /**
-     * Строка «что выросло» под строкой свежести (общее хранилище, есть точка отсчёта, |Δ| ≥ 1 МиБ —
-     * иначе [g] null и строки нет). Рост — AMBER_TEXT, сжатие — MUTED. Главный поток.
-     */
+    private fun renderErr() {
+        errTxt.visibility = if (errCount > 0) View.VISIBLE else View.GONE
+        if (errCount <= 0) return
+        errTxt.text = ScanErrors.short(t, errCount)
+        errTxt.contentDescription = ScanErrors.linkDesc(t, errCount)
+    }
+
+    /** Строка «что выросло» ([g] null — нет точки отсчёта или |Δ| < 1 МиБ). Главный поток. */
     fun showGrowth(g: HomeGrowth?) {
         growth = g
-        if (g == null || !Perms.files()) { growthTxt.visibility = View.GONE; if (Perms.files()) renderDelta(); return }
-        val text = GrowthText.home(t, g.delta, g.baseTime, g.path.ifEmpty { null })
-        growthTxt.text = text
-        growthTxt.setTextColor(GrowthText.homeRole(g.delta).color())
-        growthTxt.contentDescription = "${text.removeSuffix(" ›")}, ${t.s(R.string.growth_open_desc)}"
-        growthTxt.visibility = View.VISIBLE
-        deltaTxt.visibility = View.GONE
+        if (Perms.files()) render()
+    }
+
+    /** Тап по строке статуса — её единственное действие. */
+    private fun statusTapped() {
+        when (val s = status) {
+            is Status.Interrupted -> onInterrupted(s.d)
+            is Status.Stale -> refreshNow()
+            is Status.Grew -> a.openFocused(s.g.names, delta = true)
+            Status.None -> {}
+        }
     }
 
     /** «обновить ›»: скан вручную — энергосбережение и нагрев не мешают явной просьбе. */
@@ -334,24 +426,78 @@ class StorageCard(private val a: MainActivity) {
 
     /**
      * Готовое живое дерево — сразу (ждущее подставляется); иначе кэш; иначе экран прогресса,
-     * ПРИЦЕПЛЕННЫЙ к идущему фоновому скану — никогда не второй скан.
+     * ПРИЦЕПЛЕННЫЙ к идущему фоновому скану — никогда не второй скан. [errors] — «⚠ N»: браузер
+     * сразу открывает лист ошибок.
      */
-    private fun open() {
+    private fun open(errors: Boolean = false) {
         if (Holder.deleting || a.opening) return
         if (BgScan.pendingStorage()) Holder.promote()
         val shown = storageShown()
-        if (shown && Holder.kind != Kind.INDEX) { a.startActivity(Intent(a, BrowserActivity::class.java)); return }
+        val browser = Intent(a, BrowserActivity::class.java).apply { if (errors) putExtra(EXTRA_ERRORS, true) }
+        if (shown && Holder.kind != Kind.INDEX) { a.startActivity(browser); return }
         val meta = Scans.meta(a, Scans.STORAGE, false)
         if (meta != null) {
-            a.openCache(Holder.cacheFile(a, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time)
+            a.openCache(Holder.cacheFile(a, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, errors = errors)
             return
         }
         if (BgScan.storageActive) { attach(); return }
-        if (shown) { a.startActivity(Intent(a, BrowserActivity::class.java)); return }
+        if (shown) { a.startActivity(browser); return }
         if (BgScan.start(a)) { gate = Gate.RUNNING; render(); attach() }
         else a.showAlert(t.s(R.string.scan_not_started),
             BgScan.failure?.let { NativeErr.text(t, it) } ?: t.s(R.string.no_storage_access))
     }
 
     private fun attach() = a.startActivity(Intent(a, ScanActivity::class.java).putExtra(EXTRA_ATTACH, true))
+
+    /**
+     * Для тестов (после layout): видимых строк текста в карточке. Горизонтальный ряд — столько строк,
+     * сколько у самого высокого его ребёнка; ряд Flow — по рядам; вертикальный — сумма.
+     */
+    fun textLines(): Int = lines(panel)
+
+    private fun lines(v: View): Int {
+        if (v.visibility != View.VISIBLE) return 0
+        return when {
+            v is TextView -> if (v.text.isNullOrEmpty()) 0 else maxOf(1, v.lineCount)
+            v is Flow -> kids(v).filter { lines(it) > 0 }.groupBy { it.top }.values.sumOf { row -> row.maxOf { lines(it) } }
+            v is LinearLayout && v.orientation == LinearLayout.HORIZONTAL -> kids(v).maxOfOrNull { lines(it) } ?: 0
+            v is ViewGroup -> kids(v).sumOf { lines(it) }
+            else -> 0
+        }
+    }
+
+    private fun kids(g: ViewGroup): List<View> = (0 until g.childCount).map { g.getChildAt(it) }
+
+    companion object {
+        /** Для тестов: statfs /data (total, free, avail) вместо настоящего; null — настоящий. */
+        @Volatile var fakeStatfs: LongArray? = null
+    }
+}
+
+/**
+ * Одна строка с многоточием посередине: полная форма [set], а если она не помещается в ширину —
+ * короткая (строка роста без «больше всего»). Главный поток.
+ */
+class TwoFormText(ctx: Context) : TextView(ctx) {
+    private var full = ""
+    private var short = ""
+    private var fitW = -1
+
+    init { setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE }
+
+    fun set(full: String, short: String) {
+        this.full = full; this.short = short; fitW = -1
+        text = full
+        requestLayout()
+    }
+
+    override fun onMeasure(ws: Int, hs: Int) {
+        val w = MeasureSpec.getSize(ws) - compoundPaddingLeft - compoundPaddingRight
+        if (MeasureSpec.getMode(ws) != MeasureSpec.UNSPECIFIED && w > 0 && w != fitW) {
+            fitW = w
+            val pick = if (paint.measureText(full) <= w) full else short
+            if (pick != text.toString()) text = pick
+        }
+        super.onMeasure(ws, hs)
+    }
 }

@@ -6,6 +6,8 @@ import java.io.ByteArrayOutputStream
 const val EXTRA_FOCUS = "focus"
 /** Браузер открывается сразу в сортировке Δ (строка «что выросло» главного экрана). */
 const val EXTRA_DELTA = "delta"
+/** Браузер сразу открывает лист ошибок скана («⚠ N» на карточке главного экрана). */
+const val EXTRA_ERRORS = "errors"
 
 /**
  * Путь узла для [EXTRA_FOCUS]: байты имён от корня дерева через \u0000 (имя не содержит ни \u0000,

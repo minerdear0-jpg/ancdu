@@ -69,8 +69,6 @@
 
     <string name="internal_title">Внутренняя память · /data</string>
     <string name="shared_title">Общее хранилище</string>
-    <string name="hero_of">из %1$s</string>
-    <string name="legend_used">Занято</string>
     <string name="files_access_explain">Чтобы посчитать размеры каталогов во внутренней памяти, разрешите ancdu «Доступ ко всем файлам». ancdu ничего не отправляет и удаляет только по вашему подтверждению.</string>
     <string name="open_tree_need_access">Открыть дерево: разрешите доступ ко всем файлам</string>
     <string name="card_desc">Открыть дерево общего хранилища</string>
@@ -88,16 +86,9 @@
     <string name="seg_system">Система</string>
     <string name="seg_free">Свободно</string>
 
-    <string name="fresh_cache">кэш %1$s</string>
-    <string name="fresh_scan">скан %1$s</string>
-    <string name="fresh_updating">обновляю… %1$s</string>
-    <string name="fresh_first">%1$s · первый скан</string>
     <string name="fresh_refresh">обновить ›</string>
-    <string name="fresh_approx">приблизительно · %1$s</string>
-    <string name="just_now">только что</string>
     <string name="min_ago">%1$s\u00A0мин назад</string>
     <string name="h_ago">%1$s\u00A0ч назад</string>
-    <string name="delta">%1$s с прошлого скана</string>
 
     <string name="su_desc_ask">su: запросить root</string>
     <string name="su_desc_asking">su: идёт запрос root</string>
@@ -358,4 +349,21 @@
     <string name="growth_home">%1$s с %2$s · больше всего %3$s ›</string>
     <string name="growth_home_plain">%1$s с %2$s ›</string>
     <string name="growth_open_desc">открывает папку по приросту</string>
+    <string name="size_of">%1$s из %2$s</string>
+    <string name="status_interrupted">⚠ прервано: %1$s · %2$s ›</string>
+    <string name="status_stale">скан %1$s · обновить ›</string>
+    <string name="status_approx">приблизительно · обновить ›</string>
+    <string name="growth_home_short">%1$s с %2$s · %3$s ›</string>
+    <string name="card_free">свободно %1$s</string>
+    <string name="card_low">мало места · занято %1$s</string>
+    <string name="hero_free">⚠ свободно</string>
+    <string name="shared_updating">обновляется</string>
+    <string name="apps_system">Приложения и система</string>
+    <string name="apps_access">доступ ›</string>
+    <string name="more_row">ещё: %1$s ›</string>
+    <string name="more_apps">приложения</string>
+    <string name="more_root">root</string>
+    <string name="more_scans">сканы</string>
+    <string name="more_desc">Показать приложения, root и прошлые сканы</string>
+    <string name="interrupted_open_desc">открывает папку, остаток — в списке</string>
 </resources>

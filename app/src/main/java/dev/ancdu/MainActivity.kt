@@ -4,6 +4,8 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -22,6 +24,14 @@ class MainActivity : LangActivity() {
         private set
     private lateinit var appsBox: LinearLayout
     private lateinit var lastBox: LinearLayout
+    /** Места нет: «ещё: приложения · root · сканы ›» вместо строк под карточкой (тап — раскрыть). */
+    lateinit var moreRow: LinearLayout
+        private set
+    /** «ещё» раскрыто тапом (до пересоздания экрана). */
+    private var moreOpen = false
+    /** «47,0 ГиБ» в строке «Приложения и система» (null — строки ещё нет). */
+    var appsTotal: TextView? = null
+        private set
     private val titles = ArrayList<String>()
     private val rootTitles = ArrayList<String>()
     /** Поколение загрузки яруса 0: устаревшие результаты (после onPause) отбрасываются. */
@@ -77,6 +87,8 @@ class MainActivity : LangActivity() {
         lastBox = vbox()
         body.addView(lastBox)
         rootPanel.block?.let { body.addView(it) }
+        moreRow = vbox().apply { visibility = View.GONE }
+        body.addView(moreRow)
         setContentView(ScrollView(this).apply { setBackgroundColor(C.BG); addView(body) })
         storage.showStatfs()
     }
@@ -89,6 +101,7 @@ class MainActivity : LangActivity() {
         Holder.addSessionListener(onTree)
         Holder.addDeleteListener(onDeleted)
         Growth.addListener(onGrowth)
+        storage.showStatfs()
         // Скан закончился, пока был открыт браузер: здесь его уже никто не держит — подставляем.
         BgScan.promoteOnMain()
         storage.gate = BgScan.maybeStart(this)
@@ -160,6 +173,52 @@ class MainActivity : LangActivity() {
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))
 
+    /**
+     * Карточка изменилась (statfs, объём общего хранилища): число «Приложения и система» и правило
+     * «места нет» — строки под карточкой сворачиваются в одну «ещё: … ›».
+     */
+    fun layoutChanged() {
+        if (!::moreRow.isInitialized) return
+        appsTotal?.text = HomeMath.appsBytes(storage.dataUsed, storage.sharedDisk)?.let { Fmt.size(it, tx) }.orEmpty()
+        val fold = storage.full && !moreOpen
+        appsBox.visibility = if (fold) View.GONE else View.VISIBLE
+        lastBox.visibility = if (fold) View.GONE else View.VISIBLE
+        rootPanel.block?.visibility = if (fold) View.GONE else View.VISIBLE
+        moreRow.visibility = if (fold) View.VISIBLE else View.GONE
+        if (!fold) return
+        val x = tx
+        val parts = listOfNotNull(x.s(R.string.more_apps), rootPanel.block?.let { x.s(R.string.more_root) },
+            if (lastBox.childCount > 0) x.s(R.string.more_scans) else null)
+        val text = x.s(R.string.more_row, parts.joinToString(" · "))
+        if ((moreRow.getChildAt(0) as? TextView)?.text?.toString() == text) return
+        moreRow.removeAllViews()
+        moreRow.addView(label(text, 13f, C.MUTED, mono = true).apply {
+            minHeight = dp(48)
+            gravity = Gravity.CENTER_VERTICAL
+            background = pressable(C.BG)
+            isClickable = true; isFocusable = true
+            contentDescription = x.s(R.string.more_desc)
+            feedbackClick { moreOpen = true; layoutChanged() }
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        moreRow.hairline()
+    }
+
+    /** «ПРИЛОЖЕНИЯ И СИСТЕМА 47,0 ГиБ» и справа [action] (приглушённо: не акцент). */
+    private fun appsHead(action: String, desc: String?): LinearLayout = hbox(8).apply {
+        val x = tx
+        minimumHeight = dp(48)
+        addView(caps(x.s(R.string.apps_system)))
+        appsTotal = label("", 13f, C.TEXT, mono = true)
+        addView(appsTotal, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(label(action, 14f, C.TEXT, bold = true).apply {
+            minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
+            setPadding(dp(8), 0, 0, 0)
+            background = pressable(C.BG)
+            if (desc != null) contentDescription = desc
+            feedbackClick { openApps() }
+        })
+    }
+
     private fun renderTier0(t: Tier0) {
         t.segs?.let { storage.showSegs(it) }
         appsBox.removeAllViews()
@@ -167,20 +226,12 @@ class MainActivity : LangActivity() {
         val x = tx
         if (apps == null) {
             // Нет «Доступа к истории использования»: AppsActivity объясняет и ведёт в настройки.
-            appsBox.addView(navRow(x.s(R.string.apps_title), x.s(R.string.apps_grant),
-                "${x.s(R.string.apps_no_access)}, ${x.s(R.string.apps_no_access_sub)}", C.AMBER_TEXT, mono = false) { openApps() })
+            appsBox.addView(appsHead(x.s(R.string.apps_access), "${x.s(R.string.apps_no_access)}, ${x.s(R.string.apps_no_access_sub)}"))
             appsBox.hairline()
+            layoutChanged()
             return
         }
-        appsBox.addView(hbox().apply {
-            addView(caps(x.s(R.string.apps_title)), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(x.s(R.string.apps_all), 14f, C.AMBER_TEXT, bold = true).apply {
-                minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
-                setPadding(dp(8), 0, 0, 0)
-                background = pressable(C.BG)
-                setOnClickListener { openApps() }
-            })
-        })
+        appsBox.addView(appsHead(x.s(R.string.apps_all), null))
         appsBox.hairline()
         for (a in apps.take(3)) {
             appsBox.addView(hbox(12).apply {
@@ -194,6 +245,7 @@ class MainActivity : LangActivity() {
             })
             appsBox.hairline()
         }
+        layoutChanged()
     }
 
     /** Заголовки строк «Последний скан» без root (для тестов); общее хранилище — на карточке. */
@@ -225,6 +277,7 @@ class MainActivity : LangActivity() {
             box.addView(navRow(t.s(R.string.last_short), line, "$title, $sub") { openCache(file, m.root, m.su, m.time) })
             box.hairline()
         }
+        layoutChanged()
     }
 
     /**
@@ -233,7 +286,8 @@ class MainActivity : LangActivity() {
      * [time] — время скана из записи «caches»: оно и становится временем дерева (Holder.time).
      * [focus] — [EXTRA_FOCUS] для браузера (файл в фокусе) или null.
      */
-    fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null, delta: Boolean = false) {
+    fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null, delta: Boolean = false,
+                  errors: Boolean = false) {
         if (opening) return
         opening = true
         val app = applicationContext
@@ -273,6 +327,7 @@ class MainActivity : LangActivity() {
                 startActivity(Intent(this, BrowserActivity::class.java).apply {
                     if (focus != null) putExtra(EXTRA_FOCUS, focus)
                     if (delta) putExtra(EXTRA_DELTA, true)
+                    if (errors) putExtra(EXTRA_ERRORS, true)
                 })
             }
         }

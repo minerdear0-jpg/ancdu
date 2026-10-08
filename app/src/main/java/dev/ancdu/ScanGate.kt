@@ -34,26 +34,6 @@ object Freshness {
     fun date(t: Txt, pattern: Int, ms: Long, tz: TimeZone = TimeZone.getDefault()): String =
         SimpleDateFormat(t.s(pattern), t.locale).apply { timeZone = tz }.format(Date(ms))
 
-    /**
-     * Приглушённая строка под «Общее хранилище». [running] — идёт фоновый скан, [live] — сколько
-     * файлов он уже насчитал; [cacheMs] — время показанного дерева/кэша (null — нет ни того, ни
-     * другого); [scanned] — дерево получено сканом в этом процессе (иначе — из кэша);
-     * [blocked] — автоскан не запущен из-за энергосбережения/нагрева; [approx] — показан индекс.
-     */
-    fun line(t: Txt, running: Boolean, live: Long, cacheMs: Long?, scanned: Boolean, blocked: Boolean,
-             approx: Boolean, now: Long, tz: TimeZone = TimeZone.getDefault()): String {
-        fun cache(ms: Long) = t.s(R.string.fresh_cache, date(t, R.string.fmt_time, ms, tz))
-        val body = when {
-            running && cacheMs != null -> cache(cacheMs) + " · " + t.s(R.string.fresh_updating, t.items(live))
-            running -> t.s(R.string.fresh_first, t.items(live))
-            cacheMs == null -> refresh(t)
-            blocked -> cache(cacheMs) + " · " + refresh(t)
-            else -> (if (scanned) t.s(R.string.fresh_scan, date(t, R.string.fmt_time, cacheMs, tz)) else cache(cacheMs)) +
-                " · " + ago(t, now - cacheMs, cacheMs, tz)
-        }
-        return if (approx) t.s(R.string.fresh_approx, body) else body
-    }
-
     /** «обновить ›» — строка с ним в конце касается как «скан вручную». */
     fun refresh(t: Txt): String = t.s(R.string.fresh_refresh)
 
@@ -63,19 +43,6 @@ object Freshness {
      * «приблизительно · N эл. · первый скан». 0 — неизвестно.
      */
     fun treeTime(kind: Kind, time: Long): Long? = if (kind == Kind.INDEX || time <= 0) null else time
-
-    private fun ago(t: Txt, d: Long, at: Long, tz: TimeZone): String = when {
-        d < 60_000 -> t.s(R.string.just_now)
-        d < 3_600_000 -> t.s(R.string.min_ago, Fmt.count(d / 60_000, t.locale))
-        d < 86_400_000 -> t.s(R.string.h_ago, Fmt.count(d / 3_600_000, t.locale))
-        else -> date(t, R.string.fmt_day, at, tz)
-    }
-
-    /** «±X с прошлого скана»: изменение объёма дерева после замены кэша свежим сканом. */
-    fun delta(t: Txt, bytes: Long): String {
-        val sign = when { bytes > 0 -> "+"; bytes < 0 -> "−"; else -> "±" }
-        return t.s(R.string.delta, sign + Fmt.size(if (bytes < 0) -bytes else bytes, t))
-    }
 }
 
 /** Чистый Kotlin: когда готовое дерево общего хранилища подставляется, а когда ждёт (offer). */
