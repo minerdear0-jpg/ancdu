@@ -326,6 +326,8 @@
     <string name="err_not_dir">not a folder</string>
     <string name="err_other">read error (%1$s)</string>
     <string name="err_incomplete">incomplete data — a delete was interrupted or the folder changed during the scan</string>
+    <string name="err_gone_file">no longer exists</string>
+    <string name="err_incomplete_file">incomplete data — a delete was interrupted or the file changed</string>
     <string name="err_not_read">not read during the scan</string>
     <string name="err_android_private">Android 11+ closes this folder to other apps — its size is visible only in a root scan</string>
     <string name="err_scan_root">Scan as root</string>

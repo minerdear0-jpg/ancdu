@@ -1,15 +1,15 @@
 package dev.ancdu
 
 /** Причина ошибки узла (повторная попытка открыть его при открытии листа ошибок). */
-enum class ErrReason(val res: Int) {
+enum class ErrReason(val res: Int, val fileRes: Int = res) {
     NO_ACCESS(R.string.err_no_access),
-    GONE(R.string.err_gone),
+    GONE(R.string.err_gone, R.string.err_gone_file),
     SYMLINK(R.string.err_symlink),
     NOT_DIR(R.string.err_not_dir),
     /** Прочий errno: «ошибка чтения (<имя>)». */
     OTHER(R.string.err_other),
     /** Открылась теперь: удаление прервано или папка менялась во время скана. */
-    INCOMPLETE(R.string.err_incomplete),
+    INCOMPLETE(R.string.err_incomplete, R.string.err_incomplete_file),
     /** Root-дерево: повторить можно только в пространстве имён su — не повторяем. */
     NOT_READ(R.string.err_not_read),
 }
@@ -39,9 +39,14 @@ object ScanErrors {
         else -> ErrReason.OTHER
     }
 
-    /** Текст причины; для [ErrReason.OTHER] — имя errno [name] (нет — «errno N»). */
-    fun text(t: Txt, r: ErrReason, name: String?, errno: Int = 0): String =
-        if (r == ErrReason.OTHER) t.s(r.res, name ?: "errno $errno") else t.s(r.res)
+    /**
+     * Текст причины; для [ErrReason.OTHER] — имя errno [name] (нет — «errno N»). Узел-файл ([dir] false,
+     * F_ERR после частичного удаления) — слова про файл («файла уже нет»).
+     */
+    fun text(t: Txt, r: ErrReason, name: String?, errno: Int = 0, dir: Boolean = true): String {
+        val id = if (dir) r.res else r.fileRes
+        return if (r == ErrReason.OTHER) t.s(id, name ?: "errno $errno") else t.s(id)
+    }
 
     private fun digits(s: String) = s.isNotEmpty() && s.all { it in '0'..'9' }
 
@@ -61,6 +66,16 @@ object ScanErrors {
         }
         return s.size > l + 1 && s[l].equals("Android", ignoreCase = true) &&
             (s[l + 1].equals("data", ignoreCase = true) || s[l + 1].equals("obb", ignoreCase = true))
+    }
+
+    /**
+     * Root-скан «/data/media» (кнопка «СКАНИРОВАТЬ ОТ ROOT») покрывает [path]: внутренняя память —
+     * /storage/emulated/<n> или /sdcard. Съёмные тома /storage/<id> — нет (только заметка).
+     */
+    fun rootScanCovers(path: String): Boolean {
+        val s = path.split('/').filter { it.isNotEmpty() }
+        return s.size > 2 && s[0] == "storage" && s[1] == "emulated" && digits(s[2]) ||
+            s.isNotEmpty() && s[0] == "sdcard"
     }
 
     /** Показать заметку «Android 11+ закрывает эту папку…»: закрытая папка и дерево не от root (FUSE). */

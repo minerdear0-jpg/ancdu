@@ -84,6 +84,35 @@ class ScanErrorsTest {
             RU.s(R.string.err_android_private))
     }
 
+    /** Узел-файл (F_ERR после частичного удаления): слова про файл, не про папку. */
+    @Test fun fileReasonTexts() {
+        assertEquals("no longer exists", ScanErrors.text(EN, ErrReason.GONE, null, dir = false))
+        assertEquals("файла уже нет", ScanErrors.text(RU, ErrReason.GONE, null, dir = false))
+        assertEquals("incomplete data — a delete was interrupted or the file changed",
+            ScanErrors.text(EN, ErrReason.INCOMPLETE, null, dir = false))
+        assertEquals("данные неполные — удаление прервано или файл менялся",
+            ScanErrors.text(RU, ErrReason.INCOMPLETE, null, dir = false))
+        // нейтральные причины — те же
+        assertEquals("нет доступа", ScanErrors.text(RU, ErrReason.NO_ACCESS, null, dir = false))
+        assertEquals("символьная ссылка", ScanErrors.text(RU, ErrReason.SYMLINK, null, dir = false))
+        assertEquals("ошибка чтения (EIO)", ScanErrors.text(RU, ErrReason.OTHER, "EIO", dir = false))
+        assertEquals("не прочитано при скане", ScanErrors.text(RU, ErrReason.NOT_READ, null, dir = false))
+        // каталог — по-прежнему про папку
+        assertEquals("папки уже нет", ScanErrors.text(RU, ErrReason.GONE, null, dir = true))
+    }
+
+    /** «СКАНИРОВАТЬ ОТ ROOT» (/data/media) покрывает только внутреннюю память, не съёмные тома. */
+    @Test fun rootScanCovers() {
+        assertTrue(ScanErrors.rootScanCovers("$S/Android/data"))
+        assertTrue(ScanErrors.rootScanCovers("/storage/emulated/10/Android/obb/com.x"))
+        assertTrue(ScanErrors.rootScanCovers("/sdcard/Android/data"))
+        assertFalse(ScanErrors.rootScanCovers("/storage/1234-ABCD/Android/data"))
+        assertFalse(ScanErrors.rootScanCovers("/storage/emulated/Android/data"))
+        assertFalse(ScanErrors.rootScanCovers("/storage/self/primary/Android/data"))
+        assertFalse(ScanErrors.rootScanCovers("/data/media/0/Android/data"))
+        assertFalse(ScanErrors.rootScanCovers(""))
+    }
+
     @Test fun capText() {
         assertEquals(200, ScanErrors.CAP)
         assertNull(ScanErrors.more(EN, total = 0, shown = 0))

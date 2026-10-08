@@ -16,7 +16,7 @@ import android.widget.TextView
 
 /** Строка листа ошибок: узел, полный путь, путь от корня, причина и заметка о закрытой папке Android. */
 class ErrRow(val node: Int, val path: String, val rel: String, val reason: ErrReason, val errno: Int,
-             val errnoName: String?, val note: Boolean)
+             val errnoName: String?, val note: Boolean, val dir: Boolean = true)
 
 /** До [ScanErrors.CAP] строк по пути и сколько ошибок всего. */
 class ErrList(val rows: List<ErrRow>, val total: Int)
@@ -65,7 +65,8 @@ class ErrorsSheet(private val act: Activity, val list: ErrList, private val root
             addView(act.caps(t.s(R.string.scan_errors)), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(act.label(count, 12f, C.MUTED, mono = true))
         })
-        if (rootGranted && list.rows.any { it.note }) {
+        // Root-скан /data/media покрывает только внутреннюю память: у съёмного тома — одна заметка.
+        if (rootGranted && list.rows.any { it.note && ScanErrors.rootScanCovers(it.path) }) {
             rootButton = act.action(t.s(R.string.err_scan_root), null, primary = false) { onRoot() }.apply {
                 minimumHeight = act.dp(48)
             }
@@ -88,7 +89,7 @@ class ErrorsSheet(private val act: Activity, val list: ErrList, private val root
         addView(MiddleLines(act, shown, 2).apply {
             textSize = 13f; setTextColor(C.TEXT); typeface = Fonts.get(act, mono = true, bold = false)
         })
-        val why = ScanErrors.text(t, ScanErrors.shown(r.reason, r.note), r.errnoName, r.errno)
+        val why = ScanErrors.text(t, ScanErrors.shown(r.reason, r.note), r.errnoName, r.errno, r.dir)
         val reason = act.label(why, 12f, C.MUTED)
         reasons += reason
         addView(reason)
@@ -122,7 +123,7 @@ class ErrorsSheet(private val act: Activity, val list: ErrList, private val root
                 val reason = if (errno < 0) ErrReason.NOT_READ else ScanErrors.reason(errno)
                 val name = if (reason == ErrReason.OTHER) runCatching { OsConstants.errnoName(errno) }.getOrNull() else null
                 ErrRow(nd, path, ScanErrors.relative(path, root, rootTitle), reason, maxOf(errno, 0), name,
-                    ScanErrors.androidNote(path, viaRoot))
+                    ScanErrors.androidNote(path, viaRoot), dir)
             }.sortedBy { it.rel }
             return ErrList(rows, total)
         }

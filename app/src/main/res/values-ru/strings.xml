@@ -314,6 +314,8 @@
     <string name="err_not_dir">это не папка</string>
     <string name="err_other">ошибка чтения (%1$s)</string>
     <string name="err_incomplete">данные неполные — удаление прервано или папка менялась во время скана</string>
+    <string name="err_gone_file">файла уже нет</string>
+    <string name="err_incomplete_file">данные неполные — удаление прервано или файл менялся</string>
     <string name="err_not_read">не прочитано при скане</string>
     <string name="err_android_private">Android 11+ закрывает эту папку для других приложений — её размер виден только при скане от root</string>
     <string name="err_scan_root">Сканировать от root</string>
