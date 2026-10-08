@@ -90,14 +90,15 @@ class LangTest {
         File(this, "z.bin").writeBytes(ByteArray(10))
     }
 
-    private fun browse(dir: File): BrowserActivity {
+    /** [time] — время дерева: два часа назад, чтобы плашка была видна («скан 2 ч назад»); свежий скан молчит. */
+    private fun browse(dir: File, time: Long = System.currentTimeMillis() - 2 * 3_600_000L): BrowserActivity {
         val h = Native.scanStart(dir.path, true, 2, IntArray(1))
         val p = LongArray(6)
         val deadline = System.currentTimeMillis() + 10_000
         while (Native.progress(h, p).let { p[0] == ST_RUNNING.toLong() } && System.currentTimeMillis() < deadline)
             Thread.sleep(25)
         assertEquals(ST_DONE.toLong(), p[0])
-        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, false) }
+        ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, false, time) }
         val a = ins.startActivitySync(Intent(ctx, BrowserActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
         ins.waitForIdleSync()
@@ -120,7 +121,10 @@ class LangTest {
             val b = browse(dir)
             ins.runOnMainSync {
                 assertEquals(chips, chips(b))
-                assertEquals(main[2], b.badge.text.toString())
+                // The badge is silent on a fresh scan (budget rule 5); this tree is 2 h old: «скан 2 ч назад».
+                val badge = b.badge.text.toString()
+                assertTrue(badge, badge.startsWith(main[2] + " "))
+                assertEquals(Badge.text(b.tx, Kind.SCAN, Holder.time, false), badge)
                 // строка каталога: размер в единицах языка, «каталог»/«folder» в описании
                 val row = Row().also { b.list.source!!.bind(0, it) }
                 assertEquals("sub/", row.name)

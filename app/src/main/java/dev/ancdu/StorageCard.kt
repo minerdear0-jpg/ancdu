@@ -451,23 +451,30 @@ class StorageCard(private val a: MainActivity) {
     private fun attach() = a.startActivity(Intent(a, ScanActivity::class.java).putExtra(EXTRA_ATTACH, true))
 
     /**
-     * Для тестов (после layout): видимых строк текста в карточке. Горизонтальный ряд — столько строк,
-     * сколько у самого высокого его ребёнка; ряд Flow — по рядам; вертикальный — сумма.
+     * Для тестов (после layout): видимых строк ТЕКСТА в карточке, как их видит глаз. Видимые
+     * непустые TextView группируются в ряды по перекрытию по вертикали (подпись и «/data», герой и
+     * «36%» — один ряд); ряд стоит столько строк, сколько у самого многострочного в нём.
      */
-    fun textLines(): Int = lines(panel)
-
-    private fun lines(v: View): Int {
-        if (v.visibility != View.VISIBLE) return 0
-        return when {
-            v is TextView -> if (v.text.isNullOrEmpty()) 0 else maxOf(1, v.lineCount)
-            v is Flow -> kids(v).filter { lines(it) > 0 }.groupBy { it.top }.values.sumOf { row -> row.maxOf { lines(it) } }
-            v is LinearLayout && v.orientation == LinearLayout.HORIZONTAL -> kids(v).maxOfOrNull { lines(it) } ?: 0
-            v is ViewGroup -> kids(v).sumOf { lines(it) }
-            else -> 0
+    fun textLines(): Int {
+        val views = ArrayList<TextView>()
+        fun walk(v: View) {
+            if (v.visibility != View.VISIBLE) return
+            if (v is TextView) { if (!v.text.isNullOrEmpty() && v.height > 0) views += v; return }
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
         }
+        walk(panel)
+        val at = IntArray(2)
+        val spans = views.map { v -> v.getLocationOnScreen(at); Triple(at[1], at[1] + v.height, maxOf(1, v.lineCount)) }
+            .sortedBy { it.first }
+        var lines = 0
+        var rowBottom = Int.MIN_VALUE
+        var rowLines = 0
+        for ((top, bottom, n) in spans) {
+            if (top < rowBottom) { rowBottom = maxOf(rowBottom, bottom); rowLines = maxOf(rowLines, n) }
+            else { lines += rowLines; rowBottom = bottom; rowLines = n }
+        }
+        return lines + rowLines
     }
-
-    private fun kids(g: ViewGroup): List<View> = (0 until g.childCount).map { g.getChildAt(it) }
 
     companion object {
         /** Для тестов: statfs /data (total, free, avail) вместо настоящего; null — настоящий. */

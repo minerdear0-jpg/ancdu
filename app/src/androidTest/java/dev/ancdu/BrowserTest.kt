@@ -887,7 +887,7 @@ class BrowserTest {
                 path0 = act.currentPath
                 assertTrue(act.alertDialog!!.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick())
             }
-            assertTrue("дерево не обновилось", waitFor(30_000) { var ok = false; ins.runOnMainSync { ok = Holder.h != h0 && act.h == Holder.h }; ok })
+            assertTrue("дерево не обновилось", waitFor(30_000) { Holder.h != h0 && act.h == Holder.h })
             val k2 = index(act, "victim/")
             assertTrue(k2 >= 0)
             ins.runOnMainSync {

@@ -135,7 +135,7 @@ class UxTest {
             val b = ins.waitForMonitorWithTimeout(browserMon, 10_000) as BrowserActivity?
             assertNotNull("браузер не открылся", b)
             ins.runOnMainSync { assertFalse(scan.built) }
-            assertTrue(waitFor { var ok = false; ins.runOnMainSync { ok = b!!.list.source != null }; ok })
+            assertTrue(waitFor { b!!.list.source != null })
             ins.runOnMainSync {
                 val t = b!!.badge.text.toString()
                 // Свежий полный скан — плашка молчит (ни длительности, ни времени); число элементов — в итоге.
