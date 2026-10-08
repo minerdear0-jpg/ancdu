@@ -48,8 +48,8 @@ object GrowthText {
         else -> "±0"
     }
 
-    /** Цвет Δ: рост — AMBER_TEXT, сжатие — MUTED, без изменений — TEXT. */
-    fun role(b: Long): Role = when { b > 0 -> Role.AMBER_TEXT; b < 0 -> Role.MUTED; else -> Role.TEXT }
+    /** Цвет Δ: рост — AMBER_TEXT; сжатие и «±0» — MUTED (выделяется только рост). */
+    fun role(b: Long): Role = if (b > 0) Role.AMBER_TEXT else Role.MUTED
 
     /** «1 окт.» / «Oct 1». */
     fun since(t: Txt, ms: Long, tz: TimeZone = TimeZone.getDefault()): String =
@@ -130,7 +130,7 @@ object Mostly {
 /** Строка «что выросло» главного экрана: Δ корня, время точки отсчёта, путь «больше всего» (байты имён и текст). */
 class HomeGrowth(val delta: Long, val baseTime: Long, val names: List<ByteArray>, val path: String)
 
-/** Чистый Kotlin: порядок и полоса в сортировке Δ. */
+/** Чистый Kotlin: порядок в сортировке Δ. */
 object GrowthSort {
     /**
      * Первые [n] id в [ids] — по Δ убыв. (рост первым), при равном Δ — по размеру убыв., затем меньший
@@ -151,12 +151,6 @@ object GrowthSort {
         out.copyInto(ids)
     }
 
-    /** Наибольший |Δ| (Long.MIN_VALUE — как Long.MAX_VALUE). */
-    fun maxAbs(v: LongArray): Long = v.maxOfOrNull { if (it == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(it) } ?: 0L
-
-    /** Знаковая полоса: [delta] / [maxAbs] в [-1, 1]; 0 — без полосы. */
-    fun bar(delta: Long, maxAbs: Long): Float =
-        if (maxAbs <= 0L) 0f else (delta.toDouble() / maxAbs).toFloat().coerceIn(-1f, 1f)
 }
 
 /**

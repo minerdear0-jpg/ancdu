@@ -60,9 +60,8 @@ class BrowserActivity : LangActivity() {
     /** На этом уровне показана сортировка Δ (выбрана и Δ есть). */
     var deltaShown = false
         private set
-    /** Δ строк уровня (в режиме размера: диск или видимый) и наибольший |Δ| — для знаковой полосы. */
+    /** Δ строк уровня (в режиме размера: диск или видимый). */
     private var dvals = LongArray(0)
-    private var dmax = 0L
     /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
     var goneText: String? = null
         private set
@@ -376,12 +375,9 @@ class BrowserActivity : LangActivity() {
             val dv = if (deltaShown) dvals[index] else 0L
             val isNew = deltaShown && d != null && d.isNew(kids[index])
             if (deltaShown) {
-                // Δ: знаковый размер (рост — AMBER_TEXT, сжатие — MUTED), полоса от середины, справа — текущий размер.
+                // Δ: знаковый размер (рост — AMBER_TEXT, сжатие и ±0 — MUTED), без полосы, справа — текущий размер.
                 row.size = sizes[index] ?: GrowthText.signed(dv, txt).also { sizes[index] = it }
                 row.sizeColor = GrowthText.role(dv).color()
-                row.signedBar = true
-                row.bar = GrowthSort.bar(dv, dmax)
-                row.barColor = if (dv >= 0) C.AMBER else C.FRAME
                 row.pct = pcts[index] ?: Fmt.size(v, txt).also { pcts[index] = it }
                 if (isNew) row.badge = txt.s(R.string.new_badge)
             } else {
@@ -986,9 +982,17 @@ class BrowserActivity : LangActivity() {
         keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
-        if (deltaShown && d != null) orderByDelta(d) else { dvals = LongArray(0); dmax = 0L }
+        if (deltaShown && d != null) orderByDelta(d) else dvals = LongArray(0)
         goneText = if (deltaShown && d != null) d.gone[node]?.let { GrowthText.goneOrNull(txt, it.count, it.bytes(apparent)) } else null
-        list.wideRight = deltaShown
+        // Δ: колонка текущего размера — по самому длинному тексту уровня (строки и кэшируются здесь).
+        list.rightSample = if (!deltaShown) null else {
+            var longest = ""
+            for (i in 0 until n) {
+                val s = Fmt.size(value(i), txt).also { pcts[i] = it }
+                if (s.length > longest.length) longest = s
+            }
+            longest
+        }
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
@@ -1016,7 +1020,7 @@ class BrowserActivity : LangActivity() {
         if (dropped > 0) note(GroupSheet.cleared(txt, dropped))
     }
 
-    /** Дети уровня (и их nodeInfo) — по Δ убыв., при равной — по размеру ([GrowthSort]); Δ строк и max |Δ|. */
+    /** Дети уровня (и их nodeInfo) — по Δ убыв., при равной — по размеру ([GrowthSort]); Δ строк. */
     private fun orderByDelta(d: Delta) {
         val pos = IntArray(n) { it }
         GrowthSort.sort(pos, n, { d.of(kids[it], apparent) }, { value(it) })
@@ -1025,7 +1029,6 @@ class BrowserActivity : LangActivity() {
         for (j in 0 until n) { k2[j] = kids[pos[j]]; System.arraycopy(info, 4 * pos[j], i2, 4 * j, 4) }
         kids = k2; info = i2
         dvals = LongArray(n) { d.of(kids[it], apparent) }
-        dmax = GrowthSort.maxAbs(dvals)
     }
 
     /**

@@ -159,13 +159,12 @@ class GrowthUiTest {
             assertEquals(GrowthText.signed(70_000, tx), r[1].size)
             assertEquals(b.getString(R.string.new_badge), r[1].badge)
             assertEquals(Fmt.size(70_000, tx), r[1].pct)
-            assertTrue(r[1].signedBar && r[1].bar > 0f)
             assertEquals("±0", r[2].size)
-            assertEquals(C.TEXT, r[2].sizeColor)
+            // Без изменений — приглушённо: выделяется только рост.
+            assertEquals(C.MUTED, r[2].sizeColor)
             assertNull(r[2].badge)
             assertEquals(GrowthText.signed(-150_000, tx), r[3].size)
             assertEquals(C.MUTED, r[3].sizeColor)
-            assertTrue(r[3].bar < 0f)
             assertTrue(r[3].desc, r[3].desc.contains(GrowthText.signed(-150_000, tx)))
             // «Ушло» — последняя строка, без касаний.
             assertEquals(5, r.size)
@@ -174,8 +173,20 @@ class GrowthUiTest {
             assertFalse(b.list.source!!.interactive(4))
             val d = Growth.forTree(Holder.h, Holder.gen)!!
             assertEquals(GrowthText.badge(tx, d.baseTime), b.badge.text.toString())
+            // Раскладка: в Δ полосы нет, правая колонка — по своему тексту; имени остаётся не меньше,
+            // чем в сортировке по размеру, за вычетом колонки текущего размера.
+            val w = b.list.width
+            assertTrue(w > 0)
+            val nameDelta = b.list.nameWidthFor(w)
+            val curCol = b.list.rightColWidth
             // Размер (не Δ) — без строки «ушло» и без знаков.
             b.setSort(SORT_SIZE)
+            val nameSize = b.list.nameWidthFor(w)
+            assertTrue("имя в Δ $nameDelta < $nameSize − $curCol", nameDelta >= nameSize - curCol)
+            // Полоса (64dp + отступ) отдана имени: при той же правой колонке имя в Δ шире. При шрифте
+            // > 130% полосы нет и в сортировке по размеру.
+            if (b.resources.configuration.fontScale <= 1.3f) assertTrue("полоса не отдана имени: $nameDelta, $nameSize, $curCol, ${b.list.rightColWidth}",
+                nameDelta - (nameSize - (curCol - b.list.rightColWidth)) >= b.dp(64))
             assertFalse(b.deltaShown)
             assertEquals(4, b.list.source!!.count)
             assertNull(rows(b)[0].badge)

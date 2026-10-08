@@ -32,7 +32,7 @@ class GrowthTest {
     @Test fun colourRoles() {
         assertEquals(Role.AMBER_TEXT, GrowthText.role(1))
         assertEquals(Role.MUTED, GrowthText.role(-1))
-        assertEquals(Role.TEXT, GrowthText.role(0))
+        assertEquals(Role.MUTED, GrowthText.role(0))
         assertEquals(Palette.DARK.amberText, Role.AMBER_TEXT.color(Palette.DARK))
         assertEquals(Palette.LIGHT.amberText, Role.AMBER_TEXT.color(Palette.LIGHT))
     }
@@ -96,14 +96,6 @@ class GrowthTest {
         GrowthSort.sort(IntArray(0), 0, { 0L }, { 0L })
     }
 
-    @Test fun signedBar() {
-        assertEquals(1f, GrowthSort.bar(10, 10), 0f)
-        assertEquals(-0.5f, GrowthSort.bar(-5, 10), 0f)
-        assertEquals(0f, GrowthSort.bar(0, 0), 0f)
-        assertEquals(0f, GrowthSort.bar(3, 0), 0f)
-        assertEquals(10L, GrowthSort.maxAbs(longArrayOf(-10, 3, 0)))
-        assertEquals(Long.MAX_VALUE, GrowthSort.maxAbs(longArrayOf(Long.MIN_VALUE)))
-    }
 
     private fun tree(vararg e: Triple<Int, Int, Pair<Long, Boolean>>): (Int) -> List<Mostly.Kid> {
         // (родитель, узел, (Δ, каталог))

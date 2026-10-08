@@ -46,8 +46,6 @@ class Row {
     var long = true
     /** Цвет колонки размера (сортировка Δ: рост — AMBER_TEXT, сжатие — MUTED). */
     var sizeColor = C.TEXT
-    /** [bar] знаковая (−1…1) от середины полосы: рост вправо, сжатие влево. */
-    var signedBar = false
     /** Значок в контуре FRAME у правого края (моно 10sp), например «NEW»; null — нет. */
     var badge: String? = null
     /** Строка-сводка без колонок и касаний (например «ушло: 3 объекта · −120 МиБ»); null — обычная строка. */
@@ -57,7 +55,7 @@ class Row {
         name = ""; size = ""; pct = ""; bar = 0f; barColor = C.AMBER; nameColor = C.TEXT
         mark = ""; segs = null; segColors = null; sub = null; tag = null; tagColor = C.MUTED; desc = ""
         checked = null; enabled = true; stateDesc = null; clickLabel = null; longLabel = null; long = true
-        sizeColor = C.TEXT; signedBar = false; badge = null; note = null
+        sizeColor = C.TEXT; badge = null; note = null
     }
 }
 
@@ -89,9 +87,15 @@ class NcduListView(ctx: Context) : View(ctx) {
     /** TalkBack: подпись действия «долгое нажатие» на строках; null — без подписи. */
     var longClickLabel: CharSequence? = null
 
-    /** Сортировка Δ: в колонке процента — текущий размер (моно 11sp MUTED), колонка шире. */
-    var wideRight = false
+    /**
+     * Сортировка Δ: в колонке процента — текущий размер (моно 11sp MUTED), колонка по ширине самого
+     * длинного из них ([rightSample]); полосы нет — знак и цвет Δ уже говорят «рост/сжатие», её место
+     * отдано имени. null — обычный режим (процент, полоса).
+     */
+    var rightSample: String? = null
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** Сортировка Δ ([rightSample] задан). */
+    val wideRight: Boolean get() = rightSample != null
 
     /** Высота строки: 48/64 dp, но растёт под крупный шрифт (sp), чтобы текст не обрезался. */
     val rowHeight: Int get() = if (withSub) rowSub else rowPlain
@@ -131,9 +135,12 @@ class NcduListView(ctx: Context) : View(ctx) {
     // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val pctW = maxOf(ctx.dp(34), pctPaint.measureText("100%").toInt())
-    private val curW = maxOf(pctW, curPaint.measureText("1023.9 MiB").toInt())
-    /** Ширина правой колонки: процент или ([wideRight]) текущий размер. */
-    private val rightW: Int get() = if (wideRight) curW else pctW
+    /** Ширина правой колонки: процент или ([wideRight]) текущий размер по своему тексту. */
+    private val rightW: Int get() = rightSample?.let { kotlin.math.ceil(curPaint.measureText(it)).toInt() } ?: pctW
+    /** Ширина правой колонки (процент или текущий размер) — для тестов раскладки. */
+    val rightColWidth: Int get() = rightW
+    /** Полоса рисуется: не крупный шрифт и не сортировка Δ. */
+    private val showBar: Boolean get() = !compact && !wideRight
     /** Крупный шрифт (> 130%): без полосы, колонка размера сужается — имени остаётся ≥40% строки. */
     private val compact = ctx.resources.configuration.fontScale > 1.3f
     private val fitPaint = TextPaint(sizePaint)
@@ -145,7 +152,7 @@ class NcduListView(ctx: Context) : View(ctx) {
 
     /** Ширина колонки имени при ширине строки [w]. */
     fun nameWidthFor(w: Int): Int =
-        w - 2 * pad - sizeColFor(w) - gap - (if (compact) 0 else barW + gap) - rightW - gap
+        w - 2 * pad - sizeColFor(w) - gap - (if (showBar) barW + gap else 0) - rightW - gap
     private val mainH = mono.fontMetricsInt.let { it.descent - it.ascent }
     private val subH = small.fontMetricsInt.let { it.descent - it.ascent }
     private val subGap = ctx.dp(2)
@@ -298,8 +305,7 @@ class NcduListView(ctx: Context) : View(ctx) {
             c.drawText(row.size, x.toFloat(), base, fitPaint)
         }
         x += col + gap
-        if (!compact) drawBar(c, x, mid)
-        if (!compact) x += barW + gap
+        if (showBar) { drawBar(c, x, mid); x += barW + gap }
         // процент (по правому краю колонки); в режиме выбора — флажок на его месте; [wideRight] — размер
         val rw = rightW
         val rp = if (wideRight) curPaint else pctPaint
@@ -381,17 +387,7 @@ class NcduListView(ctx: Context) : View(ctx) {
         val bt = (mid - barH / 2).toFloat()
         val inL = (x + one).toFloat(); val inW = (barW - 2 * one).toFloat()
         val segs = row.segs
-        if (row.signedBar) {
-            // Ось — середина; рост вправо, сжатие влево; ненулевое — не меньше 1px.
-            val half = inW / 2
-            val axis = inL + half
-            val fw = if (row.bar != 0f) maxOf(half * kotlin.math.abs(row.bar), 1f) else 0f
-            fill.color = row.barColor
-            if (row.bar > 0f) c.drawRect(axis, bt + one, axis + fw, bt + barH - one, fill)
-            else if (row.bar < 0f) c.drawRect(axis - fw, bt + one, axis, bt + barH - one, fill)
-            fill.color = C.FRAME
-            c.drawRect(axis - one / 2f, bt, axis + one / 2f, bt + barH, fill)
-        } else if (segs != null) {
+        if (segs != null) {
             var sx = inL
             val total = inW * row.bar
             for (k in segs.indices) {
