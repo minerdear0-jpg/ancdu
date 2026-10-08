@@ -87,7 +87,6 @@
     <string name="seg_free">Свободно</string>
 
     <string name="fresh_refresh">обновить ›</string>
-    <string name="min_ago">%1$s\u00A0мин назад</string>
     <string name="h_ago">%1$s\u00A0ч назад</string>
 
     <string name="su_desc_ask">su: запросить root</string>
@@ -98,10 +97,9 @@
     <string name="root_scan_desc">Сканировать как root: %1$s</string>
     <string name="root_denied_hint">root отклонён — нажмите su вверху, чтобы запросить снова</string>
 
-    <string name="badge_scan">скан</string>
-    <string name="badge_root">root · скан</string>
+    <string name="badge_root">root</string>
     <string name="badge_index">индекс · приблизительно</string>
-    <string name="badge_cache">кэш от %1$s</string>
+    <string name="badge_cache">кэш</string>
     <string name="badge_partial">неполный</string>
 
     <string name="desc_dir">каталог</string>
@@ -138,7 +136,6 @@
     <string name="delete_symlink">Путь проходит через символическую ссылку — ничего не удалено.</string>
     <string name="delete_no_root">Не удалось получить root — ничего не удалено.</string>
     <string name="delete_root_path">Root не смог открыть путь — ничего не удалено.</string>
-    <string name="delete_changed">Изменилось после скана — ничего не удалено. Обновите список и повторите.</string>
     <string name="delete_cancelled_title">Удаление отменено</string>
     <string name="tree_changed">Дерево сменилось, пока был открыт диалог. Ничего не удалено.</string>
 
@@ -366,4 +363,8 @@
     <string name="more_scans">сканы</string>
     <string name="more_desc">Показать приложения, root и прошлые сканы</string>
     <string name="interrupted_open_desc">открывает папку, остаток — в списке</string>
+    <string name="badge_scan_ago">скан %1$s</string>
+    <string name="nothing_deleted">Ничего не удалено</string>
+    <string name="delete_changed_name">«%1$s» изменился после скана.</string>
+    <string name="refresh_btn">Обновить</string>
 </resources>

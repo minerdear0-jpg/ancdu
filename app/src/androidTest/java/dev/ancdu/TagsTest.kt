@@ -100,7 +100,9 @@ class TagsTest {
         assertNull(top.getValue("notes.txt").first)
         assertTrue(top.getValue("notes.txt").second, !top.getValue("notes.txt").second.endsWith(", $dl"))
         open(a, "Download/")
-        assertEquals("dl", rows(a).getValue("a.pdf").first)
+        // The folder's own tag: not on every row, once in the summary.
+        assertNull(rows(a).getValue("a.pdf").first)
+        ins.runOnMainSync { assertTrue(a.head.summary.text.toString(), a.head.summary.text.endsWith(" · dl")) }
         ins.runOnMainSync { a.onBackPressed() }
         open(a, "Android/"); open(a, "data/"); open(a, "x/")
         top = rows(a)
@@ -108,7 +110,26 @@ class TagsTest {
         assertTrue(top.getValue("cache/").second, top.getValue("cache/").second.endsWith(", $cache"))
         assertNull("files/ — не кэш", top.getValue("files/").first)
         open(a, "cache/")
-        assertEquals("cache", rows(a).getValue("blob").first)
+        assertNull(rows(a).getValue("blob").first)
+        ins.runOnMainSync { assertTrue(a.head.summary.text.toString(), a.head.summary.text.endsWith(" · cache")) }
+    }
+
+    /** Delete sheet of Download/: the object's own «dl» once, not again on its children. */
+    @Test fun deleteSheetSuppressesOwnTag() {
+        val a = browse(fixture())
+        ins.runOnMainSync {
+            val s = a.list.source!!
+            val i = (0 until s.count).first { Row().also { r -> s.bind(it, r) }.name == "Download/" }
+            a.askDelete(i)
+        }
+        ins.waitForIdleSync()
+        ins.runOnMainSync {
+            val sh = a.sheet!!
+            assertTrue(sh.dialog.isShowing)
+            assertEquals(listOf("dl"), sh.tagTexts)
+            assertEquals(listOf("a.pdf"), sh.childNames)
+            sh.dismiss()
+        }
     }
 
     /** Лист удаления каталога: метка у самого объекта и у его крупнейших детей. */

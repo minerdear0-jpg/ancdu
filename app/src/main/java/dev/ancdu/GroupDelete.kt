@@ -86,7 +86,7 @@ object GroupSheet {
      */
     fun preview(t: Txt, items: List<GroupItem>, parent: String, self: String, viaRoot: Boolean, kind: Kind,
                 cacheTime: String?, root: RootState, gone: Int,
-                contact: (GroupItem) -> List<QuickLookInfo> = { emptyList() }): Pair<DeletePreview, GroupInfo> {
+                contact: (GroupItem) -> List<QuickLookInfo> = { emptyList() }, own: TagText? = null): Pair<DeletePreview, GroupInfo> {
         val bySize = items.sortedByDescending { it.disk }
         val top = bySize.take(TOP)
         val owners = bySize.mapNotNull { it.owner }.filter { it != self }.distinct()
@@ -98,7 +98,7 @@ object GroupSheet {
             top = top.map { (if (it.dir) it.name + "/" else it.name) to it.disk }, more = items.size - top.size,
             owner = owners.singleOrNull()?.takeIf { ownerItems == items.size }, viaRoot = viaRoot, block = items.firstNotNullOfOrNull { it.block },
             kind = kind, cacheTime = cacheTime, fast = items.isNotEmpty() && items.all { it.fast }, root = root,
-            topTags = top.map { it.tag }, topPeek = top.map { if (it.dir) null else it.peek },
+            topTags = top.map { it.tag?.takeUnless { t -> TagText.same(t, own) } }, ownTag = own, topPeek = top.map { if (it.dir) null else it.peek },
             topContact = top.map { if (it.dir) contact(it) else emptyList() })
         val info = GroupInfo(
             count = items.size, owners = owners, owned = items.map { it.owner != null && it.owner != self },

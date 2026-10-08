@@ -91,7 +91,7 @@ class BrowserHeader(private val a: BrowserActivity) {
         }
         // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
         // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
-        badge = a.label("", 12f, C.AMBER_TEXT, mono = true).apply {
+        badge = a.label("", 12f, C.MUTED, mono = true).apply {
             maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER_VERTICAL
             // В сортировке Δ — «Δ с 1 окт. 09:12»: тап открывает лист точки отсчёта (load включает касание).
@@ -189,6 +189,8 @@ class BrowserHeader(private val a: BrowserActivity) {
     private fun setBadge(text: String, active: Boolean, polite: Boolean) {
         badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
         badge.maxLines = if (active) 1 else BADGE_LINES
+        // Возраст и вид дерева — факт, не призыв: приглушённо. Ход скана и плашка Δ (касаемая) — амбер.
+        badge.setTextColor(if (active || a.deltaShown) C.AMBER_TEXT else C.MUTED)
         badge.text = text
         // Плашка Δ (касаемая) — с подсказкой «точка отсчёта»; ход скана поверх неё читается как есть.
         badge.contentDescription = if (a.deltaShown && text == sourceBadge) a.txt.s(R.string.badge_delta_desc, text) else null

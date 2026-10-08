@@ -65,20 +65,30 @@ object Scans {
     }
 }
 
-/** Плашка вида дерева в браузере: «скан · 0,2 с», «кэш от 05.10 21:33», «… · неполный». */
+/** Плашка вида дерева в браузере: «скан 2 ч назад», «кэш · 10 ч назад», «… · неполный». */
 object Badge {
-    /** [time] — время дерева (для кэша), [ms] — длительность скана (-1 — нет), [partial] — ST_FULL. */
-    fun text(t: Txt, kind: Kind, time: Long, ms: Long, partial: Boolean,
-             tz: java.util.TimeZone = java.util.TimeZone.getDefault()): String {
+    private const val HOUR = 3_600_000L
+    private const val DAY = 86_400_000L
+
+    /**
+     * Плашка браузера — только отклонения: вид дерева (root, индекс, кэш), возраст от часа
+     * («скан 2 ч назад», приглушённо) и «неполный». Свежий полный скан — пусто (тишина).
+     * [time] — время дерева (0 — неизвестно), [partial] — ST_FULL.
+     */
+    fun text(t: Txt, kind: Kind, time: Long, partial: Boolean, now: Long = System.currentTimeMillis()): String {
+        val age = if (time > 0 && kind != Kind.INDEX && now - time >= HOUR) ago(t, now - time, now) else null
         val parts = ArrayList<String>(3)
-        parts += when (kind) {
-            Kind.SCAN -> t.s(R.string.badge_scan)
-            Kind.ROOT -> t.s(R.string.badge_root)
-            Kind.INDEX -> t.s(R.string.badge_index)
-            Kind.CACHE -> t.s(R.string.badge_cache, Freshness.date(t, R.string.fmt_day_time, time, tz))
+        when (kind) {
+            Kind.SCAN -> if (age != null) parts += t.s(R.string.badge_scan_ago, age)
+            Kind.ROOT -> { parts += t.s(R.string.badge_root); if (age != null) parts += t.s(R.string.badge_scan_ago, age) }
+            Kind.INDEX -> parts += t.s(R.string.badge_index)
+            Kind.CACHE -> { parts += t.s(R.string.badge_cache); if (age != null) parts += age }
         }
-        if (ms >= 0) parts += Fmt.secs(ms, t)
         if (partial) parts += t.s(R.string.badge_partial)
         return parts.joinToString(" · ")
     }
+
+    /** «2 ч назад»; от суток — «3 дня назад». */
+    private fun ago(t: Txt, d: Long, now: Long): String =
+        if (d < DAY) t.s(R.string.h_ago, Fmt.count(d / HOUR, t.locale)) else GrowthText.daysAgo(t, now, now - d)
 }

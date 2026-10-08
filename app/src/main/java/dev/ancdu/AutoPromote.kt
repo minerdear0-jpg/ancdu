@@ -17,7 +17,9 @@ class AutoPromote {
                   /** Итог группы уже показан: после подстановки (или провала обновления) — этот же текст. */
                   val note: String? = null,
                   /** Ждёт лист ГРУППЫ: [names] — путь папки, выбранное в ней — у экрана. */
-                  val group: Boolean = false)
+                  val group: Boolean = false,
+                  /** «Обновить» сообщения: только подставить дерево на том же пути — ни листа, ни подвала. */
+                  val quiet: Boolean = false)
 
     var request: Request? = null
         private set
@@ -26,6 +28,9 @@ class AutoPromote {
     fun beforeDelete(names: List<ByteArray>, name: String, target: ScanTarget) {
         request = Request(names, name, null, target)
     }
+
+    /** «Обновить» сообщения об ошибке: [names] — путь текущей папки. Навигация его снимает (как лист). */
+    fun afterRefresh(names: List<ByteArray>, name: String) { request = Request(names, name, null, quiet = true) }
 
     /** Удаление группы с частично удалённым каталогом: [note] — уже показанный итог. */
     fun afterGroup(names: List<ByteArray>, name: String, delDisk: Long, note: String) {

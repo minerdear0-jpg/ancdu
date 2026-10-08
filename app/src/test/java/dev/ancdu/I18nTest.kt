@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.util.Locale
-import java.util.TimeZone
 
 /** Выбор языка: где он живёт и что из него следует (API 33+ — LocaleManager, 30–32 — prefs). */
 class LangPrefsTest {
@@ -71,19 +70,31 @@ class NativeErrTest {
     }
 }
 
-/** Плашка браузера: вид дерева и длительность; число элементов — только в строке итога. */
+/** Browser badge: muted age «скан 2 ч назад» only when >= 1 h; no duration, no clock time. */
 class BadgeTest {
-    private val utc = TimeZone.getTimeZone("UTC")
+    private val now = 1_791_500_000_000L
+    private val hour = 3_600_000L
     private val N = Fmt.NBSP
 
-    @Test fun kinds() {
-        assertEquals("скан · 0,2${N}с", Badge.text(RU, Kind.SCAN, 0, 230, false, utc))
-        assertEquals("scan · 0.2${N}s", Badge.text(EN, Kind.SCAN, 0, 230, false, utc))
-        assertEquals("root · скан", Badge.text(RU, Kind.ROOT, 0, -1, false, utc))
-        assertEquals("индекс · приблизительно", Badge.text(RU, Kind.INDEX, 0, -1, false, utc))
-        assertEquals("кэш от 05.10 21:33", Badge.text(RU, Kind.CACHE, 1_759_700_000_000L, -1, false, utc))
-        assertEquals("cache from Oct 5, 21:33", Badge.text(EN, Kind.CACHE, 1_759_700_000_000L, -1, false, utc))
-        assertEquals("скан · 6,1${N}с · неполный", Badge.text(RU, Kind.SCAN, 0, 6125, true, utc))
+    @Test fun ageOnlyFromOneHour() {
+        assertEquals("", Badge.text(RU, Kind.SCAN, now - 59 * 60_000, false, now))
+        assertEquals("скан 1${N}ч назад", Badge.text(RU, Kind.SCAN, now - hour, false, now))
+        assertEquals("скан 2${N}ч назад", Badge.text(RU, Kind.SCAN, now - 2 * hour - 5, false, now))
+        assertEquals("scan 2${N}h ago", Badge.text(EN, Kind.SCAN, now - 2 * hour, false, now))
+        assertEquals("скан 3 дня назад", Badge.text(RU, Kind.SCAN, now - 72 * hour, false, now))
+        // Unknown time: no age.
+        assertEquals("", Badge.text(RU, Kind.SCAN, 0, false, now))
+    }
+
+    @Test fun kindsStayFacts() {
+        assertEquals("root", Badge.text(RU, Kind.ROOT, now, false, now))
+        assertEquals("root · скан 2${N}ч назад", Badge.text(RU, Kind.ROOT, now - 2 * hour, false, now))
+        assertEquals("индекс · приблизительно", Badge.text(RU, Kind.INDEX, 0, false, now))
+        assertEquals("кэш", Badge.text(RU, Kind.CACHE, now - 60_000, false, now))
+        assertEquals("кэш · 10${N}ч назад", Badge.text(RU, Kind.CACHE, now - 10 * hour, false, now))
+        assertEquals("cache · 10${N}h ago", Badge.text(EN, Kind.CACHE, now - 10 * hour, false, now))
+        assertEquals("неполный", Badge.text(RU, Kind.SCAN, now, true, now))
+        assertEquals("скан 2${N}ч назад · неполный", Badge.text(RU, Kind.SCAN, now - 2 * hour, true, now))
     }
 }
 

@@ -222,7 +222,9 @@ class BrowserActivity : LangActivity() {
                     // «Стоп» до начала: пользователь сам остановил — без диалога.
                     DeleteProgress.isCancelled(r, doneN) -> note(DeleteProgress.cancelled(txt))
                     r == -DeleteProgress.ELOOP -> report(txt.s(R.string.delete_failed), txt.s(R.string.delete_symlink))
-                    NativeErr.changedSinceScan(r) -> report(txt.s(R.string.delete_failed), txt.s(R.string.delete_changed))
+                    // Отказ и безопасность — один факт: ничего не удалено; «Обновить» делает то, о чём просил текст.
+                    NativeErr.changedSinceScan(r) -> report(txt.s(R.string.nothing_deleted),
+                        txt.s(R.string.delete_changed_name, Bidi.visible(Holder.delName)), refreshFix)
                     DeletePolicy.rootPathRefused(r, Holder.delRoot) -> report(txt.s(R.string.delete_failed),
                         txt.s(R.string.delete_root_path))
                     DeletePolicy.nothingDeleted(r, Holder.delRoot) -> report(txt.s(R.string.delete_failed),
@@ -268,15 +270,43 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: текст подвала (в режиме выбора — сообщение поверх списка, если оно видно). */
     val footerText: CharSequence get() = if (notice.visibility == View.VISIBLE) notice.text else footer.text
 
-    internal fun report(title: String, msg: String) {
+    /** Для тестов: открытое сообщение по итогам удаления. */
+    var alertDialog: AlertDialog? = null
+        private set
+
+    /**
+     * Сообщение по итогам удаления. [fix] — у ошибки есть очевидное исправление: кнопки
+     * [Закрыть] [<fix>] (например, «Обновить»); без него — одна «OK».
+     */
+    internal fun report(title: String, msg: String, fix: Pair<String, () -> Unit>? = null) {
         lastAlert = title to msg
-        alert(title, msg)
+        alertDialog = if (fix == null) alert(title, msg)
+            else alert(title, msg, ok = fix.first, cancel = txt.s(R.string.close), onOk = fix.second)
     }
+
+    /**
+     * «Обновить» сообщения «изменилось после скана»: тот же фоновый скан корня, что «новее ·
+     * обновить»; новое дерево подставляется само, путь сохраняется, листа и подвала нет.
+     */
+    internal fun refreshKeepPath() {
+        if (busy || h == 0L || isFinishing) return
+        auto.afterRefresh(pathNames(h, node), nameOf(node))
+        if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { head.renderProgress(); return }
+        auto.take()
+        Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
+        note(txt.s(R.string.scan_not_started))
+    }
+
+    /** Кнопка «Обновить» сообщения. */
+    internal val refreshFix: Pair<String, () -> Unit> get() = txt.s(R.string.refresh_btn) to { refreshKeepPath() }
 
     internal fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
 
     /** Метка пути [path] узла с флагами [flags] и запретом [block] дерева [h], уже для показа. */
     internal fun tagOf(path: String, flags: Int, block: Block?): TagText? = rowTags.of(path, flags, block)
+
+    /** Метка текущей папки (строки с такой же её не рисуют; сводка называет её один раз). */
+    val folderTag: TagText? get() = rowTags.own
 
     private fun nameAt(index: Int): String =
         names[index] ?: Native.str(Native.name(h, kids[index])).also { names[index] = it }
@@ -493,6 +523,7 @@ class BrowserActivity : LangActivity() {
         promotePending()
         if (h == 0L) return
         if (r.group) { sel.groupLanded(); return }
+        if (r.quiet) return
         val hit = resolveNode(r.names)
         val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
         when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
@@ -509,6 +540,7 @@ class BrowserActivity : LangActivity() {
         Log.i("ancdu", "tree refresh failed: ${BgScan.failure}")
         setFooter(hint)
         if (r.group) { if (selection.active) sel.openGroupSheet(gone = 0) else note(GroupSheet.gone(txt, sel.groupAsked)); return }
+        if (r.quiet) { note(txt.s(R.string.scan_not_started)); return }
         val hit = resolveNode(r.names)
         if (r.delDisk != null) {
             val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
@@ -702,13 +734,16 @@ class BrowserActivity : LangActivity() {
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
         head.renderHeader()
-        rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind)
+        // Метка самой папки (у корня её нет): такие же метки строк не рисуются, сводка называет её раз.
+        rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind,
+            if (node == 0) null else blockReason(h, node, currentPath))
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
-        head.summary.text = deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
+        head.summary.text = Tag.summary(deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}",
+            if (node == 0) null else rowTags.own)
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        head.showSource(deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full))
+        head.showSource(deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, full))
         hint = if (showHint) txt.s(R.string.browser_hint) else ""
         setFooter(idleFooter())
         errors.refreshErrors()

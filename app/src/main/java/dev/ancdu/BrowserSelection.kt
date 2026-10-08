@@ -108,7 +108,8 @@ class BrowserSelection(private val a: BrowserActivity) {
             is GroupResult.Outcome.Partial -> {
                 Feedback.cue(a.list, Cue.REFUSE)
                 val (title, msg) = GroupResult.alert(a.txt, o)
-                a.report(title, msg)
+                // Объект изменился после скана: исправление — обновить дерево (если оно и так не обновляется).
+                a.report(title, msg, if (o.fails.any { it.second == Fail.CHANGED } && !Holder.delDir) a.refreshFix else null)
                 GroupResult.footer(a.txt, o)
             }
         }
@@ -346,7 +347,7 @@ class BrowserSelection(private val a: BrowserActivity) {
         }
         val (p, g) = GroupSheet.preview(a.txt, items, a.currentPath, a.packageName, Holder.viaRoot, Holder.kind,
             if (Holder.kind == Kind.CACHE) Freshness.date(a.txt, R.string.fmt_day_time, Holder.time) else null, Root.state, gone,
-            contact = { a.previews.contactSheet(handle, it.node, Native.str(Native.path(handle, it.node))) })
+            contact = { a.previews.contactSheet(handle, it.node, Native.str(Native.path(handle, it.node))) }, own = a.folderTag)
         a.sheet = DeleteSheet(a, p, onClose = { a.refreshPending() }, group = g) { fast ->
             startGroup(handle, folder, keys, fast)
         }.also { it.show() }

@@ -93,6 +93,15 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
             return null
         }
 
+        /**
+         * Метку строки [row] не рисовать: она та же, что у самой папки [own] (тот же вид и владелец) —
+         * её один раз называет сводка ([summary]).
+         */
+        fun suppressed(row: Tag?, own: Tag?): Boolean = row != null && own != null && row.kind == own.kind && row.pkg == own.pkg
+
+        /** Сводка папки и её собственная метка один раз: «10,4 ГиБ · 136 эл. · dl». */
+        fun summary(base: String, own: TagText?): String = if (own == null) base else "$base · ${own.text}"
+
         /** Видимых знаков имени (кодовых точек без добавленного «…»). */
         private fun shown(full: String, cut: String): Int {
             val n = cut.codePointCount(0, cut.length)
@@ -120,14 +129,25 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
     }
 }
 
-/** Метка для показа: текст, роль цвета и добавка к описанию TalkBack («, кэш»). */
-class TagText(val text: String, val role: Role, val desc: String) {
+/**
+ * Метка для показа: текст, роль цвета и добавка к описанию TalkBack («, кэш»); [kind], [pkg] и
+ * [label] — откуда она (сравнение с меткой папки, предупреждение листа удаления).
+ */
+class TagText(val text: String, val role: Role, val desc: String, val kind: TagKind? = null, val pkg: String? = null,
+              val label: String? = null) {
     /** Цвет в действующей палитре (метки кэшируются — цвет не запоминается). */
     val color: Int get() = role.color()
+
+    companion object {
+        /** Та же метка, что [own] (вид и владелец): в списке листа её не рисовать. */
+        fun same(row: TagText?, own: TagText?): Boolean =
+            row != null && own != null && row.kind != null && row.kind == own.kind && row.pkg == own.pkg
+    }
 }
 
 /** [label] — метка приложения владельца (у [TagKind.APP]) или null. */
-fun Tag.resolve(t: Txt, label: String?): TagText = TagText(text(label), kind.role, desc(t, label))
+fun Tag.resolve(t: Txt, label: String?): TagText =
+    TagText(text(label), kind.role, desc(t, label), kind, pkg, label?.let(Bidi::label)?.trim()?.ifEmpty { null })
 
 /** Чистый Kotlin: когда метка приложения в кэше устарела. */
 object LabelPolicy {

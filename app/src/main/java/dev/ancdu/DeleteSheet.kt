@@ -64,6 +64,11 @@ class DeletePreview(
     val selfPeek: QuickLookInfo? = null,
     /** Лист одного каталога: до 4 крупнейших картинок и видео в нём самом ([ContactSheet]). */
     val selfContact: List<QuickLookInfo> = emptyList(),
+    /**
+     * Метка, которую список не повторяет: у одного объекта — его [tag], у группы — метка папки
+     * (её лист показывает один раз рядом с заголовком).
+     */
+    val ownTag: TagText? = tag,
 )
 
 /** Лист подтверждения удаления: framework Dialog у нижнего края, без AndroidX. */
@@ -302,7 +307,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            p.tag?.let { addView(tagLabel(it)) }
+            (p.tag ?: p.ownTag)?.let { addView(tagLabel(it)) }
             if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
                 setPadding(act.dp(8), act.dp(4), act.dp(8), act.dp(4))
                 background = act.box(Color.TRANSPARENT, C.FRAME)
@@ -459,7 +464,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                     if (n != null) addView(act.label("· " + t.items(n), 12f, C.MUTED, mono = true))
                     contact?.let { addView(it) }
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                val tag = p.topTags.getOrNull(k)
+                // Метка, равная метке объекта или папки, не повторяется в каждой строке.
+                val tag = p.topTags.getOrNull(k)?.takeUnless { TagText.same(it, p.ownTag) }
                 tag?.let { addView(tagLabel(it)) }
                 addView(act.label(Fmt.size(size, t), 13f, C.MUTED, mono = true))
                 contentDescription = "$nm, ${Fmt.size(size, t)}" + (if (n != null) ", " + t.items(n) else "") + (tag?.desc ?: "")

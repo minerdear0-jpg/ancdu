@@ -94,7 +94,6 @@
 
     <!-- Freshness line (ScanGate). -->
     <string name="fresh_refresh">refresh ›</string>
-    <string name="min_ago">%1$s\u00A0min ago</string>
     <string name="h_ago">%1$s\u00A0h ago</string>
 
     <!-- Root panel. -->
@@ -107,10 +106,9 @@
     <string name="root_denied_hint">root denied — tap su above to ask again</string>
 
     <!-- Tree badge (browser). -->
-    <string name="badge_scan">scan</string>
-    <string name="badge_root">root · scan</string>
+    <string name="badge_root">root</string>
     <string name="badge_index">index · approximate</string>
-    <string name="badge_cache">cache from %1$s</string>
+    <string name="badge_cache">cache</string>
     <string name="badge_partial">incomplete</string>
 
     <!-- Browser. -->
@@ -148,7 +146,6 @@
     <string name="delete_symlink">The path goes through a symbolic link — nothing was deleted.</string>
     <string name="delete_no_root">Couldn\'t get root — nothing was deleted.</string>
     <string name="delete_root_path">Root couldn\'t open the path — nothing was deleted.</string>
-    <string name="delete_changed">It changed since the scan — nothing was deleted. Refresh the list and try again.</string>
     <string name="delete_cancelled_title">Delete cancelled</string>
     <string name="tree_changed">The tree changed while the dialog was open. Nothing was deleted.</string>
 
@@ -374,4 +371,8 @@
     <string name="more_scans">scans</string>
     <string name="more_desc">Show apps, root and past scans</string>
     <string name="interrupted_open_desc">opens the folder; the rest is listed there</string>
+    <string name="badge_scan_ago">scan %1$s</string>
+    <string name="nothing_deleted">Nothing was deleted</string>
+    <string name="delete_changed_name">“%1$s” changed since the scan.</string>
+    <string name="refresh_btn">Refresh</string>
 </resources>

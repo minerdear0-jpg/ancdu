@@ -4,7 +4,9 @@ import dev.ancdu.XmlTxt.Companion.EN
 import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Метки безопасности строк: sys > cache > app > dl > media. */
@@ -202,6 +204,50 @@ class TagTest {
         assertEquals(listOf(null, "dl", "cache"), p.topTags.map { it?.text })
         assertEquals(", downloads", p.topTags[1]!!.desc)
         assertNull(p.tag)
+    }
+
+    /** A row tag equal to the folder's own tag is not drawn; the summary says it once («· dl»). */
+    @Test fun ownTagSuppressed() {
+        fun tag(path: String, flags: Int = 0, owner: String? = Owner.packageOf(path)) = Tag.of(path, flags, owner, null, S, SELF)
+        val dl = tag("$S/Download", F_DIR)
+        assertTrue(Tag.suppressed(tag("$S/Download/a.bin"), dl))
+        assertTrue(Tag.suppressed(tag("$S/Download/payload_dumper-main", F_DIR), dl))
+        // dl comes before media: a video in Download is dl too.
+        assertTrue(Tag.suppressed(tag("$S/Download/x.mp4"), dl))
+        // Another kind stays.
+        val dcim = tag("$S/DCIM", F_DIR)
+        assertEquals(TagKind.MEDIA, dcim!!.kind)
+        assertFalse(Tag.suppressed(tag("$S/DCIM/.thumbnails/cache", F_DIR, owner = "com.x"), dcim))
+        // The same app is suppressed, another app is not.
+        val wa = tag("$S/Android/data/com.whatsapp/files", F_DIR, "com.whatsapp")
+        assertTrue(Tag.suppressed(tag("$S/Android/data/com.whatsapp/files/a", 0, "com.whatsapp"), wa))
+        assertFalse(Tag.suppressed(tag("$S/Android/data/com.telegram/files/a", 0, "com.telegram"), wa))
+        // No folder tag or no row tag: nothing to suppress.
+        assertFalse(Tag.suppressed(tag("$S/Download/a.bin"), null))
+        assertFalse(Tag.suppressed(null, dl))
+        // TagText (sheet list): same kind and owner.
+        val t = dl!!.resolve(EN, null)
+        assertTrue(TagText.same(tag("$S/Download/a.bin")!!.resolve(EN, null), t))
+        assertFalse(TagText.same(dcim.resolve(EN, null), t))
+        assertFalse(TagText.same(null, t))
+    }
+
+    @Test fun summaryNamesTheFolderTagOnce() {
+        val dl = Tag(TagKind.DL).resolve(RU, null)
+        assertEquals("10,4 ГиБ · 136 эл. · dl", Tag.summary("10,4 ГиБ · 136 эл.", dl))
+        assertEquals("10,4 ГиБ · 136 эл.", Tag.summary("10,4 ГиБ · 136 эл.", null))
+        assertEquals("x · app:WhatsApp", Tag.summary("x", Tag(TagKind.APP, "com.whatsapp").resolve(EN, "WhatsApp")))
+    }
+
+    /** The group sheet list hides tags equal to the folder's own tag. */
+    @Test fun groupSheetSuppressesFolderTag() {
+        val dl = Tag(TagKind.DL).resolve(EN, null)
+        val media = Tag(TagKind.MEDIA).resolve(EN, null)
+        fun item(n: String, disk: Long, tag: TagText?) = GroupItem(n, false, disk, disk, 1, 0, null, null, false, tag)
+        val (p, _) = GroupSheet.preview(EN, listOf(item("a", 10, dl), item("b", 30, media)),
+            "/storage/emulated/0/Download", "dev.ancdu", false, Kind.SCAN, null, RootState.UNKNOWN, 0, own = dl)
+        assertEquals(listOf("media", null), p.topTags.map { it?.text })
+        assertEquals("dl", p.ownTag?.text)
     }
 
     /** Кэш меток приложений: найденная не устаревает, «не установлен» — через минуту. */

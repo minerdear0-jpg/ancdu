@@ -134,7 +134,7 @@ class BiggestSection(private val a: MainActivity) {
         rows = r
         list.removeAllViews(); rowViews.clear()
         fresh.text = when (kind) {
-            Kind.CACHE -> t.s(R.string.badge_cache, Freshness.date(t, R.string.fmt_day_time, time))
+            Kind.CACHE -> Badge.text(t, Kind.CACHE, time, false)
             Kind.INDEX -> t.s(R.string.badge_index)
             else -> ""
         }

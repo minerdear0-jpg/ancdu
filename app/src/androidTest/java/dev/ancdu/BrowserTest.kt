@@ -365,7 +365,7 @@ class BrowserTest {
             assertEquals("с чипом «новее»", h1, height())
             // Самая длинная плашка рядом с чипом переносится (до 2 строк), не обрезается; две строки
             // 12sp ниже 44dp строки чипа — высота шапки та же.
-            ins.runOnMainSync { act.badge.text = Badge.text(act.tx, Kind.ROOT, 0L, 12_300L, true) }
+            ins.runOnMainSync { act.badge.text = Badge.text(act.tx, Kind.ROOT, System.currentTimeMillis() - 3 * 86_400_000L, true) }
             assertEquals("длинная плашка с чипом", h1, height())
             ins.runOnMainSync {
                 val l = act.badge.layout
@@ -626,7 +626,7 @@ class BrowserTest {
                 assertEquals(h2, Holder.h)
                 assertEquals(0L, Holder.pending)
                 assertEquals(View.GONE, act.newer.visibility)
-                assertEquals(Badge.text(act.tx, Kind.SCAN, 0L, 4200L, false), act.badge.text.toString())
+                assertEquals(Badge.text(act.tx, Kind.SCAN, 0L, false), act.badge.text.toString())
             }
             assertEquals(File(dir, "sub/deep").path, path())
             assertEquals(2, count())
@@ -860,7 +860,11 @@ class BrowserTest {
             assertEquals(-NativeErr.ESTALE, act.deleteBlocking(k))
             assertTrue(waitFor { !act.busy && act.lastAlert != null })
             ins.runOnMainSync {
-                assertEquals(act.getString(R.string.delete_failed) to act.getString(R.string.delete_changed), act.lastAlert)
+                // «Ничего не удалено» · «"victim" изменился после скана.» · [Закрыть] [Обновить].
+                assertEquals(act.getString(R.string.nothing_deleted) to act.getString(R.string.delete_changed_name, "victim"), act.lastAlert)
+                val d = act.alertDialog!!
+                assertEquals(act.getString(R.string.refresh_btn), d.getButton(android.content.DialogInterface.BUTTON_POSITIVE).text.toString())
+                assertEquals(act.getString(R.string.close), d.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).text.toString())
                 assertEquals(h0, Holder.h)                                  // без автообновления
                 val c = IntArray(Native.childCount(Holder.h, act.node))
                 val n = Native.children(Holder.h, act.node, SORT_SIZE, false, c)
@@ -871,6 +875,23 @@ class BrowserTest {
             assertTrue(File(fresh, "new.bin").exists())
             assertTrue(File(aside, "orig.bin").exists())
             assertFalse(BgScan.active)
+            // [Обновить]: тот же корень пересканирован, новое дерево подставлено само, папка та же,
+            // ни листа, ни подвала-итога; ничего не удалено.
+            var path0 = ""
+            ins.runOnMainSync {
+                path0 = act.currentPath
+                assertTrue(act.alertDialog!!.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick())
+            }
+            assertTrue("дерево не обновилось", waitFor(30_000) { var ok = false; ins.runOnMainSync { ok = Holder.h != h0 && act.h == Holder.h }; ok })
+            val k2 = index(act, "victim/")
+            assertTrue(k2 >= 0)
+            ins.runOnMainSync {
+                assertEquals(path0, act.currentPath)
+                assertNull(act.sheet)
+                assertTrue(act.info[4 * k2 + 3].toInt() and F_ERR == 0)       // новое дерево: узел снова цел
+            }
+            assertTrue(File(fresh, "new.bin").exists())
+            assertTrue(File(aside, "orig.bin").exists())
         } finally {
             Perms.filesOverride = null
             ins.runOnMainSync { act.finish() }

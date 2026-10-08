@@ -135,12 +135,12 @@ class UxTest {
             val b = ins.waitForMonitorWithTimeout(browserMon, 10_000) as BrowserActivity?
             assertNotNull("браузер не открылся", b)
             ins.runOnMainSync { assertFalse(scan.built) }
-            assertTrue(waitFor { b!!.badge.text.isNotEmpty() })
+            assertTrue(waitFor { var ok = false; ins.runOnMainSync { ok = b!!.list.source != null }; ok })
             ins.runOnMainSync {
                 val t = b!!.badge.text.toString()
-                // вид дерева и длительность скана; число элементов — только в строке итога
-                assertTrue(Holder.ms >= 0)
-                assertEquals(Badge.text(b.tx, Kind.SCAN, Holder.time, Holder.ms, false), t)
+                // Свежий полный скан — плашка молчит (ни длительности, ни времени); число элементов — в итоге.
+                assertEquals(Badge.text(b.tx, Kind.SCAN, Holder.time, false), t)
+                assertEquals("", t)
                 b.finish()
             }
         } finally {
