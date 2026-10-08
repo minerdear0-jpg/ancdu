@@ -822,7 +822,15 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: все сегменты (касания 44dp). */
     fun segments(): List<View> = listOfNotNull(sortSeg, sizeSeg).flatMap { g -> (0 until g.childCount).map { g.getChildAt(it) } }
 
+    /** Состояние, из которого собраны переключатели (сортировка, режим размера); null — не собраны. */
+    private var chipsFor: Pair<Int, Boolean>? = null
+
     private fun renderChips() {
+        // Вход в папку не меняет ни сортировку, ни режим: пересборка шапки (новые view, шрифты,
+        // заново measure/layout всей шапки) стоила ~5 мс на каждый load — половина бюджета кадра.
+        val want = sort to apparent
+        if (chipsFor == want) return
+        chipsFor = want
         chips.removeAllViews()
         val sorts = segmented(listOf(txt.s(R.string.sort_size), txt.s(R.string.sort_name)),
             if (sort == SORT_NAME) 1 else 0, amber = true) { setSort(if (it == 1) SORT_NAME else SORT_SIZE) }
