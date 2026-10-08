@@ -361,6 +361,25 @@ class GiantsUiTest {
         assertEquals(listOf("Download", "big.iso"), last.start.names.map { String(it) })
     }
 
+    /** Жёсткая ссылка (nlink 2): итог не обещает «освобождено», вторая ссылка остаётся. */
+    @Test fun hardLinkFooterDoesNotClaimFreedSpace() {
+        val t = inBox("hl").apply { assertTrue(mkdirs()) }
+        val f = put("hl/a/film.mkv", 300_000)
+        val link = inBox("hl/b/film-link.mkv").also { it.parentFile!!.mkdirs() }
+        android.system.Os.link(f.path, link.path)
+        scanIn(t)
+        val b = giants()
+        // Вторая ссылка — F_HLDUP с disk 0: в списке только первая.
+        ins.runOnMainSync { assertEquals(listOf("film.mkv"), rows(b).map { it.name }) }
+        assertEquals(0, b.deleteBlocking(index(b, "film.mkv")))
+        assertFalse(f.exists())
+        assertTrue(link.exists())
+        ins.runOnMainSync {
+            assertTrue(b.footerText.toString(), b.footerText.startsWith(b.getString(R.string.hardlink_note)))
+            assertFalse(b.footerText.toString(), b.footerText.startsWith(b.prefixOf(R.string.freed)))
+        }
+    }
+
     private companion object {
         const val MIN = 100_000L
     }

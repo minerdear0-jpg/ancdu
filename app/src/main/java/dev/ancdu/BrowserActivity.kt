@@ -219,7 +219,7 @@ class BrowserActivity : LangActivity() {
             load(node, keepScroll)
             // Готово — done; отказ и ошибка — refuse; «Стоп» пользователя (-EINTR) — тишина, tock уже был.
             if (r == 0 || !isFinishing) FeedbackPolicy.afterDelete(r)?.let { Feedback.cue(list, it) }
-            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk), log = true)
+            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk, GroupResult.hardlink(Holder.delResults)), log = true)
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
                 when {
@@ -1112,6 +1112,10 @@ internal fun deleteItem(app: Context, handle: Long, target: Int, fast: Boolean, 
     val disk = inf[0]
     val dir = inf[3].toInt() and F_DIR != 0
     val name = label ?: Native.str(Native.name(handle, target))
+    // Жёсткая ссылка: повторная (F_HLDUP) или первая, у которой есть другие имена (nlink > 1, lstat — не
+    // следуя по ссылке). Не прочиталось — не ссылка (так было и раньше).
+    val hardlink = !dir && (inf[3].toInt() and F_HLDUP != 0 ||
+        runCatching { android.system.Os.lstat(path).st_nlink > 1 }.getOrDefault(false))
     // Без root в общем хранилище: сначала пачками через MediaProvider, затем ядро — как всегда.
     // Индекс флагов ссылок не знает — для него массового шага нет.
     val bulkPath = if (kind == Kind.INDEX) null else MediaBulk.target(pathBytes, viaRoot = viaRoot, fast = fast)
@@ -1121,7 +1125,7 @@ internal fun deleteItem(app: Context, handle: Long, target: Int, fast: Boolean, 
     val cr = app.contentResolver
     val cleanPath = if (fast) MediaBulk.cleanable(pathBytes) else null
     val rootFlags = inf[3].toInt()
-    return DeleteItem(target, helper, media = fast, name = name, dir = dir, disk = disk,
+    return DeleteItem(target, helper, media = fast, name = name, dir = dir, disk = disk, hardlink = hardlink,
         bulk = testBulk ?: bulkPath?.let { p -> { stopped, add ->
             // На io, под правилами delete: чтение дерева [handle] (экран его сейчас не читает).
             // MediaProvider канонизирует путь перед unlink — ссылка в поддереве увела бы

@@ -416,5 +416,6 @@
         <item quantity="other">Показать ещё %1$s прошлого скана</item>
     </plurals>
     <string name="warn_trash">Без корзины.</string>
+    <string name="hardlink_note">Жёсткая ссылка — место может не освободиться</string>
     <string name="warn_hardlink">Жёсткая ссылка — место может не освободиться.</string>
 </resources>

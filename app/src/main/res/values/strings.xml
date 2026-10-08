@@ -416,5 +416,6 @@
         <item quantity="other">Show %1$s more past scans</item>
     </plurals>
     <string name="warn_trash">No trash.</string>
+    <string name="hardlink_note">Hard link — space may not be freed</string>
     <string name="warn_hardlink">Hard link — space may not be freed.</string>
 </resources>

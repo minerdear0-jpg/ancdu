@@ -105,15 +105,16 @@ class BrowserSelection(private val a: BrowserActivity) {
         a.load(a.node, a.keepScroll)
         if (a.isFinishing) return
         val o = GroupResult.outcome(results)
+        val hard = GroupResult.hardlink(results)
         val text = when (o) {
-            is GroupResult.Outcome.Done -> { Feedback.cue(a.list, Cue.DONE); GroupResult.footer(a.txt, o).also { a.note(it, log = true) } }
-            is GroupResult.Outcome.Stopped -> GroupResult.footer(a.txt, o).also { a.note(it, log = o.deleted > 0) }
+            is GroupResult.Outcome.Done -> { Feedback.cue(a.list, Cue.DONE); GroupResult.footer(a.txt, o, hard).also { a.note(it, log = true) } }
+            is GroupResult.Outcome.Stopped -> GroupResult.footer(a.txt, o, hard).also { a.note(it, log = o.deleted > 0) }
             is GroupResult.Outcome.Partial -> {
                 Feedback.cue(a.list, Cue.REFUSE)
-                val (title, msg) = GroupResult.alert(a.txt, o)
+                val (title, msg) = GroupResult.alert(a.txt, o, hard)
                 // Объект изменился после скана: исправление — обновить дерево (если оно и так не обновляется).
                 a.report(title, msg, if (o.fails.any { it.second == Fail.CHANGED } && !Holder.delDir) a.refreshFix else null)
-                GroupResult.footer(a.txt, o)
+                GroupResult.footer(a.txt, o, hard)
             }
         }
         // Holder.delDir у группы — есть частично удалённый каталог: BgScan уже обновляет дерево.

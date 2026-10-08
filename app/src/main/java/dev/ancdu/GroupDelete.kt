@@ -123,6 +123,8 @@ class ItemResult(
     val done: Long,
     val attempted: Boolean = true,
     val block: Block? = null,
+    /** Файл — жёсткая ссылка (F_HLDUP или nlink > 1): место может не освободиться. */
+    val hardlink: Boolean = false,
 )
 
 /** Чистая классификация итогов группы и тексты итога. */
@@ -189,19 +191,22 @@ object GroupResult {
     }
 
     /** Подвал: «освобождено X» или «Остановлено: удалено 1 из 3 · освобождено X». */
-    fun footer(t: Txt, o: Outcome): String = when (o) {
+    /** Среди удалённых — жёсткая ссылка: итог не обещает освобождённого места. */
+    fun hardlink(results: List<ItemResult>): Boolean = results.any { it.hardlink && it.attempted && it.r == 0 }
+
+    fun footer(t: Txt, o: Outcome, hardlink: Boolean = false): String = when (o) {
         is Outcome.Stopped -> t.s(R.string.group_stopped, Fmt.count(o.deleted.toLong(), t.locale),
-            Fmt.count(o.total.toLong(), t.locale), DeleteProgress.freed(t, o.freed))
-        else -> DeleteProgress.freed(t, o.freed)
+            Fmt.count(o.total.toLong(), t.locale), DeleteProgress.freed(t, o.freed, hardlink))
+        else -> DeleteProgress.freed(t, o.freed, hardlink)
     }
 
     /** Сообщение частичного итога: заголовок «Удалено 2 из 3», текст — освобождено и «Не удалено:» по строке. */
-    fun alert(t: Txt, o: Outcome.Partial): Pair<String, String> {
+    fun alert(t: Txt, o: Outcome.Partial, hardlink: Boolean = false): Pair<String, String> {
         val title = t.s(if (o.stopped) R.string.group_partial_stopped else R.string.group_partial,
             Fmt.count(o.deleted.toLong(), t.locale), Fmt.count(o.total.toLong(), t.locale))
         val lines = o.fails.take(MAX_LINES).joinToString("\n") { (nm, f) -> t.s(R.string.fail_line, Bidi.visible(nm), t.s(f.res)) } +
             if (o.fails.size > MAX_LINES) "\n" + t.s(R.string.more_children, Fmt.count((o.fails.size - MAX_LINES).toLong(), t.locale)) else ""
-        return title to DeleteProgress.freed(t, o.freed) + "\n\n" + t.s(R.string.not_deleted) + "\n" + lines
+        return title to DeleteProgress.freed(t, o.freed, hardlink) + "\n\n" + t.s(R.string.not_deleted) + "\n" + lines
     }
 
     /** Каталог удалён частично (как [DeleteProgress.refreshAfter] у одного): дерево надо обновить. */

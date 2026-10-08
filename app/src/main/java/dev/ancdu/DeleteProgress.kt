@@ -49,7 +49,9 @@ object DeleteProgress {
 
     fun cancelled(t: Txt): String = t.s(R.string.progress_cancelled)
 
-    fun freed(t: Txt, disk: Long): String = t.s(R.string.freed, Fmt.size(disk, t))
+    fun freed(t: Txt, disk: Long, hardlink: Boolean = false): String =
+        // Удалена жёсткая ссылка: данные могут жить под другим именем — место не обещаем.
+        if (hardlink) t.s(R.string.hardlink_note) else t.s(R.string.freed, Fmt.size(disk, t))
 
     /** «освобождено …» и хвост: узел после обновления ещё на диске (удалён не весь). */
     fun freedLeft(t: Txt, disk: Long): String = t.s(R.string.freed_left, freed(t, disk))

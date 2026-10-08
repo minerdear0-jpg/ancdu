@@ -25,6 +25,8 @@ class DeleteItem(
     val disk: Long,
     val bulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)?,
     val afterIo: ((Int) -> Unit)?,
+    /** Файл — жёсткая ссылка: итог не обещает освобождённого места. */
+    val hardlink: Boolean = false,
 )
 
 /** Шаг группы, решённый на io к его началу: удалить [Go.item] или пропустить с итогом [Skip.result]. */
@@ -318,7 +320,7 @@ object Holder {
                         is Planned.Go -> {
                             val it = plan.item
                             val (code, n) = runItem(handle, it)
-                            results += ItemResult(it.name, it.dir, it.disk, code, n)
+                            results += ItemResult(it.name, it.dir, it.disk, code, n, hardlink = it.hardlink)
                             // su отказал: следующие тоже спросили бы su — не начинаются («не начато»).
                             if (group && it.helper != null && DeletePolicy.nothingDeleted(code, true) && k + 1 < jobs.size) {
                                 for (rest in jobs.subList(k + 1, jobs.size)) results += skipped(rest, code)

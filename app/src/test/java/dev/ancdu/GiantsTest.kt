@@ -164,3 +164,32 @@ class GiantsTest {
         assertEquals("(several folders)", d.label(EN))
     }
 }
+
+/** Жёсткая ссылка: итог удаления не обещает освобождённого места (одиночное, группа, «гиганты»). */
+class HardlinkFooterTest {
+    private val gib = 1L shl 30
+
+    @Test fun singleFooter() {
+        assertEquals(EN.s(R.string.freed, Fmt.size(gib, EN)), DeleteProgress.freed(EN, gib))
+        assertEquals(EN.s(R.string.hardlink_note), DeleteProgress.freed(EN, gib, hardlink = true))
+        assertEquals("Hard link — space may not be freed", DeleteProgress.freed(EN, gib, hardlink = true))
+        assertEquals("Жёсткая ссылка — место может не освободиться", DeleteProgress.freed(RU, gib, hardlink = true))
+    }
+
+    @Test fun groupFooterAndAlert() {
+        val ok = ItemResult("a", false, gib, 0, 1, hardlink = true)
+        val plain = ItemResult("b", false, gib, 0, 1)
+        assertTrue(GroupResult.hardlink(listOf(plain, ok)))
+        assertFalse(GroupResult.hardlink(listOf(plain)))
+        // Не удалённая жёсткая ссылка места и не обещала.
+        assertFalse(GroupResult.hardlink(listOf(plain, ItemResult("c", false, gib, -13, 0, hardlink = true))))
+        val done = GroupResult.outcome(listOf(plain, ok))
+        assertEquals(EN.s(R.string.hardlink_note), GroupResult.footer(EN, done, hardlink = true))
+        assertEquals(DeleteProgress.freed(EN, 2 * gib), GroupResult.footer(EN, done))
+        val stopped = GroupResult.Outcome.Stopped(1, 3, gib)
+        assertTrue(GroupResult.footer(RU, stopped, hardlink = true).endsWith(RU.s(R.string.hardlink_note)))
+        val partial = GroupResult.outcome(listOf(ok, ItemResult("c", false, gib, -13, 0)))
+        val (_, body) = GroupResult.alert(EN, partial as GroupResult.Outcome.Partial, hardlink = true)
+        assertTrue(body, body.startsWith(EN.s(R.string.hardlink_note)))
+    }
+}
