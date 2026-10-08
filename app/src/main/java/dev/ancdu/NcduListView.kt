@@ -44,11 +44,20 @@ class Row {
     var longLabel: String? = null
     /** Есть ли у строки «долгое нажатие» для TalkBack. */
     var long = true
+    /** Цвет колонки размера (сортировка Δ: рост — AMBER_TEXT, сжатие — MUTED). */
+    var sizeColor = C.TEXT
+    /** [bar] знаковая (−1…1) от середины полосы: рост вправо, сжатие влево. */
+    var signedBar = false
+    /** Значок в контуре FRAME у правого края (моно 10sp), например «NEW»; null — нет. */
+    var badge: String? = null
+    /** Строка-сводка без колонок и касаний (например «ушло: 3 объекта · −120 МиБ»); null — обычная строка. */
+    var note: String? = null
 
     fun reset() {
         name = ""; size = ""; pct = ""; bar = 0f; barColor = C.AMBER; nameColor = C.TEXT
         mark = ""; segs = null; segColors = null; sub = null; tag = null; tagColor = C.MUTED; desc = ""
         checked = null; enabled = true; stateDesc = null; clickLabel = null; longLabel = null; long = true
+        sizeColor = C.TEXT; signedBar = false; badge = null; note = null
     }
 }
 
@@ -59,6 +68,8 @@ interface RowSource {
     fun longClick(index: Int) {}
     /** Звук касания строки до [click]; null — его даёт сам [click]. */
     fun clickCue(index: Int): Cue? = Cue.TAP
+    /** false — строка-сводка ([Row.note]): ни нажатия, ни звука, ни действий TalkBack. */
+    fun interactive(index: Int): Boolean = true
 }
 
 /** Список в стиле ncdu: рисуются только видимые строки, свой скролл, доступность без AndroidX. */
@@ -77,6 +88,10 @@ class NcduListView(ctx: Context) : View(ctx) {
 
     /** TalkBack: подпись действия «долгое нажатие» на строках; null — без подписи. */
     var longClickLabel: CharSequence? = null
+
+    /** Сортировка Δ: в колонке процента — текущий размер (моно 11sp MUTED), колонка шире. */
+    var wideRight = false
+        set(v) { if (field != v) { field = v; invalidate() } }
 
     /** Высота строки: 48/64 dp, но растёт под крупный шрифт (sp), чтобы текст не обрезался. */
     val rowHeight: Int get() = if (withSub) rowSub else rowPlain
@@ -111,9 +126,14 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val small = TextPaint(mono).apply { textSize = sp(12f); color = C.MUTED }
     private val pctPaint = TextPaint(small).apply { color = C.TEXT }
     private val tagPaint = TextPaint(small)
+    private val curPaint = TextPaint(small).apply { textSize = sp(11f) }
+    private val badgePaint = TextPaint(small).apply { textSize = sp(10f) }
     // Колонки размера и процента — по ширине самого длинного значения при текущем шрифте.
     private val sizeW = maxOf(ctx.dp(76), sizePaint.measureText("1023.9 MiB").toInt())
     private val pctW = maxOf(ctx.dp(34), pctPaint.measureText("100%").toInt())
+    private val curW = maxOf(pctW, curPaint.measureText("1023.9 MiB").toInt())
+    /** Ширина правой колонки: процент или ([wideRight]) текущий размер. */
+    private val rightW: Int get() = if (wideRight) curW else pctW
     /** Крупный шрифт (> 130%): без полосы, колонка размера сужается — имени остаётся ≥40% строки. */
     private val compact = ctx.resources.configuration.fontScale > 1.3f
     private val fitPaint = TextPaint(sizePaint)
@@ -121,11 +141,11 @@ class NcduListView(ctx: Context) : View(ctx) {
     /** Ширина колонки размера при ширине строки [w]; не влезающий размер рисуется мельче. */
     fun sizeColFor(w: Int): Int =
         if (!compact) sizeW
-        else minOf(sizeW, maxOf(context.dp(48), (w * 0.58f).toInt() - 2 * pad - 2 * gap - pctW))
+        else minOf(sizeW, maxOf(context.dp(48), (w * 0.58f).toInt() - 2 * pad - 2 * gap - rightW))
 
     /** Ширина колонки имени при ширине строки [w]. */
     fun nameWidthFor(w: Int): Int =
-        w - 2 * pad - sizeColFor(w) - gap - (if (compact) 0 else barW + gap) - pctW - gap
+        w - 2 * pad - sizeColFor(w) - gap - (if (compact) 0 else barW + gap) - rightW - gap
     private val mainH = mono.fontMetricsInt.let { it.descent - it.ascent }
     private val subH = small.fontMetricsInt.let { it.descent - it.ascent }
     private val subGap = ctx.dp(2)
@@ -152,7 +172,7 @@ class NcduListView(ctx: Context) : View(ctx) {
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean { scroller.forceFinished(true); return true }
         override fun onShowPress(e: MotionEvent) {
-            pressed = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
+            pressed = live(ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0))
         }
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
             pressed = -1
@@ -164,18 +184,21 @@ class NcduListView(ctx: Context) : View(ctx) {
             postInvalidateOnAnimation(); return true
         }
         override fun onSingleTapUp(e: MotionEvent): Boolean {
-            val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
+            val i = live(ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0))
             // Короткий тап: нажатие видно ещё 100 мс после отпускания (см. onTouchEvent).
             if (i >= 0) pressed = i
             if (i >= 0) { source?.clickCue(i)?.let { Feedback.cue(this@NcduListView, it) }; source?.click(i) }
             return i >= 0
         }
         override fun onLongPress(e: MotionEvent) {
-            val i = ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0)
+            val i = live(ListMath.indexAt(e.y, scroll, rowHeight, source?.count ?: 0))
             // Через Feedback: «Звук и вибрация: Выкл» и правило TalkBack действуют и здесь.
             if (i >= 0) { Feedback.cue(this@NcduListView, Cue.LONG_PRESS); source?.longClick(i) }
         }
     })
+
+    /** [i], если строка касаема ([RowSource.interactive]), иначе -1. */
+    private fun live(i: Int): Int = if (i >= 0 && source?.interactive(i) != false) i else -1
 
     init {
         setBackgroundColor(C.BG)
@@ -239,6 +262,7 @@ class NcduListView(ctx: Context) : View(ctx) {
 
     private fun drawRow(c: Canvas, top: Int, rh: Int, down: Boolean) {
         val w = width
+        row.note?.let { drawNote(c, it, top, rh); return }
         if (down) {
             fill.color = C.PANEL2
             c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
@@ -265,29 +289,40 @@ class NcduListView(ctx: Context) : View(ctx) {
         var x = pad
         // размер (по правому краю колонки)
         val col = sizeColFor(w)
+        sizePaint.color = row.sizeColor
         val sw = sizePaint.measureText(row.size)
         if (sw <= col) c.drawText(row.size, x + col - sw, base, sizePaint)
         else {
             fitPaint.textSize = sizePaint.textSize * col / sw
+            fitPaint.color = row.sizeColor
             c.drawText(row.size, x.toFloat(), base, fitPaint)
         }
         x += col + gap
         if (!compact) drawBar(c, x, mid)
         if (!compact) x += barW + gap
-        // процент (по правому краю колонки); в режиме выбора — флажок на его месте
-        if (checked != null) drawCheck(c, x + pctW - checkBox, mid - checkBox / 2, checked)
-        else c.drawText(row.pct, x + pctW - pctPaint.measureText(row.pct), base, pctPaint)
-        x += pctW + gap
+        // процент (по правому краю колонки); в режиме выбора — флажок на его месте; [wideRight] — размер
+        val rw = rightW
+        val rp = if (wideRight) curPaint else pctPaint
+        if (checked != null) drawCheck(c, x + rw - checkBox, mid - checkBox / 2, checked)
+        else c.drawText(row.pct, x + rw - rp.measureText(row.pct), base, rp)
+        x += rw + gap
         // имя: метка не режется, имя — до конца строки с многоточием (у файлов — в конце основы)
         mono.color = row.nameColor
         val mark = if (row.mark.isEmpty()) "" else "${row.mark} "
         var avail = maxOf((w - pad - x).toFloat() - mono.measureText(mark), 0f)
+        // Значок («NEW») — у самого правого края, метка — левее него.
+        var right = w - pad
+        row.badge?.let { b ->
+            val bw = drawBadge(c, b, right, mid)
+            right -= bw + gap
+            avail = maxOf(avail - bw - gap, 0f)
+        }
         // Метка — у правого края; имя ей уступает не больше 3 знаков, иначе метка короче или её нет.
         val tag = row.tag?.let { Tag.fit(row.name, it, avail, gap.toFloat(), mono::measureText, tagPaint::measureText) }
         if (tag != null) {
             val tw = tagPaint.measureText(tag)
             tagPaint.color = row.tagColor
-            c.drawText(tag, w - pad - tw, base, tagPaint)
+            c.drawText(tag, right - tw, base, tagPaint)
             avail = maxOf(avail - tw - gap, 0f)
         }
         val name = if (keepExt) Ellipsis.stemKeepExt(row.name, avail, mono::measureText)
@@ -327,12 +362,48 @@ class NcduListView(ctx: Context) : View(ctx) {
         }
     }
 
+    /** Значок [text] в контуре 1dp FRAME, правый край — [right], по центру [mid]; его ширина. */
+    private fun drawBadge(c: Canvas, text: String, right: Int, mid: Int): Int {
+        val padX = context.dp(4)
+        val fm = badgePaint.fontMetricsInt
+        val th = fm.descent - fm.ascent
+        val bw = badgePaint.measureText(text).toInt() + 2 * padX
+        val bh = th + context.dp(2)
+        val l = (right - bw).toFloat(); val t = (mid - bh / 2).toFloat()
+        badgePaint.color = C.TEXT
+        c.drawText(text, l + padX, t + (bh - th) / 2f - fm.ascent, badgePaint)
+        fill.color = C.FRAME
+        c.drawRect(l, t, l + bw, t + one, fill); c.drawRect(l, t + bh - one, l + bw, t + bh, fill)
+        c.drawRect(l, t, l + one, t + bh, fill); c.drawRect(l + bw - one, t, l + bw, t + bh, fill)
+        return bw
+    }
+
+    /** Строка-сводка: приглушённый текст от левого поля, по центру строки; волосяная линия снизу. */
+    private fun drawNote(c: Canvas, text: String, top: Int, rh: Int) {
+        val w = width
+        fill.color = C.LINE
+        c.drawRect(0f, (top + rh - 1).toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
+        val fm = small.fontMetricsInt
+        val base = top + (rh - (fm.descent - fm.ascent)) / 2f - fm.ascent
+        c.drawText(Ellipsis.middle(text, (w - 2 * pad).toFloat(), small::measureText), pad.toFloat(), base, small)
+    }
+
     /** Полоса 64×8dp в контуре 1dp; заполнение > 0 — не меньше 1px. [x] — левый край, [mid] — центр по высоте. */
     private fun drawBar(c: Canvas, x: Int, mid: Int) {
         val bt = (mid - barH / 2).toFloat()
         val inL = (x + one).toFloat(); val inW = (barW - 2 * one).toFloat()
         val segs = row.segs
-        if (segs != null) {
+        if (row.signedBar) {
+            // Ось — середина; рост вправо, сжатие влево; ненулевое — не меньше 1px.
+            val half = inW / 2
+            val axis = inL + half
+            val fw = if (row.bar != 0f) maxOf(half * kotlin.math.abs(row.bar), 1f) else 0f
+            fill.color = row.barColor
+            if (row.bar > 0f) c.drawRect(axis, bt + one, axis + fw, bt + barH - one, fill)
+            else if (row.bar < 0f) c.drawRect(axis - fw, bt + one, axis, bt + barH - one, fill)
+            fill.color = C.FRAME
+            c.drawRect(axis - one / 2f, bt, axis + one / 2f, bt + barH, fill)
+        } else if (segs != null) {
             var sx = inL
             val total = inW * row.bar
             for (k in segs.indices) {
@@ -372,6 +443,15 @@ class NcduListView(ctx: Context) : View(ctx) {
             if (id !in 0 until src.count) return null
             row.reset()
             src.bind(id, row)
+            val note = row.note
+            if (note != null) return AccessibilityNodeInfo.obtain(this@NcduListView, id).apply {
+                setParent(this@NcduListView)
+                packageName = context.packageName
+                className = "android.widget.TextView"
+                contentDescription = note
+                isVisibleToUser = true
+                bounds(this, id)
+            }
             return AccessibilityNodeInfo.obtain(this@NcduListView, id).apply {
                 setParent(this@NcduListView)
                 packageName = context.packageName
@@ -394,19 +474,23 @@ class NcduListView(ctx: Context) : View(ctx) {
                 val lcl = row.longLabel ?: longClickLabel
                 if (row.long) addAction(if (lcl == null) AccessibilityNodeInfo.AccessibilityAction.ACTION_LONG_CLICK
                           else AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, lcl))
-                val top = id * rowHeight - scroll
-                tmp.set(0, top, width, top + rowHeight)
-                setBoundsInParent(tmp)
-                val loc = IntArray(2).also { getLocationOnScreen(it) }
-                tmp.offset(loc[0], loc[1])
-                setBoundsInScreen(tmp)
+                bounds(this, id)
             }
+        }
+
+        private fun bounds(info: AccessibilityNodeInfo, id: Int) {
+            val top = id * rowHeight - scroll
+            tmp.set(0, top, width, top + rowHeight)
+            info.setBoundsInParent(tmp)
+            val loc = IntArray(2).also { getLocationOnScreen(it) }
+            tmp.offset(loc[0], loc[1])
+            info.setBoundsInScreen(tmp)
         }
 
         override fun performAction(id: Int, action: Int, args: Bundle?): Boolean {
             val src = source ?: return false
             if (id == HOST_VIEW_ID) return performAccessibilityAction(action, args)
-            if (id !in 0 until src.count) return false
+            if (id !in 0 until src.count || !src.interactive(id)) return false
             return when (action) {
                 AccessibilityNodeInfo.ACTION_CLICK -> { src.click(id); true }
                 AccessibilityNodeInfo.ACTION_LONG_CLICK -> { src.longClick(id); true }

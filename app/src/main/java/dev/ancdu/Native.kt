@@ -8,6 +8,8 @@ const val ST_FULL = 4
 const val SORT_SIZE = 0
 const val SORT_NAME = 1
 const val SORT_ITEMS = 2
+/** Только Kotlin (браузер): сортировка по Δ против точки отсчёта; в ядро не передаётся. */
+const val SORT_DELTA = 3
 const val F_DIR = 1
 const val F_ERR = 2
 const val F_HLDUP = 4

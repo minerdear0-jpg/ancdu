@@ -55,6 +55,19 @@ class BrowserActivity : LangActivity() {
     private val rowTags by lazy { RowTags(this, txt) { descs = arrayOfNulls(n); list.invalidate() } }
     private var maxV = 0L
     private var parentV = 0L
+    /** Δ показанного дерева (Growth.forTree) на момент load; null — точки отсчёта нет или Δ считается. */
+    private var delta: Delta? = null
+    /** На этом уровне показана сортировка Δ (выбрана и Δ есть). */
+    var deltaShown = false
+        private set
+    /** Δ строк уровня (в режиме размера: диск или видимый) и наибольший |Δ| — для знаковой полосы. */
+    private var dvals = LongArray(0)
+    private var dmax = 0L
+    /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
+    var goneText: String? = null
+        private set
+    /** Δ посчитана заново (новое дерево, удаление, «Отметить сейчас») или пропала. */
+    private val onGrowth: () -> Unit = { growthChanged() }
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
     private var h = 0L
     /** Holder.gen дескриптора [h]: ключ сохранённого пути вместе с h. */
@@ -346,18 +359,34 @@ class BrowserActivity : LangActivity() {
         names[index] ?: Native.str(Native.name(h, kids[index])).also { names[index] = it }
 
     private val src = object : RowSource {
-        override val count get() = n
+        override val count get() = n + if (goneText != null) 1 else 0
         override fun bind(index: Int, row: Row) {
+            // Последняя строка в сортировке Δ — сводка «ушло» (не узел, без касаний).
+            if (index >= n) { row.note = goneText; return }
             val v = value(index)
             val flags = info[4 * index + 3].toInt()
             val dir = flags and F_DIR != 0
             val nm = nameAt(index)
             // Управляющие направления текста — видимыми («⟨U+202E⟩»): имя не переставляется.
             row.name = shown[index] ?: Bidi.visible(if (dir) "$nm/" else nm).also { shown[index] = it }
-            row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
-            row.bar = ListMath.bar(v, maxV)
-            row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
-            row.barColor = if (dir) C.AMBER else C.BLUE
+            val d = delta
+            val dv = if (deltaShown) dvals[index] else 0L
+            val isNew = deltaShown && d != null && d.isNew(kids[index])
+            if (deltaShown) {
+                // Δ: знаковый размер (рост — AMBER_TEXT, сжатие — MUTED), полоса от середины, справа — текущий размер.
+                row.size = sizes[index] ?: GrowthText.signed(dv, txt).also { sizes[index] = it }
+                row.sizeColor = GrowthText.role(dv).color()
+                row.signedBar = true
+                row.bar = GrowthSort.bar(dv, dmax)
+                row.barColor = if (dv >= 0) C.AMBER else C.FRAME
+                row.pct = pcts[index] ?: Fmt.size(v, txt).also { pcts[index] = it }
+                if (isNew) row.badge = txt.s(R.string.new_badge)
+            } else {
+                row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
+                row.bar = ListMath.bar(v, maxV)
+                row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
+                row.barColor = if (dir) C.AMBER else C.BLUE
+            }
             row.nameColor = if (dir) C.TEXT else C.BLUE_HI
             val tag = rowTags.at(index, nm, flags)
             row.tag = tag?.text
@@ -368,9 +397,12 @@ class BrowserActivity : LangActivity() {
                 flags and F_HLDUP != 0 -> row.mark = "≡"
             }
             row.desc = descs[index] ?: buildString {
-                append(nm); append(", "); append(row.size)
-                if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
-                if (dir) { append(", "); append(txt.s(R.string.desc_dir)) }
+                if (deltaShown && d != null) append(GrowthText.rowDesc(txt, nm, dv, v, d.baseTime, isNew, dir))
+                else {
+                    append(nm); append(", "); append(row.size)
+                    if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
+                    if (dir) { append(", "); append(txt.s(R.string.desc_dir)) }
+                }
                 // F_ERR — и нет доступа, и незаконченное удаление: данные узла неполные.
                 if (flags and F_ERR != 0) { append(", "); append(txt.s(R.string.desc_incomplete)) }
                 if (tag != null) append(tag.desc)
@@ -391,7 +423,7 @@ class BrowserActivity : LangActivity() {
             }
         }
         override fun click(index: Int) {
-            if (busy) return
+            if (busy || index >= n) return
             // В режиме выбора тап выбирает (и каталог: вглубь нельзя).
             if (selection.active) { toggleRow(index); return }
             // Файл — карточка быстрого просмотра; долгое нажатие — режим выбора.
@@ -400,13 +432,14 @@ class BrowserActivity : LangActivity() {
             load(kids[index], 0, dir = 1)
         }
         override fun longClick(index: Int) {
-            if (busy) return
+            if (busy || index >= n) return
             if (!selection.active) { enterSelection(index); return }
             val flags = info[4 * index + 3].toInt()
             if (flags and F_DIR == 0) openQuickLook(kids[index], value(index), flags) else toggleRow(index)
         }
         // В режиме выбора звук даёт сам выбор: tick — выбран, tock — снят, refuse — запрет.
-        override fun clickCue(index: Int): Cue? = if (selection.active) null else Cue.TAP
+        override fun clickCue(index: Int): Cue? = if (selection.active || index >= n) null else Cue.TAP
+        override fun interactive(index: Int): Boolean = index < n
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -442,6 +475,7 @@ class BrowserActivity : LangActivity() {
         // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
         badge = label("", 12f, C.AMBER_TEXT, mono = true).apply {
             maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL
         }
         newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
             gravity = Gravity.CENTER
@@ -540,6 +574,7 @@ class BrowserActivity : LangActivity() {
         renderGallery()
         Holder.addSessionListener(onSession)
         BgScan.addListener(onBg)
+        Growth.addListener(onGrowth)
         // Пересоздание (смена языка, системой) того же дерева: та же папка, сортировка и режим размера.
         val st = savedInstanceState?.takeIf { it.getLong(S_H) == h && it.getLong(S_GEN, -1) == gen }
         if (st != null) {
@@ -547,6 +582,9 @@ class BrowserActivity : LangActivity() {
             apparent = st.getBoolean(S_APPARENT, false)
             node = st.getInt(S_NODE, 0)
             keepScroll = st.getInt(S_SCROLL, 0)   // и для onDeleted, если удаление ещё идёт
+        } else if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_DELTA, false)) {
+            // Строка «что выросло» главного экрана: сразу в сортировке Δ (Δ может ещё считаться на io).
+            sort = SORT_DELTA
         }
         if (busy) {
             // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
@@ -833,6 +871,7 @@ class BrowserActivity : LangActivity() {
         Holder.removeDeleteListener(onDeleted)
         Holder.removeSessionListener(onSession)
         BgScan.removeListener(onBg)
+        Growth.removeListener(onGrowth)
         MediaClean.removeListener(onClean)
         unpin()
         cancelAsk()
@@ -866,24 +905,32 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: все сегменты (касания 44dp). */
     fun segments(): List<View> = listOfNotNull(sortSeg, sizeSeg).flatMap { g -> (0 until g.childCount).map { g.getChildAt(it) } }
 
-    /** Состояние, из которого собраны переключатели (сортировка, режим размера); null — не собраны. */
-    private var chipsFor: Pair<Int, Boolean>? = null
+    /** Состояние, из которого собраны переключатели (сортировка, режим размера, есть ли Δ); null — не собраны. */
+    private var chipsFor: Triple<Int, Boolean, Boolean>? = null
+
+    /** Сегмент Δ есть: для дерева посчитана Δ против точки отсчёта (или считается, а Δ уже выбрана). */
+    private fun deltaOffered(): Boolean =
+        h != 0L && (Growth.forTree(h, gen) != null || (sort == SORT_DELTA && Growth.pending(h, gen)))
 
     private fun renderChips() {
         // Вход в папку не меняет ни сортировку, ни режим: пересборка шапки (новые view, шрифты,
         // заново measure/layout всей шапки) стоила ~5 мс на каждый load — половина бюджета кадра.
-        val want = sort to apparent
+        val offered = deltaOffered()
+        val want = Triple(sort, apparent, offered)
         if (chipsFor == want) return
         chipsFor = want
         chips.removeAllViews()
-        val sorts = segmented(listOf(txt.s(R.string.sort_size), txt.s(R.string.sort_name)),
-            if (sort == SORT_NAME) 1 else 0, amber = true) { setSort(if (it == 1) SORT_NAME else SORT_SIZE) }
+        // [РАЗМЕР | ИМЯ | Δ]: Δ — только когда есть точка отсчёта.
+        val opts = listOf(txt.s(R.string.sort_size), txt.s(R.string.sort_name)) + if (offered) listOf(txt.s(R.string.sort_delta)) else emptyList()
+        val sel = when { sort == SORT_NAME -> 1; sort == SORT_DELTA && offered -> 2; else -> 0 }
+        val sorts = segmented(opts, sel, amber = true) { setSort(when (it) { 1 -> SORT_NAME; 2 -> SORT_DELTA; else -> SORT_SIZE }) }
         val sizes = segmented(listOf(txt.s(R.string.size_disk), txt.s(R.string.size_apparent)),
             if (apparent) 1 else 0, amber = false) { setApparent(it == 1) }
         sortSeg = sorts; sizeSeg = sizes
         // Смысл пиктограммы — в описаниях сегментов сортировки.
         sorts.getChildAt(0).contentDescription = txt.s(R.string.sort_size_desc)
         sorts.getChildAt(1).contentDescription = txt.s(R.string.sort_name_desc)
+        if (offered) sorts.getChildAt(2).contentDescription = txt.s(R.string.sort_delta_desc)
         sizes.contentDescription = txt.s(R.string.size_mode_desc, txt.s(if (apparent) R.string.size_apparent else R.string.size_disk_desc))
         // Пиктограмма и сегменты сортировки — один ребёнок Flow (не разрываются при переносе);
         // группы при крупном шрифте переносятся, не сжимаются.
@@ -902,21 +949,31 @@ class BrowserActivity : LangActivity() {
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
 
     /** [dir] — переход по дереву: +1 вглубь, −1 назад или к предку из панели пути, 0 — тот же уровень (без анимации). */
-    private fun load(target: Int, restore: Int, dir: Int = 0) {
+    /** [keepAsk] — перечитать тот же уровень, не отменяя ждущий лист (пришла новая Δ). */
+    private fun load(target: Int, restore: Int, dir: Int = 0, keepAsk: Boolean = false) {
         // Любая навигация отменяет ждущий лист (подстановка дерева при этом всё равно будет).
-        cancelAsk()
+        if (!keepAsk) cancelAsk()
         // Выбор живёт в ОДНОЙ папке: ушли из неё (панель пути, папки нет в новом дереве) — снят.
         val dropped = if (selection.active && !samePath(pathNames(h, target), selScope)) selection.leave() else 0
         loads++
         node = target
+        // Δ посчитана заранее на io (Growth): здесь только чтения массивов, без работы с базой.
+        delta = Growth.forTree(h, gen)
+        if (sort == SORT_DELTA && delta == null && !Growth.pending(h, gen)) sort = SORT_SIZE
+        val d = delta
+        deltaShown = sort == SORT_DELTA && d != null
         // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
         kids = IntArray(Native.childCount(h, node))
-        n = maxOf(0, Native.children(h, node, sort, apparent, kids))
+        // Δ — сортировка Kotlin поверх готового порядка по размеру (ядро SORT_DELTA не знает).
+        n = maxOf(0, Native.children(h, node, if (sort == SORT_DELTA) SORT_SIZE else sort, apparent, kids))
         names = arrayOfNulls(n); shown = arrayOfNulls(n); sizes = arrayOfNulls(n)
         pcts = arrayOfNulls(n); descs = arrayOfNulls(n)
         keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
+        if (deltaShown && d != null) orderByDelta(d) else { dvals = LongArray(0); dmax = 0L }
+        goneText = if (deltaShown && d != null) d.gone[node]?.let { GrowthText.goneOrNull(txt, it.count, it.bytes(apparent)) } else null
+        list.wideRight = deltaShown
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
@@ -924,10 +981,12 @@ class BrowserActivity : LangActivity() {
         rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind)
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
-        summary.text = "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
+        summary.text = if (deltaShown && d != null) GrowthText.summary(txt, parentV, d.of(node, apparent), d.baseTime)
+            else "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        sourceBadge = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
+        sourceBadge = if (deltaShown && d != null) GrowthText.badge(txt, d.baseTime) else Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
+
         if (scanState == ScanState.NONE) setBadge(sourceBadge, active = false, polite = false)
         hint = if (showHint) txt.s(R.string.browser_hint) else ""
         setFooter(idleFooter())
@@ -938,6 +997,27 @@ class BrowserActivity : LangActivity() {
         renderSelection()
         list.scroll = restore
         if (dropped > 0) note(GroupSheet.cleared(txt, dropped))
+    }
+
+    /** Дети уровня (и их nodeInfo) — по Δ убыв., при равной — по размеру ([GrowthSort]); Δ строк и max |Δ|. */
+    private fun orderByDelta(d: Delta) {
+        val pos = IntArray(n) { it }
+        GrowthSort.sort(pos, n, { d.of(kids[it], apparent) }, { value(it) })
+        val k2 = IntArray(kids.size)
+        val i2 = LongArray(info.size)
+        for (j in 0 until n) { k2[j] = kids[pos[j]]; System.arraycopy(info, 4 * pos[j], i2, 4 * j, 4) }
+        kids = k2; info = i2
+        dvals = LongArray(n) { d.of(kids[it], apparent) }
+        dmax = GrowthSort.maxAbs(dvals)
+    }
+
+    /**
+     * Δ дерева сменилась (Growth): в сортировке Δ — тот же уровень заново (прокрутка и ждущий лист
+     * остаются); иначе — только сегмент Δ появляется или пропадает.
+     */
+    private fun growthChanged() {
+        if (h == 0L || busy || isFinishing || isDestroyed || !::list.isInitialized || list.source == null) return
+        if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else renderChips()
     }
 
     private fun samePath(a: List<ByteArray>, b: List<ByteArray>): Boolean =

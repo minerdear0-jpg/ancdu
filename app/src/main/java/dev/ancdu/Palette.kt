@@ -148,7 +148,7 @@ data class Palette(
  * создании — то, что посчитано заранее или на рабочем потоке, хранит роль.
  */
 enum class Role {
-    TEXT, MUTED, BLUE_HI, AMBER, BLUE, AUDIO_FILL, AMBER_DIM, FRAME, FREE;
+    TEXT, MUTED, BLUE_HI, AMBER, BLUE, AUDIO_FILL, AMBER_DIM, FRAME, FREE, AMBER_TEXT;
 
     fun color(p: Palette = C.p): Int = when (this) {
         TEXT -> p.text
@@ -160,5 +160,6 @@ enum class Role {
         AMBER_DIM -> p.amberDim
         FRAME -> p.frame
         FREE -> p.free
+        AMBER_TEXT -> p.amberText
     }
 }

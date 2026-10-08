@@ -74,8 +74,10 @@ object Holder {
         checkMain("Holder.set")
         val old = h
         h = handle; this.kind = kind; this.root = root; this.viaRoot = viaRoot; this.time = time; this.ms = ms
-        if (old == handle) return
+        // Δ против точки отсчёта (на io) — раньше слушателей: их чтения на io встают после расчёта.
+        if (old == handle) { Growth.onTree(handle, gen, kind, root, viaRoot); return }
         gen++
+        Growth.onTree(handle, gen, kind, root, viaRoot)
         for (l in sessionListeners.toList()) l()
         if (old != 0L) io.execute { Native.free(old) }
     }
@@ -314,6 +316,8 @@ object Holder {
                 main.post {
                     deleting = false
                     deletes++
+                    // Размеры предков удалённого изменились: Δ — заново (до того — короткое окно устаревших Δ папок).
+                    Growth.recompute()
                     delResults = results
                     if (group) delDir = GroupResult.needsRefresh(results, root)
                     // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.

@@ -325,4 +325,37 @@
     <string name="err_android_private">Android 11+ закрывает эту папку для других приложений — её размер виден только при скане от root</string>
     <string name="err_scan_root">Сканировать от root</string>
     <string name="err_node_gone">Этой папки уже нет в дереве</string>
+
+    <!-- What grew: Δ against a rolling baseline -->
+    <string name="sort_delta">Δ</string>
+    <string name="sort_delta_desc">Сортировка: прирост с точки отсчёта</string>
+    <string name="fmt_since">d MMM</string>
+    <string name="fmt_since_time">d MMM HH:mm</string>
+    <string name="growth_since">%1$s с %2$s</string>
+    <string name="growth_summary">%1$s · %2$s с %3$s</string>
+    <string name="badge_delta">Δ с %1$s</string>
+    <string name="badge_delta_desc">%1$s, точка отсчёта</string>
+    <string name="new_badge">НОВОЕ</string>
+    <string name="desc_new">новое</string>
+    <string name="desc_now">сейчас %1$s</string>
+    <plurals name="gone_items">
+        <item quantity="one">ушло: %1$s объект · %2$s</item>
+        <item quantity="few">ушло: %1$s объекта · %2$s</item>
+        <item quantity="many">ушло: %1$s объектов · %2$s</item>
+        <item quantity="other">ушло: %1$s объекта · %2$s</item>
+    </plurals>
+    <string name="today">сегодня</string>
+    <plurals name="days_ago">
+        <item quantity="one">%1$s день назад</item>
+        <item quantity="few">%1$s дня назад</item>
+        <item quantity="many">%1$s дней назад</item>
+        <item quantity="other">%1$s дня назад</item>
+    </plurals>
+    <string name="baseline_caps">Точка отсчёта</string>
+    <string name="baseline_explain">Δ считается от этого скана. Точка отсчёта обновляется сама: раз в неделю её место занимает более новый сохранённый скан, поэтому ей всегда 7–14 дней.</string>
+    <string name="baseline_mark">Отметить сейчас</string>
+    <string name="baseline_mark_sub">Считать Δ от дерева на экране</string>
+    <string name="growth_home">%1$s с %2$s · больше всего %3$s ›</string>
+    <string name="growth_home_plain">%1$s с %2$s ›</string>
+    <string name="growth_open_desc">открывает папку по приросту</string>
 </resources>

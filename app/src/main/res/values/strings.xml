@@ -337,4 +337,33 @@
     <string name="err_android_private">Android 11+ closes this folder to other apps — its size is visible only in a root scan</string>
     <string name="err_scan_root">Scan as root</string>
     <string name="err_node_gone">This folder is no longer in the tree</string>
+
+    <!-- What grew: Δ against a rolling baseline -->
+    <string name="sort_delta">Δ</string>
+    <string name="sort_delta_desc">Sort by growth since the baseline</string>
+    <string name="fmt_since">MMM d</string>
+    <string name="fmt_since_time">MMM d HH:mm</string>
+    <string name="growth_since">%1$s since %2$s</string>
+    <string name="growth_summary">%1$s · %2$s since %3$s</string>
+    <string name="badge_delta">Δ vs %1$s</string>
+    <string name="badge_delta_desc">%1$s, baseline</string>
+    <string name="new_badge">NEW</string>
+    <string name="desc_new">new</string>
+    <string name="desc_now">now %1$s</string>
+    <plurals name="gone_items">
+        <item quantity="one">gone: %1$s item · %2$s</item>
+        <item quantity="other">gone: %1$s items · %2$s</item>
+    </plurals>
+    <string name="today">today</string>
+    <plurals name="days_ago">
+        <item quantity="one">%1$s day ago</item>
+        <item quantity="other">%1$s days ago</item>
+    </plurals>
+    <string name="baseline_caps">Baseline</string>
+    <string name="baseline_explain">Δ is counted against this scan. The baseline renews itself: once a week the newer saved scan takes its place, so it is always 7–14 days old.</string>
+    <string name="baseline_mark">Mark now</string>
+    <string name="baseline_mark_sub">Count Δ from the tree on screen</string>
+    <string name="growth_home">%1$s since %2$s · mostly %3$s ›</string>
+    <string name="growth_home_plain">%1$s since %2$s ›</string>
+    <string name="growth_open_desc">opens the folder sorted by growth</string>
 </resources>
