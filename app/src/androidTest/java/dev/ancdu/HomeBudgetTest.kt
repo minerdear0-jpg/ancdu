@@ -162,14 +162,56 @@ class HomeBudgetTest {
         assertTrue("apps figure: ${a.appsTotal?.text}", ok)
     }
 
-    /** Storage full never pre-checks fast root nor shortens the countdown (DeletePolicy has no storage input). */
+    /**
+     * Storage full never pre-checks fast root nor shortens the countdown: a real delete sheet opened
+     * while fakeStatfs says «full» has the fast box unchecked and the full 1,5 s countdown (2, 1).
+     * Synthetic preview of another app's folder; «Удалить» is never pressed.
+     */
     @Test fun storageFullKeepsDeletePolicy() {
         StorageCard.fakeStatfs = longArrayOf(224 * gib, gib / 2, gib / 2)
         cache(System.currentTimeMillis())
-        val a = launch()
-        ins.runOnMainSync { assertTrue(a.storage.full) }
-        assertFalse(DeletePolicy.fastByDefault(999, RootState.GRANTED))
-        assertEquals(DeletePolicy.ROOT_PAUSE_MS, DeletePolicy.tier(false, true, false, 1).pauseMs)
-        assertEquals(DeletePolicy.PAUSE_MS, DeletePolicy.tier(false, false, true, 1).pauseMs)
+        val m = launch()
+        ins.runOnMainSync { assertTrue(m.storage.full) }
+        val dir = java.nio.file.Files.createTempDirectory(ctx.cacheDir.toPath(), "fullsheet").toFile()
+        assertTrue(dir.isAbsolute && dir.path.startsWith(ctx.cacheDir.path + "/"))
+        java.io.File(dir, "a.bin").writeBytes(ByteArray(10))
+        try {
+            val h = Native.scanStart(dir.path, true, 1, IntArray(1))
+            val p = LongArray(6)
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline) { Native.progress(h, p); if (p[0] != ST_RUNNING.toLong()) break; Thread.sleep(25) }
+            ins.runOnMainSync { Holder.set(h, Kind.SCAN, dir.path, false) }
+            val b = ins.startActivitySync(Intent(ctx, BrowserActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as BrowserActivity
+            ins.waitForIdleSync()
+            val pv = DeletePreview(name = "com.example.other", path = "/storage/emulated/0/Android/data/com.example.other",
+                dir = true, disk = 1000, apparent = 1000, items = 1500, flags = F_DIR, top = emptyList(), more = 0,
+                owner = "com.example.other", viaRoot = false, block = null, kind = Kind.SCAN, cacheTime = null,
+                fast = true, root = RootState.UNKNOWN)
+            lateinit var sheet: DeleteSheet
+            var chosen: Boolean? = null
+            ins.runOnMainSync {
+                assertTrue(StorageCard.fakeStatfs != null)
+                sheet = DeleteSheet(b, pv) { chosen = it }.also { it.show() }
+                assertFalse(sheet.fastBox!!.isChecked)
+                assertEquals(DeleteTier.PAUSE, sheet.tier)
+                assertFalse(sheet.deleteButton!!.isEnabled)
+            }
+            val end = System.currentTimeMillis() + 4_000
+            while (System.currentTimeMillis() < end) {
+                var on = false
+                ins.runOnMainSync { on = sheet.deleteButton!!.isEnabled }
+                if (on) break
+                Thread.sleep(50)
+            }
+            ins.runOnMainSync {
+                assertEquals(listOf(2L, 1L), sheet.countdownShown)
+                sheet.dismiss()
+                b.finish()
+            }
+            assertEquals(null, chosen)
+        } finally {
+            ins.runOnMainSync { Holder.clear() }
+            if (dir.path.startsWith(ctx.cacheDir.path + "/")) dir.deleteRecursively()
+        }
     }
 }

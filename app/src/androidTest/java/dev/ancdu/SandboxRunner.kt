@@ -13,9 +13,10 @@ class SandboxRunner : AndroidJUnitRunner() {
     private var sandbox: File? = null
 
     override fun onCreate(arguments: Bundle?) {
-        super.onCreate(arguments)
+        // Before super.onCreate (which starts the run): nothing may see the real log first.
         sandbox = LogSandbox.create(targetContext.cacheDir, "deletelog-run")
         DeleteLog.fileOverride = File(sandbox, DeleteLog.FILE)
+        super.onCreate(arguments)
     }
 
     override fun finish(resultCode: Int, results: Bundle?) {
@@ -53,11 +54,14 @@ class LogSandboxRule : org.junit.rules.ExternalResource() {
         dir = LogSandbox.create(cache, "deletelog")
         file = File(dir, DeleteLog.FILE)
         DeleteLog.fileOverride = file
+        // Process-global log state from earlier tests: the notice of another test's log is not ours.
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync { DeleteLog.testReset() }
     }
 
     override fun after() {
         Holder.io.submit {}.get()
         DeleteLog.fileOverride = prev
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync { DeleteLog.testReset() }
         dir?.let { LogSandbox.remove(cache, it) }
     }
 }
