@@ -554,14 +554,15 @@ class BrowserActivity : LangActivity() {
             node = st.getInt(S_NODE, 0)
             keepScroll = st.getInt(S_SCROLL, 0)   // и для onDeleted, если удаление ещё идёт
         } else if (named != null) {
-            sort = named.sort
+            sort = BrowserState.sortOf(named.sort)
             apparent = named.apparent
         } else if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_DELTA, false)) {
             // Строка «что выросло» главного экрана: сразу в сортировке Δ (Δ может ещё считаться на io).
             sort = SORT_DELTA
         }
         if (busy) {
-            // Удаление начато прежним экземпляром: дерево не читаем до onDeleted.
+            // Удаление начато прежним экземпляром: дерево не читаем до onDeleted (курсор найдёт его load).
+            if (st != null) cursor.adopt(BrowserState.getCursor(st))
             showWait()
         } else {
             list.source = src
@@ -569,7 +570,7 @@ class BrowserActivity : LangActivity() {
             else load(node, keepScroll)
             if (st != null) {
                 sel.restoreSelection(st)
-                cursor.restore(BrowserState.decode(st.getByteArray(S_STATE))?.cursor, flash = false)
+                cursor.restore(BrowserState.getCursor(st), flash = false)
                 // «Выбор снят · Вернуть» был на экране — снова (только пересоздание того же процесса).
                 sel.restoreUndoNote(st)
             }
@@ -589,6 +590,8 @@ class BrowserActivity : LangActivity() {
         // Путь по именам — для нового процесса. Во время удаления дерево не читается: не сохраняется
         // (после смерти процесса посреди удаления — обычный старт).
         if (!busy && h != 0L && h == Holder.h) out.putByteArray(S_STATE, BrowserState.encode(savedState()))
+        // Курсор того же процесса — и посреди удаления (цепочка в памяти, дерево не читается).
+        BrowserState.putCursor(out, cursor.state())
         out.putLong(S_H, h)
         out.putLong(S_GEN, gen)
         out.putInt(S_NODE, node)

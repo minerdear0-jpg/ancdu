@@ -153,6 +153,16 @@ class BrowserStateTest {
         assertEquals(20_000L, NoticeTime.ms(recommended = 20_000, spoken = true))
     }
 
+    /** Сортировка из чужого состояния — только известная; мусор — по размеру. */
+    @Test fun sortIsClamped() {
+        assertEquals(SORT_SIZE, BrowserState.sortOf(SORT_SIZE))
+        assertEquals(SORT_NAME, BrowserState.sortOf(SORT_NAME))
+        assertEquals(SORT_DELTA, BrowserState.sortOf(SORT_DELTA))
+        assertEquals(SORT_SIZE, BrowserState.sortOf(SORT_ITEMS))
+        assertEquals(SORT_SIZE, BrowserState.sortOf(-1))
+        assertEquals(SORT_SIZE, BrowserState.sortOf(99))
+    }
+
     @Test fun processTokenChangesOnNewProcess() {
         val p = BrowserState.process
         BrowserState.testNewProcess()

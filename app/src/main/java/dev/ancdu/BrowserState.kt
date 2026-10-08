@@ -108,6 +108,24 @@ object BrowserState {
     /** Пусто — корень; иначе [Focus.parse] (null — негодная цепочка). */
     private fun chain(b: ByteArray): List<ByteArray>? = if (b.isEmpty()) emptyList() else Focus.parse(b)
 
+    /** Сортировка из состояния: только известная браузеру (размер, имя, Δ), иначе — по размеру. */
+    fun sortOf(s: Int): Int = if (s == SORT_SIZE || s == SORT_NAME || s == SORT_DELTA) s else SORT_SIZE
+
+    /** Курсор в Bundle отдельно от состояния: пишется и во время удаления (дерево не читается). */
+    fun putCursor(out: android.os.Bundle, c: Cursor?) {
+        if (c == null) return
+        out.putByteArray(K_CUR, Focus.encode(c.chain)); out.putInt(K_CUR_I, c.index); out.putBoolean(K_CUR_Q, c.quiet)
+    }
+
+    fun getCursor(st: android.os.Bundle): Cursor? {
+        val chain = Focus.parse(st.getByteArray(K_CUR)) ?: return null
+        return Cursor(chain, st.getInt(K_CUR_I, 0), st.getBoolean(K_CUR_Q, false))
+    }
+
+    private const val K_CUR = "cur"
+    private const val K_CUR_I = "cur_i"
+    private const val K_CUR_Q = "cur_q"
+
     /** Состояние не старше суток (и не «из будущего»: часы перевели назад). */
     fun fresh(savedAt: Long, now: Long): Boolean = now - savedAt in 0..MAX_AGE_MS
 

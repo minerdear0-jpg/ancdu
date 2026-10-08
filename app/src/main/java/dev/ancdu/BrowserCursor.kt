@@ -32,6 +32,12 @@ class BrowserCursor(private val a: BrowserActivity) {
         if (flash) flash() else a.list.stopFlash()
     }
 
+    /** Пересоздание посреди удаления: курсор запомнен без чтения дерева, строку найдёт load() после удаления. */
+    fun adopt(c: BrowserState.Cursor?) {
+        if (c == null) return
+        chain = c.chain; index = c.index; quiet = c.quiet
+    }
+
     /** Сохранённый курсор [c] — по именам в текущем уровне ([relocate]); [flash] — прибытие. */
     fun restore(c: BrowserState.Cursor?, flash: Boolean) {
         if (c == null) return
@@ -53,7 +59,9 @@ class BrowserCursor(private val a: BrowserActivity) {
         val r = CursorPlace.row(found, index, a.n)
         if (r < 0) { clear(); return }
         if (CursorPlace.noteGone(found, quiet)) a.note(DeleteProgress.gone(a.txt, Native.str(c.last())))
-        if (found < 0) { chain = a.pathNames(a.h, a.kids[r]); quiet = false }
+        // Найден (удаление не удалось) или встал на соседа — дальше обычный курсор, с заметкой.
+        if (found < 0) chain = a.pathNames(a.h, a.kids[r])
+        quiet = false
         index = r
         a.list.cursorRow = r
     }
