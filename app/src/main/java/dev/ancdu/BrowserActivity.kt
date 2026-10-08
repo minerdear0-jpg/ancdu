@@ -277,9 +277,11 @@ class BrowserActivity : LangActivity() {
      * [log] — итог удаления: «освобождено 10,3 ГиБ · журнал ›», тап — журнал удалений.
      */
     internal fun note(message: String, log: Boolean = false) {
-        val text = if (log) message + " · " + txt.s(R.string.log_link) else message
+        // Ссылка «журнал ›» — только в касаемом подвале; в режиме выбора (сообщение поверх списка) её нет.
+        val linked = log && !selection.active
+        val text = if (linked) message + " · " + txt.s(R.string.log_link) else message
         if (selection.active) { notice.text = text; notice.visibility = View.VISIBLE }
-        else { setFooter(text); if (log) linkFooter(true) }
+        else { setFooter(text); if (linked) linkFooter(true) }
         ui.removeCallbacks(restoreFooter)
         restoreFooter = Runnable {
             if (notice.visibility == View.VISIBLE && notice.text.toString() == text) notice.visibility = View.GONE
@@ -557,7 +559,7 @@ class BrowserActivity : LangActivity() {
         val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
         // Частичное удаление одного объекта: сколько освобождено, стало известно — в журнал.
         val del = r.delDisk
-        if (del != null && r.note == null) DeleteLog.freed(Holder.delLogIds.singleOrNull() ?: 0L, if (hit.exact) maxOf(0L, del - disk) else del)
+        if (del != null && r.note == null) DeleteLog.freed(if (Holder.delCount == 1) Holder.delLogId else 0L, if (hit.exact) maxOf(0L, del - disk) else del)
         when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
             is AutoPromote.Outcome.Footer -> note(o.text, log = r.delDisk != null)
             AutoPromote.Outcome.Sheet -> openSheet(hit.node)

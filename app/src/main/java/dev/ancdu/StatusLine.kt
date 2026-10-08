@@ -6,16 +6,21 @@ import java.util.TimeZone
  * Удаление, прерванное гибелью процесса (запись start без end в журнале удалений, DeleteLog).
  * [root]/[su] — дерево, в котором оно шло; [names] — сырые байты имён от корня; [disk] — размер на
  * момент подтверждения; [time] — начало; [freed] — сколько освобождено, если известно (null — нет).
+ * Группа: [names] — её папка, [count] — объектов, [items] — до 20 имён (крупнейшие первыми).
  */
 class InterruptedDelete(val id: Long, val root: String, val su: Boolean, val names: List<ByteArray>, val dir: Boolean,
-                        val disk: Long, val time: Long, val freed: Long? = null) {
+                        val disk: Long, val time: Long, val freed: Long? = null, val count: Int = 1,
+                        val items: List<ByteArray> = emptyList()) {
     /** «Download/» — путь от корня для показа: невалидный UTF-8 — U+FFFD, у каталога — «/» в конце. */
     val path: String get() = names.joinToString("/") { String(it, Charsets.UTF_8) } + if (dir && names.isNotEmpty()) "/" else ""
 
     /** Папка, которую открывает тап: каталог — он сам, файл — его папка. */
     val folder: List<ByteArray> get() = if (dir) names else names.dropLast(1)
 
-    fun withFreed(f: Long?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, f)
+    fun withFreed(f: Long?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, f, count, items)
+
+    /** Группа, все имена которой записаны: остаток можно сосчитать по дереву. */
+    val allNamed: Boolean get() = count <= 1 || items.size >= count
 }
 
 /** Одно состояние строки статуса главного экрана. */
@@ -73,9 +78,12 @@ object StatusLine {
 object HomeMath {
     private const val GIB = 1L shl 30
 
-    /** «Приложения и система»: занято на /data минус общее хранилище; null — что-то неизвестно. */
+    /**
+     * «Приложения и система»: занято на /data минус общее хранилище; null — что-то неизвестно или
+     * хранилище больше занятого (устаревший кэш): тогда числа нет, а не «0 Б».
+     */
     fun appsBytes(dataUsed: Long, shared: Long?): Long? =
-        if (shared == null || dataUsed < 0 || shared < 0) null else maxOf(0L, dataUsed - shared)
+        if (shared == null || dataUsed < 0 || shared < 0 || shared > dataUsed) null else dataUsed - shared
 
     /** Места нет: свободно меньше 1 ГиБ или меньше 5% раздела. */
     fun storageFull(free: Long, total: Long): Boolean =

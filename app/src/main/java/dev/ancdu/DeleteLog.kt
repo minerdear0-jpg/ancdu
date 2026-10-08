@@ -102,18 +102,29 @@ sealed class LogRec {
     abstract fun format(): String
 
     /**
-     * Начало удаления объекта (пишется на io ДО удаления): [root]/[su] — дерево, [names] — путь от
-     * корня (байты), [items]/[disk] — на момент подтверждения, [viaRoot] — через su, [fast] — /data/media.
+     * Начало ОДНОГО действия удаления (пишется на io ДО удаления): [root]/[su] — дерево, [names] —
+     * путь от корня (байты): объекта или, у группы, её папки; [items]/[disk] — на момент
+     * подтверждения (у группы — суммы), [viaRoot] — через su, [fast] — /data/media. [count] —
+     * объектов (1 — одиночное); [itemNames] — у группы до [LogActions.NAMES] имён, крупнейшие первыми:
+     * для истории и будущего подробного вида (сейчас лист их не показывает).
      */
     class Start(override val id: Long, val time: Long, val root: String, val su: Boolean, val names: List<ByteArray>,
-                val dir: Boolean, val items: Long, val disk: Long, val viaRoot: Boolean, val fast: Boolean) : LogRec() {
-        override fun format() = listOf("S", id, time, b(su), LogCodec.escape(root.toByteArray(Charsets.UTF_8)), LogCodec.rel(names),
-            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast)).joinToString("\t")
+                val dir: Boolean, val items: Long, val disk: Long, val viaRoot: Boolean, val fast: Boolean,
+                val count: Int = 1, val itemNames: List<ByteArray> = emptyList()) : LogRec() {
+        val group: Boolean get() = count > 1
+        override fun format() = (listOf("S", id, time, b(su), LogCodec.escape(root.toByteArray(Charsets.UTF_8)), LogCodec.rel(names),
+            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast), count) + itemNames.map { LogCodec.escape(it) }).joinToString("\t")
     }
 
-    /** Итог: [code] — Native.delete, [freed] — освобождено (-1 — неизвестно), [removed] — записей удалено (-1 — неизвестно). */
-    class End(override val id: Long, val time: Long, val code: Int, val freed: Long, val removed: Long) : LogRec() {
-        override fun format() = listOf("E", id, time, code, freed, removed).joinToString("\t")
+    /**
+     * Итог действия: [code] — Native.delete (у группы — GroupResult.code), [freed] — освобождено
+     * (-1 — неизвестно; у группы — сумма удалённых целиком), [removed] — записей удалено (-1 —
+     * неизвестно); [deleted]/[partial]/[failed] — объектов удалено целиком / частично / не удалено.
+     */
+    class End(override val id: Long, val time: Long, val code: Int, val freed: Long, val removed: Long,
+              val deleted: Int = if (code == 0) 1 else 0, val partial: Int = if (code != 0 && removed > 0) 1 else 0,
+              val failed: Int = if (code != 0 && removed <= 0) 1 else 0) : LogRec() {
+        override fun format() = listOf("E", id, time, code, freed, removed, deleted, partial, failed).joinToString("\t")
     }
 
     /** Освобождено — стало известно позже (дерево обновилось после частичного удаления). */
@@ -136,8 +147,14 @@ sealed class LogRec {
             when (f[0]) {
                 "S" -> if (f.size < 11) null else Start(f[1].toLong(), f[2].toLong(), String(LogCodec.unescape(f[4]), Charsets.UTF_8),
                     bool(f[3]), LogCodec.names(f[5]), when (f[6]) { "d" -> true; "f" -> false; else -> throw IllegalArgumentException() },
-                    f[7].toLong(), f[8].toLong(), bool(f[9]), bool(f[10]))
-                "E" -> if (f.size < 6) null else End(f[1].toLong(), f[2].toLong(), f[3].toInt(), f[4].toLong(), f[5].toLong())
+                    f[7].toLong(), f[8].toLong(), bool(f[9]), bool(f[10]),
+                    if (f.size > 11) f[11].toInt().also { require(it >= 1) } else 1, f.drop(12).map { LogCodec.unescape(it) })
+                "E" -> when {
+                    f.size >= 9 -> End(f[1].toLong(), f[2].toLong(), f[3].toInt(), f[4].toLong(), f[5].toLong(),
+                        f[6].toInt(), f[7].toInt(), f[8].toInt())
+                    f.size >= 6 -> End(f[1].toLong(), f[2].toLong(), f[3].toInt(), f[4].toLong(), f[5].toLong())
+                    else -> null
+                }
                 "F" -> if (f.size < 3) null else Freed(f[1].toLong(), f[2].toLong())
                 "N" -> if (f.size < 2) null else Seen(f[1].toLong())
                 else -> null
@@ -152,7 +169,7 @@ enum class LogOutcome { DELETED, PARTIAL, INTERRUPTED }
 class LogEntry(val start: LogRec.Start, val end: LogRec.End?, private val freedLater: Long?, val seen: Boolean) {
     val outcome: LogOutcome get() = when {
         end == null -> LogOutcome.INTERRUPTED
-        end.code == 0 -> LogOutcome.DELETED
+        end.code == 0 && end.partial == 0 && end.failed == 0 -> LogOutcome.DELETED
         else -> LogOutcome.PARTIAL
     }
 
@@ -160,7 +177,7 @@ class LogEntry(val start: LogRec.Start, val end: LogRec.End?, private val freedL
     val freed: Long? get() = freedLater ?: end?.freed?.takeIf { it >= 0 }
 
     /** Отказ — ничего не удалено (и не потеряно): в журнале не показывается. */
-    val refusal: Boolean get() = end != null && end.code != 0 && end.removed == 0L
+    val refusal: Boolean get() = end != null && end.code != 0 && end.removed == 0L && end.deleted == 0
 }
 
 /** Чистый Kotlin: записи журнала → удаления, прерванные, уведомление. */
@@ -188,26 +205,40 @@ object DeleteLogModel {
 
     /** Самое новое непросмотренное прерванное удаление — строка статуса главного экрана. */
     fun notice(entries: List<LogEntry>): InterruptedDelete? = interrupted(entries).lastOrNull()?.start?.let {
-        InterruptedDelete(it.id, it.root, it.su, it.names, it.dir, it.disk, it.time)
+        InterruptedDelete(it.id, it.root, it.su, it.names, it.dir, it.disk, it.time, count = it.count, items = it.itemNames)
     }
 }
 
 /**
  * Файл журнала [file] (filesDir/deletes.tsv) и его tmp — единственные файлы, которые он трогает.
- * Дописывается; больше [CAP] записей — старейшие уходят (новый файл через tmp + rename). Только Holder.io.
+ * Дописывается за O(1): число записей читается один раз (при первой записи) и дальше ведётся в
+ * памяти. Больше [CAP] — переписывается до [KEEP] последних (tmp + fsync + rename): примерно раз
+ * на сто действий, не на каждое. Только Holder.io.
  */
 class DeleteLogStore(val file: File) {
     private val tmp get() = File(file.path + ".tmp")
+    /** Записей в файле (null — ещё не считано). */
+    private var count: Int? = null
+    /** Для тестов: сколько записей дописано этим объектом и сколько раз файл переписан. */
+    var appends = 0
+        private set
+    var rewrites = 0
+        private set
 
     fun lines(): List<String> = if (!file.exists()) emptyList() else file.readLines(Charsets.UTF_8).filter { it.isNotEmpty() }
 
+    /** Записей сейчас (один раз читает файл, дальше — из памяти). */
+    fun size(): Int = count ?: lines().size.also { count = it }
+
     fun append(rec: LogRec) {
         val line = rec.format()
-        val old = lines()
-        if (old.size + 1 > CAP) { rewrite(old.takeLast(CAP - 1) + line); return }
+        val n = size()
+        appends++
+        if (n + 1 > CAP) { rewrite(lines().takeLast(KEEP - 1) + line); return }
         // Прошлую запись могли оборвать (процесс убит посреди write): новая — с новой строки.
         val torn = file.length() > 0 && RandomAccessFile(file, "r").use { it.seek(it.length() - 1); it.read() != '\n'.code }
         FileOutputStream(file, true).use { it.write(((if (torn) "\n" else "") + line + "\n").toByteArray(Charsets.UTF_8)) }
+        count = n + 1
     }
 
     /** Очистить: пустой tmp, затем rename — журнал пуст целиком или прежний. */
@@ -219,11 +250,49 @@ class DeleteLogStore(val file: File) {
             out.write(lines.joinToString("") { it + "\n" }.toByteArray(Charsets.UTF_8))
             out.fd.sync()
         }
-        if (!t.renameTo(file)) { t.delete(); throw java.io.IOException("rename failed: ${t.name}") }
+        if (!t.renameTo(file)) { t.delete(); count = null; throw java.io.IOException("rename failed: ${t.name}") }
+        count = lines.size
+        rewrites++
     }
 
     companion object {
         const val CAP = 500
+        /** После переписывания остаётся столько: запас в сто записей до следующего. */
+        const val KEEP = 400
+    }
+}
+
+/** Одно действие удаления для журнала: объект или группа объектов одной папки ([LogRec.Start]). */
+class LogAction(val root: String, val su: Boolean, val names: List<ByteArray>, val dir: Boolean, val items: Long,
+                val disk: Long, val viaRoot: Boolean, val fast: Boolean, val count: Int = 1,
+                val itemNames: List<ByteArray> = emptyList())
+
+/** Чистый Kotlin: действие и итог для журнала — одна пара S/E на действие, а не на объект. */
+object LogActions {
+    /** Имён объектов группы в записи «начало» не больше стольких (крупнейшие первыми). */
+    const val NAMES = 20
+
+    /** Группа [objects] (имя-байты, размер) в папке [folder]: суммы, число и до [NAMES] имён. */
+    fun group(root: String, su: Boolean, folder: List<ByteArray>, objects: List<Pair<ByteArray, Long>>, items: Long,
+              viaRoot: Boolean, fast: Boolean): LogAction =
+        LogAction(root, su, folder, true, items, DeletePolicy.sum(objects.map { it.second }), viaRoot, fast,
+            count = maxOf(1, objects.size), itemNames = objects.sortedByDescending { it.second }.take(NAMES).map { it.first })
+
+    fun start(id: Long, time: Long, a: LogAction) = LogRec.Start(id, time, a.root, a.su, a.names, a.dir, a.items, a.disk,
+        a.viaRoot, a.fast, a.count, a.itemNames)
+
+    /**
+     * Итог действия [id] из итогов объектов [results] ([total] — объектов в действии; не дошедшие
+     * до итога — «не удалено»). Одиночное частичное: освобождено неизвестно (-1, уточнит [LogRec.Freed]);
+     * у группы — сумма удалённых целиком.
+     */
+    fun end(id: Long, time: Long, code: Int, results: List<ItemResult>, total: Int): LogRec.End {
+        val deleted = results.count { it.attempted && it.r == 0 }
+        val partial = results.count { it.attempted && it.r != 0 && it.done > 0 }
+        val removed = results.sumOf { maxOf(0L, it.done) }
+        val freed = if (total <= 1) (if (deleted == 1) results.single().disk else -1L)
+            else DeletePolicy.sum(results.filter { it.attempted && it.r == 0 }.map { it.disk })
+        return LogRec.End(id, time, code, freed, removed, deleted, partial, maxOf(0, total - deleted - partial))
     }
 }
 
@@ -243,7 +312,12 @@ object DeleteLog {
     @Volatile var fileOverride: File? = null
 
     /** Действующий журнал (null — [init] ещё не было и подмены нет). */
-    private fun store(): DeleteLogStore? = fileOverride?.let { DeleteLogStore(it) } ?: base
+    private fun store(): DeleteLogStore? {
+        val o = fileOverride ?: return base
+        // Один объект на файл: его счётчик записей ведётся в памяти.
+        return overrideStore?.takeIf { it.file == o } ?: DeleteLogStore(o).also { overrideStore = it }
+    }
+    @Volatile private var overrideStore: DeleteLogStore? = null
     private var inited = false
     private var seq = 0
     private val main = Handler(Looper.getMainLooper())
@@ -269,26 +343,27 @@ object DeleteLog {
         }
     }
 
-    private inline fun <T> safe(what: String, f: () -> T): T? = try { f() } catch (e: Exception) {
+    private inline fun <T> safe(what: String, f: () -> T): T? = try { f() } catch (e: Throwable) {
         Log.w("ancdu", "delete log $what failed", e); null
     }
 
-    /** На io, до удаления объекта: запись «начало». Возвращает её id (0 — журнала нет или не записалось). */
-    fun started(root: String, su: Boolean, names: List<ByteArray>?, item: DeleteItem, items: Long): Long {
+    /**
+     * На io, до первого объекта действия: ОДНА запись «начало» на действие (у группы — папка, число,
+     * сумма и до 20 имён). Возвращает её id (0 — журнала нет или не записалось).
+     */
+    fun begin(action: LogAction?): Long {
         val s = store() ?: return 0L
-        if (names == null) return 0L
+        if (action == null) return 0L
         val now = System.currentTimeMillis()
         val id = now * 1000 + (seq++ % 1000)
-        return safe("start") {
-            s.append(LogRec.Start(id, now, root, su, names, item.dir, items, item.disk, item.helper != null, item.media)); id
-        } ?: 0L
+        return safe("start") { s.append(LogActions.start(id, now, action)); id } ?: 0L
     }
 
-    /** На io, сразу после удаления объекта: запись «итог». */
-    fun ended(id: Long, code: Int, freed: Long, removed: Long) {
+    /** На io, после последнего объекта действия: ОДНА запись «итог» ([total] — объектов в действии). */
+    fun end(id: Long, code: Int, results: List<ItemResult>, total: Int) {
         if (id == 0L) return
         val s = store() ?: return
-        safe("end") { s.append(LogRec.End(id, System.currentTimeMillis(), code, freed, removed)) }
+        safe("end") { s.append(LogActions.end(id, System.currentTimeMillis(), code, results, total)) }
     }
 
     /** Главный поток: освобождено стало известно позже (дерево обновилось). */
@@ -329,13 +404,20 @@ object DeleteLog {
         }
     }
 
+    /** Для тестов: забыть состояние процесса (уведомление) — перед тестом со своим журналом. */
+    fun testReset() {
+        notice = null
+        listener?.invoke()
+    }
+
     /** Для тестов: записать «начало» без итога (прерванное удаление), затем перечитать журнал. */
-    fun testInterrupt(ctx: Context, root: String, names: List<ByteArray>, dir: Boolean, disk: Long) {
+    fun testInterrupt(ctx: Context, root: String, names: List<ByteArray>, dir: Boolean, disk: Long, count: Int = 1,
+                      items: List<ByteArray> = emptyList()) {
         init(ctx)
         val s = store()!!
         Holder.io.execute {
             val now = System.currentTimeMillis()
-            safe("test") { s.append(LogRec.Start(now * 1000 + 999, now, root, false, names, dir, 1, disk, false, false)) }
+            safe("test") { s.append(LogRec.Start(now * 1000 + 999, now, root, false, names, dir, 1, disk, false, false, count, items)) }
         }
         init(ctx, force = true)
     }

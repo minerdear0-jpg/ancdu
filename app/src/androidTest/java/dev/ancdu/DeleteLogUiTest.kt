@@ -133,6 +133,37 @@ class DeleteLogUiTest {
         ins.runOnMainSync { a.finish() }
     }
 
+    /** A group of 3 files is ONE log entry: the folder and «3 объекта»; the files go, the neighbour stays. */
+    @Test fun groupIsOneEntry() {
+        val d = sandbox()
+        val victims = listOf("a.bin", "b.bin", "c.bin").map { File(d, it).apply { writeBytes(ByteArray(4096)) } }
+        val keep = File(d, "keep.bin").apply { writeBytes(ByteArray(10)) }
+        for (f in victims + keep) assertTrue(f.isAbsolute && f.path.startsWith(d.path + "/"))
+        val a = browse(d)
+        val idx = listOf("a.bin", "b.bin", "c.bin").map { index(a, it) }
+        ins.runOnMainSync {
+            val s = a.list.source!!
+            s.longClick(idx[0]); s.click(idx[1]); s.click(idx[2])
+            a.deleteSelected()
+        }
+        assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
+        ins.runOnMainSync { a.sheet!!.deleteButton!!.performClick() }
+        assertTrue(waitFor(30_000) { !a.busy && a.list.source != null })
+        victims.forEach { assertFalse(it.path, it.exists()) }
+        assertTrue(keep.exists())
+        drainIo()
+        val lines = DeleteLogStore(log).lines()
+        assertEquals(lines.toString(), 2, lines.size)                       // one start, one end
+        val e = DeleteLogModel.entries(lines).single()
+        assertEquals(3, e.start.count)
+        assertEquals(3, e.start.itemNames.size)
+        assertEquals(LogOutcome.DELETED, e.outcome)
+        assertEquals(3, e.end!!.deleted)
+        ins.runOnMainSync {
+            assertTrue(LogRows.title(a.tx, e), LogRows.title(a.tx, e).endsWith(" · " + GroupSheet.objects(a.tx, 3)))
+        }
+    }
+
     /** Clear: Cancel keeps the entries; an early double tap on «Очистить» is ignored; Confirm empties the log. */
     @Test fun clearAsksAndGuardsDoubleTap() {
         val (_, s) = deleteOneAndOpenLog()
@@ -140,7 +171,10 @@ class DeleteLogUiTest {
         assertTrue(waitFor { s.confirm?.isShowing == true })
         ins.runOnMainSync {
             val c = s.confirm!!
-            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).isFocused)
+            val cancel = c.getButton(DialogInterface.BUTTON_NEGATIVE)
+            // Default focus is Cancel; in touch mode nothing is focused, so check it only outside it.
+            assertTrue(cancel.isFocusable)
+            if (!cancel.isInTouchMode) assertTrue(cancel.isFocused)
             assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).performClick())
         }
         assertTrue(waitFor { s.confirm?.isShowing != true })

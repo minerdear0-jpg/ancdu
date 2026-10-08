@@ -176,8 +176,8 @@ object Holder {
     var delCount = 1; private set
     /** Итог каждого объекта последнего удаления (у одиночного — один). Только главный поток. */
     var delResults: List<ItemResult> = emptyList(); private set
-    /** id записей журнала удалений последнего удаления, по объектам (0 — не записано). Только главный поток. */
-    var delLogIds: List<Long> = emptyList(); private set
+    /** id записи журнала удалений последнего удаления (одна на действие; 0 — не записано). Только главный поток. */
+    var delLogId = 0L; private set
     /** Для тестов: вызывается на io перед k-м объектом группы (k от 0). */
     @Volatile var beforeItem: ((Int) -> Unit)? = null
 
@@ -254,8 +254,9 @@ object Holder {
         checkMain("Holder.delete")
         check(!deleting) { "a delete is already running" }
         begin(item.name, total, item.disk, names, item.dir, root = item.helper != null, count = 1)
+        val action = LogAction(this.root, viaRoot, names, item.dir, total, item.disk, item.helper != null, item.media)
         run(handle, listOf(GroupJob(item.name, item.dir, item.disk) { Planned.Go(item) }), group = false,
-            root = item.helper != null, done = done)
+            root = item.helper != null, done = done, action = action)
     }
 
     /**
@@ -266,18 +267,22 @@ object Holder {
      * [name] — имя папки, [names] — её путь, [total] — сумма items, [disk] — сумма размеров.
      */
     fun deleteGroup(handle: Long, jobs: List<GroupJob>, root: Boolean, done: (Int) -> Unit = {},
-                    name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList()) {
+                    name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList(),
+                    objects: List<Pair<ByteArray, Long>> = emptyList(), fast: Boolean = false) {
         checkMain("Holder.deleteGroup")
         check(!deleting) { "a delete is already running" }
         begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
-        run(handle, jobs, group = true, root = root, done = done)
+        // Журнал: одна пара «начало/итог» на всё действие — папка, число, сумма, до 20 имён.
+        val action = LogActions.group(this.root, viaRoot, names,
+            objects.ifEmpty { jobs.map { it.name.toByteArray(Charsets.UTF_8) to it.disk } }, total, root, fast)
+        run(handle, jobs, group = true, root = root, done = done, action = action)
     }
 
     private fun begin(name: String, total: Long, disk: Long, names: List<ByteArray>, dir: Boolean, root: Boolean, count: Int) {
         deleting = true
         delName = name; delTotal = DeleteProgress.total(total)
         delStartMs = SystemClock.elapsedRealtime(); delStopping = false; delRoot = root
-        delDisk = disk; delNames = names; delDir = dir; delCount = count; delResults = emptyList(); delLogIds = emptyList()
+        delDisk = disk; delNames = names; delDir = dir; delCount = count; delResults = emptyList(); delLogId = 0L
         synchronized(delLock) { delHandle = 0L; delStopAsked = false; delRows = 0L; delNative = 0L; delDone = 0L; delBase = 0L }
         lastBulkRows = 0L
         // Идущий фоновый скан и непоказанное дерево могли увидеть удаляемое — пересканировать.
@@ -285,14 +290,13 @@ object Holder {
     }
 
     /** На io: объекты по очереди; итог — на главный поток (и при исключении: deleting не останется true). */
-    private fun run(handle: Long, jobs: List<GroupJob>, group: Boolean, root: Boolean, done: (Int) -> Unit) {
-        // Дерево удаления — для журнала (поля Holder меняет только главный поток).
-        val treeRoot = this.root
-        val treeSu = viaRoot
+    private fun run(handle: Long, jobs: List<GroupJob>, group: Boolean, root: Boolean, done: (Int) -> Unit,
+                    action: LogAction) {
         io.execute {
             var r = -1
             val results = ArrayList<ItemResult>()
-            val logIds = ArrayList<Long>()
+            // Журнал: «начало» — здесь, на io, до первого объекта; сбой журнала удаление не трогает.
+            val logId = DeleteLog.begin(action)
             try {
                 for ((k, job) in jobs.withIndex()) {
                     if (group) {
@@ -307,18 +311,7 @@ object Holder {
                         is Planned.Skip -> results += plan.result
                         is Planned.Go -> {
                             val it = plan.item
-                            // Журнал: «начало» — здесь, на io, до удаления; сбой журнала удаление не трогает.
-                            val logId = DeleteLog.started(treeRoot, treeSu, runCatching { relNames(handle, it.node) }.getOrNull(), it,
-                                runCatching { LongArray(4).also { a -> Native.nodeInfo(handle, intArrayOf(it.node), 1, a) }[2] }.getOrDefault(-1L))
-                            logIds += logId
-                            var res: Pair<Int, Long>? = null
-                            try {
-                                res = runItem(handle, it)
-                            } finally {
-                                val code = res?.first ?: -EIO
-                                DeleteLog.ended(logId, code, if (code == 0) it.disk else -1L, res?.second ?: -1L)
-                            }
-                            val (code, n) = res!!
+                            val (code, n) = runItem(handle, it)
                             results += ItemResult(it.name, it.dir, it.disk, code, n)
                             // su отказал: следующие тоже спросили бы su — не начинаются («не начато»).
                             if (group && it.helper != null && DeletePolicy.nothingDeleted(code, true) && k + 1 < jobs.size) {
@@ -330,13 +323,15 @@ object Holder {
                 }
                 r = if (group) GroupResult.code(results, root) else results.single().r
             } finally {
+                // «Итог» — одна запись на действие, и при исключении (не дошедшие — «не удалено»).
+                DeleteLog.end(logId, r, results, jobs.size)
                 main.post {
                     deleting = false
                     deletes++
                     // Размеры предков удалённого изменились: Δ — заново (до того — короткое окно устаревших Δ папок).
                     Growth.recompute()
                     delResults = results
-                    delLogIds = logIds
+                    delLogId = logId
                     if (group) delDir = GroupResult.needsRefresh(results, root)
                     // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.
                     BgScan.deleteFinished(r)
@@ -345,17 +340,6 @@ object Holder {
                 }
             }
         }
-    }
-
-    private const val EIO = 5
-
-    /** На io: байты имён пути узла [node] от корня дерева [handle] (без самого корня). */
-    private fun relNames(handle: Long, node: Int): List<ByteArray> {
-        val chain = ArrayList<ByteArray>()
-        var c = node
-        while (c > 0) { chain += Native.name(handle, c); c = Native.parent(handle, c) }
-        chain.reverse()
-        return chain
     }
 
     /** Не начатый объект группы: attempted = false, без запрета — причина «не начато» (GroupResult.fail). */

@@ -88,6 +88,20 @@ class StatusLineTest {
         assertEquals("+2.1${N}GiB since Oct 1 · Download/ ›", StatusLine.text(EN, Status.Grew(grew), now, false, utc))
     }
 
+    /** A group start without an end: the folder, and «X из Y» once the rest is counted. */
+    @Test fun interruptedGroup() {
+        val g = InterruptedDelete(9, Scans.STORAGE, false, listOf("DCIM".toByteArray(), ".thumbnails".toByteArray()), true,
+            (412.6 * (1 shl 20)).toLong(), now, count = 1204, items = listOf("a.jpg".toByteArray()))
+        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 412,6${N}МиБ ›", StatusLine.text(RU, Status.Interrupted(g), now, true))
+        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 380,1 из 412,6${N}МиБ ›",
+            StatusLine.text(RU, Status.Interrupted(g.withFreed((380.1 * (1 shl 20)).toLong())), now, true))
+        // 1 204 objects, 1 name recorded: the rest can't be counted from the tree.
+        assertFalse(g.allNamed)
+        assertTrue(InterruptedDelete(9, Scans.STORAGE, false, emptyList(), true, 1, now, count = 2,
+            items = listOf("a".toByteArray(), "b".toByteArray())).allNamed)
+        assertEquals(1204, g.withFreed(1).count)
+    }
+
     @Test fun interruptedPathOfFileAndHostileName() {
         val f = InterruptedDelete(1, Scans.STORAGE, false, listOf("Download".toByteArray(), byteArrayOf(0x61, 0xFF.toByte())),
             dir = false, disk = 10, time = now)
@@ -115,8 +129,9 @@ class HomeMathTest {
         assertEquals(47 * gib, HomeMath.appsBytes(82 * gib, 35 * gib))
         assertNull(HomeMath.appsBytes(82 * gib, null))
         assertNull(HomeMath.appsBytes(-1, 35 * gib))
-        // Shared bigger than used (stale cache, other volume): never negative.
-        assertEquals(0L, HomeMath.appsBytes(30 * gib, 35 * gib))
+        // Shared bigger than used (stale cache, other volume): no figure, never «0 Б».
+        assertNull(HomeMath.appsBytes(30 * gib, 35 * gib))
+        assertEquals(0L, HomeMath.appsBytes(35 * gib, 35 * gib))
     }
 
     @Test fun storageFullBelowOneGibOrFivePercent() {

@@ -334,9 +334,15 @@ class StorageCard(private val a: MainActivity) {
      */
     private fun withFreed(d: InterruptedDelete): InterruptedDelete {
         if (d.freed != null || d.su || d.root != Scans.STORAGE || !storageShown() || Holder.deleting ||
-            Holder.kind == Kind.INDEX || Holder.time <= d.time) return d
+            Holder.kind == Kind.INDEX || Holder.time <= d.time || !d.allNamed) return d
         val hit = PathWalk.resolve(d.names) { nd, nm -> child(nd, nm) }
-        val left = if (hit.exact) LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(hit.node), 1, it) }[0] else 0L
+        fun disk(nd: Int) = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(nd), 1, it) }[0]
+        // Группа: осталось — сумма тех её объектов, что ещё есть в папке; одиночное — сам узел.
+        val left = when {
+            !hit.exact -> 0L
+            d.count > 1 -> d.items.sumOf { nm -> child(hit.node, nm)?.let { disk(it) } ?: 0L }
+            else -> disk(hit.node)
+        }
         return d.withFreed(maxOf(0L, d.disk - left))
     }
 

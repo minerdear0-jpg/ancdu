@@ -52,7 +52,7 @@ class DeleteLogTest {
         val rec = start(42, hostile)
         val line = rec.format()
         assertFalse(line, line.contains('\n'))
-        assertEquals(11, line.split('\t').size)
+        assertEquals(12, line.split('\t').size)
         val back = LogRec.parse(line) as LogRec.Start
         assertEquals(hostile.size, back.names.size)
         for (k in hostile.indices) assertArrayEquals(hostile[k], back.names[k])
@@ -110,18 +110,112 @@ class DeleteLogTest {
         assertEquals(6L, DeleteLogModel.notice(DeleteLogModel.entries(s.lines()))!!.id)
     }
 
-    @Test fun trimsToCapAtomically() {
+    /** Over 500 records: rewrite down to 400, so the fsync'd rewrite comes about once per 100 appends. */
+    @Test fun trimsWithSlack() {
         val s = store()
         for (k in 1..DeleteLogStore.CAP.toLong()) s.append(LogRec.Seen(k))
         assertEquals(DeleteLogStore.CAP, s.lines().size)
+        assertEquals(0, s.rewrites)
         s.append(LogRec.Seen(9999))
         val lines = s.lines()
-        assertEquals(DeleteLogStore.CAP, lines.size)
-        assertEquals(LogRec.Seen(2).format(), lines.first())               // the oldest went
+        assertEquals(DeleteLogStore.KEEP, lines.size)
+        assertEquals(LogRec.Seen(102).format(), lines.first())             // the oldest 101 went
         assertEquals(LogRec.Seen(9999).format(), lines.last())
+        assertEquals(1, s.rewrites)
+        // The next 100 appends are plain appends; the 101st rewrites again.
+        for (k in 1..100L) s.append(LogRec.Seen(10_000 + k))
+        assertEquals(1, s.rewrites)
+        assertEquals(DeleteLogStore.CAP, s.lines().size)
+        s.append(LogRec.Seen(20_000))
+        assertEquals(2, s.rewrites)
+        assertEquals(DeleteLogStore.KEEP, s.lines().size)
         assertFalse(File(s.file.path + ".tmp").exists())
         // Only the log and its tmp are in the folder.
         assertEquals(listOf("deletes.tsv"), tmp.root.list()!!.sorted())
+    }
+
+    /** The record count is read once, then kept in memory; a new store reads it once again. */
+    @Test fun countBookkeeping() {
+        val s = store()
+        assertEquals(0, s.size())
+        for (k in 1..7L) s.append(LogRec.Seen(k))
+        assertEquals(7, s.size())
+        assertEquals(7, s.lines().size)
+        val again = DeleteLogStore(s.file)
+        assertEquals(7, again.size())
+        again.append(LogRec.Seen(8))
+        assertEquals(8, again.size())
+        again.clear()
+        assertEquals(0, again.size())
+        assertTrue(again.lines().isEmpty())
+    }
+
+    /** A group is ONE start and ONE end: folder, count, total, up to 20 names (largest first). */
+    @Test fun groupIsOnePairOfRecords() {
+        val folder = listOf(b("DCIM"), b(".thumbnails"))
+        val objects = (1..1204).map { b("f$it.jpg") to it.toLong() * 1000 }
+        val a = LogActions.group(Scans.STORAGE, false, folder, objects, items = 1300, viaRoot = false, fast = false)
+        assertEquals(1204, a.count)
+        assertEquals(objects.sumOf { it.second }, a.disk)
+        assertEquals(LogActions.NAMES, a.itemNames.size)
+        assertArrayEquals(b("f1204.jpg"), a.itemNames.first())             // largest first
+        val start = LogActions.start(77, 1, a)
+        val back = LogRec.parse(start.format()) as LogRec.Start
+        assertTrue(back.group)
+        assertEquals(1204, back.count)
+        assertEquals(20, back.itemNames.size)
+        for (k in 0 until 20) assertArrayEquals(a.itemNames[k], back.itemNames[k])
+        assertEquals(2, back.names.size)
+        // End: deleted / partial / failed counts and freed bytes.
+        val results = objects.mapIndexed { i, (n, d) ->
+            when {
+                i < 1200 -> ItemResult(String(n), false, d, 0, 1)
+                i == 1200 -> ItemResult(String(n), true, d, -4, 3)
+                else -> ItemResult(String(n), false, d, -13, 0)
+            }
+        }
+        val end = LogActions.end(77, 2, -4, results, total = 1204)
+        val e2 = LogRec.parse(end.format()) as LogRec.End
+        assertEquals(1200, e2.deleted); assertEquals(1, e2.partial); assertEquals(3, e2.failed)
+        assertEquals(objects.take(1200).sumOf { it.second }, e2.freed)
+        assertEquals(1203L, e2.removed)
+        val entry = LogEntry(back, e2, null, false)
+        assertEquals(LogOutcome.PARTIAL, entry.outcome)
+        assertEquals(e2.freed, entry.freed)
+        // All deleted: the default, silent.
+        val ok = LogActions.end(78, 2, 0, objects.map { (n, d) -> ItemResult(String(n), false, d, 0, 1) }, 1204)
+        assertEquals(LogOutcome.DELETED, LogEntry(back, ok, null, false).outcome)
+        // A group where nothing was deleted is a refusal, not listed.
+        val none = LogActions.end(79, 2, -116, objects.map { (n, d) -> ItemResult(String(n), false, d, -116, 0) }, 1204)
+        assertTrue(LogEntry(back, none, null, false).refusal)
+        // A group start without an end: interrupted, the notice names the folder and keeps count and names.
+        val n = DeleteLogModel.notice(listOf(LogEntry(back, null, null, false)))!!
+        assertEquals("DCIM/.thumbnails/", n.path); assertEquals(1204, n.count); assertEquals(20, n.items.size)
+    }
+
+    /** Micro-bench: a 1 200-object group costs exactly 2 appends and no rewrite. */
+    @Test fun groupCostsTwoAppends() {
+        val s = store()
+        val objects = (1..1200).map { b("x$it") to 10L }
+        val a = LogActions.group(Scans.STORAGE, false, listOf(b("Download")), objects, 1200, false, false)
+        val t0 = System.nanoTime()
+        s.append(LogActions.start(1, 1, a))
+        s.append(LogActions.end(1, 2, 0, objects.map { (n, d) -> ItemResult(String(n), false, d, 0, 1) }, objects.size))
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertEquals(2, s.appends)
+        assertEquals(0, s.rewrites)
+        assertEquals(2, s.lines().size)
+        assertTrue("2 appends took $ms ms", ms < 1000)
+    }
+
+    /** Old 11-field starts and 6-field ends (round-1 records) still parse as single objects. */
+    @Test fun oldRecordsParse() {
+        val old = "S\t5\t6\t0\t/storage/emulated/0\tDownload\td\t1\t2\t0\t0"
+        val st = LogRec.parse(old) as LogRec.Start
+        assertEquals(1, st.count); assertFalse(st.group)
+        val e = LogRec.parse("E\t5\t7\t-4\t-1\t3") as LogRec.End
+        assertEquals(0, e.deleted); assertEquals(1, e.partial); assertEquals(0, e.failed)
+        assertNull(LogRec.parse("S\t5\t6\t0\t/r\tx\td\t1\t2\t0\t0\t0"))        // count 0 is invalid
     }
 
     @Test fun tornLastLineDoesNotEatTheNextRecord() {

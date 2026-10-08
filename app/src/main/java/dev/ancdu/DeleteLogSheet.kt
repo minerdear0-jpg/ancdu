@@ -47,6 +47,13 @@ object LogRows {
         if (n.isEmpty()) return e.start.root
         return n.joinToString("/") { String(it, Charsets.UTF_8) } + if (e.start.dir) "/" else ""
     }
+
+    /**
+     * Строка пути: объект — его путь; группа — папка и число: «DCIM/.thumbnails/ · 1 204 объекта».
+     * Имена объектов группы (до 20) лист не показывает: они — для истории и будущего подробного вида.
+     */
+    fun title(t: Txt, e: LogEntry): String =
+        if (e.start.group) path(e) + " · " + GroupSheet.objects(t, e.start.count) else path(e)
 }
 
 /**
@@ -125,7 +132,7 @@ class DeleteLogSheet(private val act: Activity, entries: List<LogEntry>) {
 
     private fun row(time: String, e: LogEntry): View = act.hbox(8).apply {
         minimumHeight = act.dp(44)
-        val path = Bidi.visible(LogRows.path(e))
+        val path = Bidi.visible(LogRows.title(t, e))
         val size = LogRows.size(t, e)
         addView(act.label(time, 12f, C.MUTED, mono = true).apply { setSingleLine(true) })
         addView(act.label(path, 13f, C.TEXT, mono = true).apply {
