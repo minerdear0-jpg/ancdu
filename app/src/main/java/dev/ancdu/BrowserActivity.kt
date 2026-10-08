@@ -58,6 +58,10 @@ class BrowserActivity : LangActivity() {
     private var parentV = 0L
     /** Δ уровня: сортировка Δ, «ушло», лист точки отсчёта. */
     internal val deltaLevel = DeltaLevel(this)
+    /** Режим «гигантов»: плоский список всех крупных файлов дерева ([EXTRA_GIANTS]). */
+    internal val giant = GiantsLevel(this)
+    /** Экран в режиме «гигантов». */
+    val giants get() = giant.on
     /** На этом уровне показана сортировка Δ (выбрана и Δ есть). */
     val deltaShown get() = deltaLevel.shown
     /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
@@ -347,6 +351,8 @@ class BrowserActivity : LangActivity() {
             val flags = info[4 * index + 3].toInt()
             val dir = flags and F_DIR != 0
             val nm = nameAt(index)
+            // «Гиганты»: вторая строка — папка от корня (приглушённо, многоточие в середине).
+            val sub = if (giant.on) giant.subAt(index).also { row.sub = Bidi.visible(it) } else null
             // Управляющие направления текста — видимыми («⟨U+202E⟩»): имя не переставляется.
             row.name = shown[index] ?: Bidi.visible(if (dir) "$nm/" else nm).also { shown[index] = it }
             if (deltaShown) {
@@ -354,11 +360,13 @@ class BrowserActivity : LangActivity() {
             } else {
                 row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
                 row.bar = ListMath.bar(v, maxV)
-                row.pct = pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
+                row.pct = if (giant.on) "" else pcts[index] ?: Fmt.pct(v, parentV).also { pcts[index] = it }
                 row.barColor = if (dir) C.AMBER else C.BLUE
             }
             row.nameColor = if (dir) C.TEXT else C.BLUE_HI
-            val tag = rowTags.at(index, nm, flags)
+            // «Гиганты»: строки из разных папок — метка по полному пути, без подавления меткой папки.
+            val tag = if (giant.on) rowTags.atPath(index, giant.pathAt(index), flags, Native.parent(h, kids[index]) == 0)
+                else rowTags.at(index, nm, flags)
             row.tag = tag?.text
             if (tag != null) row.tagColor = tag.color
             when {
@@ -368,7 +376,8 @@ class BrowserActivity : LangActivity() {
             }
             row.desc = descs[index] ?: buildString {
                 val dd = deltaLevel.rowDesc(index, nm, v, dir)
-                if (dd != null) append(dd)
+                if (dd != null) { append(dd); if (sub != null) { append(", "); append(txt.s(R.string.giants_in_folder, sub)) } }
+                else if (sub != null) append(GiantsText.desc(txt, nm, row.size, sub, null))
                 else {
                     append(nm); append(", "); append(row.size)
                     if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
@@ -410,12 +419,13 @@ class BrowserActivity : LangActivity() {
         h = Holder.h
         gen = Holder.gen
         if (h == 0L) { finish(); return }
+        giant.on = intent.getBooleanExtra(EXTRA_GIANTS, false)
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
         DeleteLog.init(this)
         val top = head.build()
-        list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label); keepExt = true }
+        list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label); keepExt = true; withSub = giant.on }
         empty = label("", 15f, C.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(dp(24), 0, dp(24), 0)
@@ -666,6 +676,14 @@ class BrowserActivity : LangActivity() {
         if (h == 0L) { finish(); return }
         list.source = src
         val hit = PathWalk.resolve(names) { nd, nm -> child(nd, nm, dirOnly = true) }
+        // «Гиганты»: список заново из нового дерева, затем выбор — по цепочкам; пропавшие выбрасываются.
+        if (giant.on) {
+            sel.rebindChains()
+            load(0, keep)
+            sel.keepListed()
+            refreshPending()
+            return
+        }
         // Выбор — по именам в новом дереве; пропавшие выбрасываются. Папки нет — load снимет выбор.
         if (selection.active && hit.exact) {
             val map = childMap(hit.node)
@@ -755,15 +773,23 @@ class BrowserActivity : LangActivity() {
         node = target
         // Δ посчитана заранее на io (Growth): здесь только чтения массивов, без работы с базой.
         sort = deltaLevel.begin(sort)
-        // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
-        kids = IntArray(Native.childCount(h, node))
-        // Δ — сортировка Kotlin поверх готового порядка по размеру (ядро SORT_DELTA не знает).
-        n = maxOf(0, Native.children(h, node, if (sort == SORT_DELTA) SORT_SIZE else sort, apparent, kids))
+        // «Гиганты»: имён нет в сортировке — имена разных папок не уникальны.
+        if (giant.on && sort == SORT_NAME) sort = SORT_SIZE
+        if (giant.on) {
+            // Ровно записанные ядром узлы (не больше Giants.MAX), по убыванию диска.
+            n = giant.read()
+        } else {
+            // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
+            kids = IntArray(Native.childCount(h, node))
+            // Δ — сортировка Kotlin поверх готового порядка по размеру (ядро SORT_DELTA не знает).
+            n = maxOf(0, Native.children(h, node, if (sort == SORT_DELTA) SORT_SIZE else sort, apparent, kids))
+        }
         names = arrayOfNulls(n); shown = arrayOfNulls(n); sizes = arrayOfNulls(n)
         pcts = arrayOfNulls(n); descs = arrayOfNulls(n)
         sel.reset(n)
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
+        if (giant.on) giant.order()
         deltaLevel.order()
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
@@ -771,11 +797,13 @@ class BrowserActivity : LangActivity() {
         head.renderHeader()
         // Метка самой папки (у корня её нет): такие же метки строк не рисуются, сводка называет её раз.
         rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind,
-            if (node == 0) null else blockReason(h, node, currentPath))
+            if (node == 0) null else blockReason(h, node, currentPath), suppress = !giant.on)
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
-        empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
-        head.summary.text = Tag.summary(deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}",
-            if (node == 0) null else rowTags.own)
+        empty.text = if (giant.on) GiantsText.empty(txt)
+            else txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
+        head.summary.text = if (giant.on) giant.summary()
+            else Tag.summary(deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}",
+                if (node == 0) null else rowTags.own)
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
         head.showSource(deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, full))
@@ -826,6 +854,12 @@ class BrowserActivity : LangActivity() {
      */
     internal fun revealNode(handle: Long, target: Int) {
         if (busy || h == 0L) return
+        // «Гиганты» — не папка: только строка списка (если узел в нём).
+        if (giant.on) {
+            val i = if (h == handle) kids.indexOf(target) else -1
+            if (i in 0 until n) list.reveal(i) else note(txt.s(R.string.err_node_gone))
+            return
+        }
         val hit = if (h == handle) resolveNode(pathNames(h, target)) else null
         if (hit == null || !hit.exact || hit.node != target) { note(txt.s(R.string.err_node_gone)); return }
         if (target == 0) { if (node != 0) load(0, 0, dir = -1); return }
@@ -1057,7 +1091,9 @@ private fun kidsWithFlags(handle: Long, nd: Int): Pair<IntArray, IntArray> {
  * Лямбды держат только [app], не Activity.
  */
 internal fun deleteItem(app: Context, handle: Long, target: Int, fast: Boolean, kind: Kind, viaRoot: Boolean,
-                       testBulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null): DeleteItem {
+                       testBulk: ((stopped: () -> Boolean, add: (Long) -> Unit) -> Unit)? = null,
+                       /** Имя объекта в итогах группы; null — имя узла («гиганты» — путь от корня). */
+                       label: String? = null): DeleteItem {
     val pathBytes = Native.path(handle, target)
     val path = Native.str(pathBytes)
     val helper = if (viaRoot || fast) Root.helper(app) else null
@@ -1065,7 +1101,7 @@ internal fun deleteItem(app: Context, handle: Long, target: Int, fast: Boolean, 
     val items = inf[2]
     val disk = inf[0]
     val dir = inf[3].toInt() and F_DIR != 0
-    val name = Native.str(Native.name(handle, target))
+    val name = label ?: Native.str(Native.name(handle, target))
     // Без root в общем хранилище: сначала пачками через MediaProvider, затем ядро — как всегда.
     // Индекс флагов ссылок не знает — для него массового шага нет.
     val bulkPath = if (kind == Kind.INDEX) null else MediaBulk.target(pathBytes, viaRoot = viaRoot, fast = fast)

@@ -268,7 +268,7 @@ object Holder {
      */
     fun deleteGroup(handle: Long, jobs: List<GroupJob>, root: Boolean, done: (Int) -> Unit = {},
                     name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList(),
-                    objects: List<LogObject> = emptyList(), fast: Boolean = false) {
+                    objects: List<LogObject> = emptyList(), fast: Boolean = false, mixed: Boolean = false) {
         checkMain("Holder.deleteGroup")
         check(!deleting) { "a delete is already running" }
         val objs = objects.ifEmpty { jobs.map { LogObject(it.name.toByteArray(Charsets.UTF_8), it.disk, it.dir) } }
@@ -279,7 +279,7 @@ object Holder {
         else begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
         // Журнал: одна пара «начало/итог» на всё действие — папка, число, сумма, до 20 имён. Сбой
         // журнала удаление не трогает.
-        val action = try { LogActions.group(this.root, viaRoot, names, objs, total, root, fast) }
+        val action = try { LogActions.group(this.root, viaRoot, names, objs, total, root, fast, mixed) }
             catch (e: Throwable) { Log.w("ancdu", "delete log action failed", e); null }
         run(handle, jobs, group = true, root = root, done = done, action = action)
     }

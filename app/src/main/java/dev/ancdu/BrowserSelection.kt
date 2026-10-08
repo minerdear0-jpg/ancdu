@@ -75,10 +75,12 @@ class BrowserSelection(private val a: BrowserActivity) {
     fun save(out: Bundle) {
         if (selection.active && !a.busy) {
             val ks = selection.keys
-            val raw = ks.map { (it as NameKey).bytes }
-            if (ks.size <= SAVE_MAX && raw.sumOf { it.size } <= SAVE_BYTES) {
-                out.putInt(S_SEL_N, ks.size)
-                for ((i, k) in raw.withIndex()) out.putByteArray(S_SEL + i, k)
+            if (ks.size <= SAVE_MAX) {
+                val raw = ks.map(::keyBytes)
+                if (raw.sumOf { it.size } <= SAVE_BYTES) {
+                    out.putInt(S_SEL_N, ks.size)
+                    for ((i, k) in raw.withIndex()) out.putByteArray(S_SEL + i, k)
+                }
             }
         }
     }
@@ -122,10 +124,18 @@ class BrowserSelection(private val a: BrowserActivity) {
         Log.i("ancdu", "group delete n=${results.size} ok=${o.deleted} refresh=${a.auto.request != null}")
     }
 
+    /** Байты ключа для Bundle: имя; у цепочки — имена от корня через \u0000 ([Focus.encode]). */
+    private fun keyBytes(k: SelKey): ByteArray = when (k) {
+        is ChainKey -> Focus.encode(k.names)
+        is NameKey -> k.bytes
+        else -> ByteArray(0)
+    }
+
     /** Пересоздание: тот же выбор в той же папке — по именам в дереве [h]. */
     fun restoreSelection(st: Bundle) {
         val k = st.getInt(S_SEL_N, 0)
         if (k <= 0) return
+        if (a.giant.on) { restoreChains(st, k); return }
         val map = a.childMap(a.node)
         for (i in 0 until k) {
             val key = NameKey(st.getByteArray(S_SEL + i) ?: continue)
@@ -137,12 +147,49 @@ class BrowserSelection(private val a: BrowserActivity) {
         renderSelection()
     }
 
+    /** «Гиганты»: выбор по цепочкам — каждая заново в живом дереве, и только строки списка. */
+    private fun restoreChains(st: Bundle, k: Int) {
+        val rows = a.kids.copyOf(a.n).toHashSet()
+        for (i in 0 until k) {
+            val chain = Focus.parse(st.getByteArray(S_SEL + i)) ?: continue
+            val nd = a.giant.resolve(chain)?.takeIf { it in rows } ?: continue
+            if (a.blockReason(a.h, nd, Native.str(Native.path(a.h, nd))).let { it != null && it != Block.REFRESH_FAILED }) continue
+            val key = ChainKey(chain)
+            if (!selection.active) selection.start(key, nd) else if (selection.nodeOf(key) == null) selection.toggle(key, nd)
+        }
+        if (selection.active) selScope = a.pathNames(a.h, a.node)
+        renderSelection()
+    }
+
+    /**
+     * «Гиганты», новое дерево подставлено (до чтения списка): выбор заново по цепочкам в живом дереве —
+     * старые id узлов не переживают подстановку; пропавшие выбрасываются. Сколько пропало.
+     */
+    fun rebindChains(): Int {
+        if (!selection.active) return 0
+        val res = ChainResolver(a.h)
+        return selection.rebind { k -> (k as? ChainKey)?.let { res.find(it.names) } }
+    }
+
+    /** «Гиганты», список перечитан: выбранное, чего в списке больше нет (стал меньше порога), снимается. */
+    fun keepListed(): Int {
+        if (!selection.active) return 0
+        val rows = a.kids.copyOf(a.n).toHashSet()
+        // rebind сначала очищает карту: узлы — снимком до него.
+        val was = selection.keys.associateWith { selection.nodeOf(it) }
+        val gone = selection.rebind { k -> was[k]?.takeIf { it in rows } }
+        renderSelection()
+        return gone
+    }
+
     private fun samePath(a: List<ByteArray>, b: List<ByteArray>): Boolean =
         a.size == b.size && a.indices.all { a[it].contentEquals(b[it]) }
 
     // ---------- режим выбора ----------
 
-    private fun keyAt(i: Int): SelKey = keys[i] ?: NameKey(Native.name(a.h, a.kids[i])).also { keys[i] = it }
+    /** Ключ строки [i]: имя в папке; у «гигантов» — полная цепочка имён от корня. */
+    private fun keyAt(i: Int): SelKey = keys[i] ?: (if (a.giant.on) ChainKey(a.pathNames(a.h, a.kids[i]))
+        else NameKey(Native.name(a.h, a.kids[i]))).also { keys[i] = it }
 
     /** Запрет выбора строки [i] или null. Каталог устаревшего дерева выбрать можно: лист сам обновит дерево. */
     private fun blockAt(i: Int): Block? {
@@ -329,6 +376,7 @@ class BrowserSelection(private val a: BrowserActivity) {
      * этой папке — каждое ищется в живом дереве к своему началу.
      */
     fun openGroupSheet(gone: Int) {
+        if (a.giant.on) { openGiantsSheet(gone); return }
         val handle = a.h
         val folder = a.node
         a.sheet?.dismiss()
@@ -398,6 +446,90 @@ class BrowserSelection(private val a: BrowserActivity) {
             names = a.pathNames(handle, folder),
             objects = keys.mapIndexed { j, key -> LogObject(key, found[j]?.let { disks[it] } ?: 0L, found[j]?.let { it in dirs } ?: false) },
             fast = fast)
+        a.showWait()
+        return true
+    }
+
+    /**
+     * Лист группы «гигантов»: объекты — из РАЗНЫХ папок; строка листа — путь от корня, своей метки
+     * у папки нет. Подтверждение удаляет ПО ЦЕПОЧКАМ имён — каждая ищется в живом дереве к своему началу.
+     */
+    private fun openGiantsSheet(gone: Int) {
+        val handle = a.h
+        a.sheet?.dismiss()
+        val nodes = selection.nodes
+        val chains = selection.keys.map { (it as ChainKey).names }
+        val inf = LongArray(4 * nodes.size).also { Native.nodeInfo(handle, nodes, nodes.size, it) }
+        val root = a.currentPath
+        val items = nodes.indices.map { j ->
+            val nd = nodes[j]
+            val path = Native.str(Native.path(handle, nd))
+            val flags = inf[4 * j + 3].toInt()
+            val block = a.blockReason(handle, nd, path)
+            val rel = ChainKey(chains[j]).rel
+            val dir = flags and F_DIR != 0
+            GroupItem(name = rel, dir = dir, disk = inf[4 * j], apparent = inf[4 * j + 1],
+                items = inf[4 * j + 2], flags = flags, owner = Owner.packageOf(path),
+                block = block, fast = a.fastAllowed(path), tag = a.tagOf(path, flags, block),
+                peek = if (dir) null else a.previews.peekInfo(a.nameOf(nd), path,
+                    Native.str(Native.path(handle, maxOf(Native.parent(handle, nd), 0))), inf[4 * j], flags), node = nd)
+        }
+        val (p, g) = GroupSheet.preview(a.txt, items, root, a.packageName, Holder.viaRoot, Holder.kind,
+            if (Holder.kind == Kind.CACHE) Freshness.date(a.txt, R.string.fmt_day_time, Holder.time) else null, Root.state, gone,
+            contact = { a.previews.contactSheet(handle, it.node, Native.str(Native.path(handle, it.node))) }, own = null)
+        a.sheet = DeleteSheet(a, p, onClose = { a.refreshPending() }, group = g) { fast ->
+            startGiants(handle, chains, fast)
+        }.also { it.show() }
+    }
+
+    /**
+     * Главный поток. Удаление группы «гигантов»: объекты — узлы дерева [handle] по ПОЛНЫМ цепочкам
+     * имён [chains] от корня. Каждая к своему началу ищется в живом дереве с проверкой каждого шага
+     * и снова проверяется политикой (на io, [giantJob]); запрещённые не отправляются, вне списка — ничего.
+     * Журнал — ОДНО действие: общая папка (или «(разные папки)») и пути от неё.
+     */
+    private fun startGiants(handle: Long, chains: List<List<ByteArray>>, fast: Boolean): Boolean {
+        if (a.busy || a.isDestroyed) return false
+        if (handle != Holder.h || handle != a.h || !a.giant.on) {
+            a.alert(a.txt.s(R.string.delete_cancelled_title), a.txt.s(R.string.tree_changed)) {
+                a.list.source = null; a.recreate()
+            }
+            return false
+        }
+        // Числа диалога — по цепочкам сейчас (тот же поиск повторится к началу каждого).
+        val main = ChainResolver(handle)
+        val found = chains.map { main.find(it) }
+        val live = found.filterNotNull().toIntArray()
+        val inf = LongArray(4 * maxOf(live.size, 1)).also { if (live.isNotEmpty()) Native.nodeInfo(handle, live, live.size, it) }
+        val disks = HashMap<Int, Long>()
+        val dirs = HashSet<Int>()
+        for ((j, nd) in live.withIndex()) {
+            disks[nd] = inf[4 * j]
+            if (inf[4 * j + 3].toInt() and F_DIR != 0) dirs += nd
+        }
+        val total = DeletePolicy.sum(live.indices.map { inf[4 * it + 2] })
+        val disk = DeletePolicy.sum(live.indices.map { inf[4 * it] })
+        val app = a.applicationContext
+        val kind = Holder.kind
+        val viaRoot = Holder.viaRoot
+        val sessionRoot = Holder.root
+        // Свой поиск на io: карты детей строятся там из живого дерева, не берутся с главного потока.
+        val resolver = ChainResolver(handle)
+        val jobs = chains.mapIndexed { j, chain ->
+            val nd = found[j]
+            val name = ChainKey(chain).rel
+            GroupJob(name, nd != null && nd in dirs, nd?.let { disks[it] } ?: 0L) {
+                giantJob(app, resolver, chain, name, fast, kind, viaRoot, sessionRoot)
+            }
+        }
+        val (folder, objects) = Giants.logObjects(chains.mapIndexed { j, c ->
+            GiantObject(c, found[j]?.let { disks[it] } ?: 0L, found[j]?.let { it in dirs } ?: false)
+        })
+        a.keepScroll = a.list.scroll
+        Log.i("ancdu", "giants delete n=${chains.size} kind=$kind viaRoot=$viaRoot fast=$fast items=$total")
+        Holder.deleteGroup(handle, jobs, root = viaRoot || fast,
+            name = if (folder.isEmpty()) a.txt.s(R.string.log_several_folders) else Native.str(folder.last()),
+            total = total, disk = disk, names = folder, objects = objects, fast = fast, mixed = true)
         a.showWait()
         return true
     }

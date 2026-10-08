@@ -38,7 +38,8 @@ class DeltaLevel(private val a: BrowserActivity) {
     fun order() {
         val d = delta
         if (shown && d != null) orderByDelta(d) else dvals = LongArray(0)
-        goneText = if (shown && d != null) d.gone[a.node]?.let { GrowthText.goneOrNull(a.txt, it.count, it.bytes(a.apparent)) } else null
+        // «Гиганты» — не папка: строки «ушло» нет.
+        goneText = if (shown && d != null && !a.giants) d.gone[a.node]?.let { GrowthText.goneOrNull(a.txt, it.count, it.bytes(a.apparent)) } else null
         // Δ: колонка текущего размера — по самому длинному тексту уровня (строки и кэшируются здесь).
         a.list.rightSample = if (!shown) null else {
             var longest = ""

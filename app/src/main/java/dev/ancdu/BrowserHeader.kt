@@ -255,17 +255,21 @@ class BrowserHeader(private val a: BrowserActivity) {
         if (chipsFor == want) return
         chipsFor = want
         chips.removeAllViews()
-        // [РАЗМЕР | ИМЯ | Δ]: Δ — только когда есть точка отсчёта.
-        val opts = listOf(a.txt.s(R.string.sort_size), a.txt.s(R.string.sort_name)) + if (offered) listOf(a.txt.s(R.string.sort_delta)) else emptyList()
-        val sel = when { a.sort == SORT_NAME -> 1; a.sort == SORT_DELTA && offered -> 2; else -> 0 }
-        val sorts = a.segmented(opts, sel, amber = true) { a.setSort(when (it) { 1 -> SORT_NAME; 2 -> SORT_DELTA; else -> SORT_SIZE }) }
+        // [РАЗМЕР | ИМЯ | Δ]: Δ — только когда есть точка отсчёта. «Гиганты» — без ИМЕНИ (имена не уникальны).
+        val named = !a.giants
+        val opts = listOf(a.txt.s(R.string.sort_size)) + (if (named) listOf(a.txt.s(R.string.sort_name)) else emptyList()) +
+            if (offered) listOf(a.txt.s(R.string.sort_delta)) else emptyList()
+        val sel = when { named && a.sort == SORT_NAME -> 1; a.sort == SORT_DELTA && offered -> opts.size - 1; else -> 0 }
+        val sorts = a.segmented(opts, sel, amber = true) {
+            a.setSort(when { it == 0 -> SORT_SIZE; named && it == 1 -> SORT_NAME; else -> SORT_DELTA })
+        }
         val sizes = a.segmented(listOf(a.txt.s(R.string.size_disk), a.txt.s(R.string.size_apparent)),
             if (a.apparent) 1 else 0, amber = false) { a.setApparent(it == 1) }
         sortSeg = sorts; sizeSeg = sizes
         // Смысл пиктограммы — в описаниях сегментов сортировки.
         sorts.getChildAt(0).contentDescription = a.txt.s(R.string.sort_size_desc)
-        sorts.getChildAt(1).contentDescription = a.txt.s(R.string.sort_name_desc)
-        if (offered) sorts.getChildAt(2).contentDescription = a.txt.s(R.string.sort_delta_desc)
+        if (named) sorts.getChildAt(1).contentDescription = a.txt.s(R.string.sort_name_desc)
+        if (offered) sorts.getChildAt(opts.size - 1).contentDescription = a.txt.s(R.string.sort_delta_desc)
         sizes.contentDescription = a.txt.s(R.string.size_mode_desc, a.txt.s(if (a.apparent) R.string.size_apparent else R.string.size_disk_desc))
         // Пиктограмма и сегменты сортировки — один ребёнок Flow (не разрываются при переносе);
         // группы при крупном шрифте переносятся, не сжимаются.
@@ -291,7 +295,8 @@ class BrowserHeader(private val a: BrowserActivity) {
         chain += 0
         chain.reverse()
         crumbNodes = chain.toIntArray()
-        title.text = Bidi.visible(if (a.node == 0) PathText.rootTitle(a.rootPath(), a.txt.s(R.string.internal_storage)) else a.nameOf(a.node))
+        title.text = if (a.giants) a.txt.s(R.string.big_title)
+            else Bidi.visible(if (a.node == 0) PathText.rootTitle(a.rootPath(), a.txt.s(R.string.internal_storage)) else a.nameOf(a.node))
         currentPath = Native.str(Native.path(a.h, a.node))
         pathRow.path = Bidi.visible(currentPath)
         pathRow.contentDescription = a.txt.s(R.string.path_row_desc, currentPath)

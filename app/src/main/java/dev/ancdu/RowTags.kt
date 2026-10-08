@@ -27,20 +27,24 @@ class RowTags(private val ctx: Context, private val t: Txt, private val onLabel:
      * корень, [sessionRoot] и [kind] — сессии (для DeletePolicy.blockReason).
      */
     fun reset(n: Int, folderPath: String, treeRoot: String, atRoot: Boolean, sessionRoot: String, kind: Kind,
-              folderBlock: Block? = null) {
+              folderBlock: Block? = null, suppress: Boolean = true) {
         tags = arrayOfNulls(n); done = BooleanArray(n)
         folder = folderPath; root = treeRoot; this.atRoot = atRoot; this.sessionRoot = sessionRoot; this.kind = kind
-        ownTag = Tag.of(folderPath, F_DIR, Owner.packageOf(folderPath), folderBlock, treeRoot, ctx.packageName)
+        // [suppress] false — строки из разных папок («гиганты»): метка папки их не подавляет.
+        ownTag = if (!suppress) null else Tag.of(folderPath, F_DIR, Owner.packageOf(folderPath), folderBlock, treeRoot, ctx.packageName)
         own = ownTag?.let { AppLabels.resolve(ctx, t, it) }
     }
 
     /** Метка строки [i] с именем [nm] и флагами [flags]; null — метки нет. */
-    fun at(i: Int, nm: String, flags: Int): TagText? {
+    fun at(i: Int, nm: String, flags: Int): TagText? =
+        atPath(i, if (folder.endsWith("/")) folder + nm else "$folder/$nm", flags, atRoot)
+
+    /** Метка строки [i] по её полному пути [path] ([parentIsRoot] — её папка — корень дерева). */
+    fun atPath(i: Int, path: String, flags: Int, parentIsRoot: Boolean): TagText? {
         if (i !in done.indices) return null
         if (done[i]) return tags[i]
         done[i] = true
-        val path = if (folder.endsWith("/")) folder + nm else "$folder/$nm"
-        val tag = Tag.of(path, flags, Owner.packageOf(path), DeletePolicy.blockReason(path, false, atRoot, sessionRoot, flags, kind),
+        val tag = Tag.of(path, flags, Owner.packageOf(path), DeletePolicy.blockReason(path, false, parentIsRoot, sessionRoot, flags, kind),
             root, ctx.packageName) ?: return null
         if (Tag.suppressed(tag, ownTag)) return null
         val pkg = tag.pkg
