@@ -197,7 +197,7 @@ fun Context.segmented(options: List<String>, selected: Int, amber: Boolean, onPi
                 gravity = Gravity.CENTER
                 minHeight = dp(44); minWidth = dp(44)
                 maxLines = 1
-                setPadding(dp(12), 0, dp(12), 0)
+                setPadding(dp(10), 0, dp(10), 0)
                 background = if (on) box(if (amber) C.AMBER else C.PANEL2) else pressable(Color.TRANSPARENT)
                 isSelected = on
                 isClickable = true; isFocusable = true

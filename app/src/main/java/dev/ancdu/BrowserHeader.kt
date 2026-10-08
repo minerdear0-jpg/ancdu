@@ -286,6 +286,9 @@ class BrowserHeader(private val a: BrowserActivity) {
             addView(sorts)
         })
         chips.addView(sizes)
+        // Сегмент Δ появляется позже (точка отсчёта, расчёт Δ): переносить [ДИСК|ВИДИМЫЙ] так, будто он
+        // уже есть, — иначе его появление переносит группу и сдвигает список (русские подписи шире).
+        chips.reserve = if (offered) 0 else a.dp(44) + a.dp(1)
     }
 
     /**

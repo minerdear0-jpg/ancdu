@@ -69,8 +69,8 @@ android {
         applicationId = "dev.ancdu"
         minSdk = 30
         targetSdk = 34
-        versionCode = 150
-        versionName = "1.5.0"
+        versionCode = 151
+        versionName = "1.5.1"
         testInstrumentationRunner = "dev.ancdu.SandboxRunner"
         ndk { abiFilters += abis }
     }
