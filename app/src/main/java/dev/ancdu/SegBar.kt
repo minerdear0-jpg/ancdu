@@ -8,7 +8,7 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 
 /**
- * Полоса раздела 12dp: контур FRAME, занято — амбер, свободно — синий 30%, риски на 25/50/75%.
+ * Полоса раздела 12dp: контур FRAME, занято — амбер, свободно — FREE, риски на 25/50/75%.
  * Первое значение заполняется 0→[used] за 400 мс (ease-out), если анимации не выключены.
  */
 class SegBar(ctx: Context) : View(ctx) {
@@ -59,7 +59,7 @@ class SegBar(ctx: Context) : View(ctx) {
         val w = width.toFloat(); val h = height.toFloat()
         val l = one; val t = one; val r = w - one; val b = h - one
         val split = l + (r - l) * shown
-        paint.color = (C.BLUE and 0x00FFFFFF) or 0x4D000000   // свободно: 30%
+        paint.color = C.FREE
         c.drawRect(split, t, r, b, paint)
         paint.color = C.AMBER
         c.drawRect(l, t, split, b, paint)

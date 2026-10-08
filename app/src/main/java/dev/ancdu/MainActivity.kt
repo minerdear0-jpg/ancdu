@@ -159,13 +159,13 @@ class MainActivity : LangActivity() {
         if (apps == null) {
             // Нет «Доступа к истории использования»: AppsActivity объясняет и ведёт в настройки.
             appsBox.addView(navRow(x.s(R.string.apps_title), x.s(R.string.apps_grant),
-                "${x.s(R.string.apps_no_access)}, ${x.s(R.string.apps_no_access_sub)}", C.AMBER, mono = false) { openApps() })
+                "${x.s(R.string.apps_no_access)}, ${x.s(R.string.apps_no_access_sub)}", C.AMBER_TEXT, mono = false) { openApps() })
             appsBox.hairline()
             return
         }
         appsBox.addView(hbox().apply {
             addView(caps(x.s(R.string.apps_title)), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(label(x.s(R.string.apps_all), 14f, C.AMBER, bold = true).apply {
+            addView(label(x.s(R.string.apps_all), 14f, C.AMBER_TEXT, bold = true).apply {
                 minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isClickable = true; isFocusable = true
                 setPadding(dp(8), 0, 0, 0)
                 background = pressable(C.BG)

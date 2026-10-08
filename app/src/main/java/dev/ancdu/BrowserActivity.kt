@@ -363,7 +363,7 @@ class BrowserActivity : LangActivity() {
             row.tag = tag?.text
             if (tag != null) row.tagColor = tag.color
             when {
-                flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.AMBER }
+                flags and F_ERR != 0 -> { row.mark = "⚠"; row.nameColor = C.AMBER_TEXT }
                 flags and F_OTHERFS != 0 -> row.mark = "↪"
                 flags and F_HLDUP != 0 -> row.mark = "≡"
             }
@@ -440,7 +440,7 @@ class BrowserActivity : LangActivity() {
         }
         // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
         // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
-        badge = label("", 12f, C.AMBER, mono = true).apply {
+        badge = label("", 12f, C.AMBER_TEXT, mono = true).apply {
             maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
         }
         newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
@@ -453,7 +453,7 @@ class BrowserActivity : LangActivity() {
                 addState(intArrayOf(), box(C.AMBER))
             }
             setTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
-                intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER, C.AMBER, C.INK)))
+                intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER_TEXT, C.AMBER_TEXT, C.INK)))
             isClickable = true; isFocusable = true
             contentDescription = txt.s(R.string.newer_desc)
             feedbackClick { promotePending() }
@@ -486,7 +486,7 @@ class BrowserActivity : LangActivity() {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             visibility = View.INVISIBLE
         }
-        errLink = label("", 12f, C.AMBER, mono = true).apply {
+        errLink = label("", 12f, C.AMBER_TEXT, mono = true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(44); minWidth = dp(44)
             setPadding(dp(12), 0, dp(16), 0)

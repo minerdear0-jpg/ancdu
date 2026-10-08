@@ -76,7 +76,7 @@ class StorageCard(private val a: MainActivity) {
                 text = "—"; setTextColor(C.TEXT); typeface = Fonts.get(a, mono = true, bold = true)
             }
             addView(usedTxt, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            pctTxt = a.label("", 20f, C.AMBER, mono = true, bold = true).apply { setPadding(0, 0, 0, a.dp(6)) }
+            pctTxt = a.label("", 20f, C.AMBER_TEXT, mono = true, bold = true).apply { setPadding(0, 0, 0, a.dp(6)) }
             addView(pctTxt)
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(6) })
         ofTxt = a.label("", 14f, C.MUTED, mono = true)
@@ -87,7 +87,7 @@ class StorageCard(private val a: MainActivity) {
             usedVal = a.label("", 13f, C.TEXT, mono = true)
             freeVal = a.label("", 13f, C.BLUE_HI, mono = true)
             addView(legendItem(C.AMBER, R.string.legend_used, usedVal))
-            addView(legendItem(C.BLUE, R.string.seg_free, freeVal))
+            addView(legendItem(C.FREE, R.string.seg_free, freeVal, outline = true))
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = a.dp(10) })
         // Ярус 0 (только с доступом к истории использования): категории занятого.
         cats = a.vbox().apply {
@@ -136,9 +136,12 @@ class StorageCard(private val a: MainActivity) {
         addView(permBox)
     }
 
-    /** «■ ПОДПИСЬ значение»: квадрат цвета полосы, подпись прописными, значение — данные. */
-    private fun legendItem(color: Int, labelRes: Int, value: TextView): LinearLayout = a.hbox(6).apply {
-        addView(swatch(color))
+    /**
+     * «■ ПОДПИСЬ значение»: квадрат цвета полосы, подпись прописными, значение — данные.
+     * [outline] — квадрат в контуре FRAME, как сама полоса (бледное «свободно»).
+     */
+    private fun legendItem(color: Int, labelRes: Int, value: TextView, outline: Boolean = false): LinearLayout = a.hbox(6).apply {
+        addView(swatch(color, outline))
         addView(a.caps(t.s(labelRes)))
         addView(value)
     }
@@ -157,8 +160,8 @@ class StorageCard(private val a: MainActivity) {
     }
 
     /** Квадрат 8dp цвета полосы (не текст). */
-    private fun swatch(color: Int): View = View(a).apply {
-        background = a.box(color)
+    private fun swatch(color: Int, outline: Boolean = false): View = View(a).apply {
+        background = a.box(color, if (outline) C.FRAME else null)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams = LinearLayout.LayoutParams(a.dp(8), a.dp(8))
     }
@@ -205,11 +208,11 @@ class StorageCard(private val a: MainActivity) {
     fun render() {
         if (!Perms.files()) {
             storeTitle.text = t.s(R.string.open_tree_need_access)
-            storeTitle.setTextColor(C.AMBER)
+            storeTitle.setTextColor(C.AMBER_TEXT)
             // Это уже фраза, не подпись: обычный регистр, 14sp.
             storeTitle.isAllCaps = false; storeTitle.letterSpacing = 0f; storeTitle.textSize = 14f
             storeTotal.text = ""
-            storeArrow.setTextColor(C.AMBER)
+            storeArrow.setTextColor(C.AMBER_TEXT)
             freshTxt.visibility = View.GONE
             deltaTxt.visibility = View.GONE
             scanLine.hide(); scanWas = ScanState.NONE
@@ -258,7 +261,7 @@ class StorageCard(private val a: MainActivity) {
         val tappable = !running && line.endsWith(Freshness.refresh(t))
         freshTxt.isClickable = tappable; freshTxt.isFocusable = tappable
         freshTxt.minHeight = if (tappable) a.dp(48) else 0
-        freshTxt.setTextColor(if (tappable) C.AMBER else C.MUTED)
+        freshTxt.setTextColor(if (tappable) C.AMBER_TEXT else C.MUTED)
         freshTxt.contentDescription = if (tappable) t.s(R.string.refresh_desc) else null
         // Дельта — только к показанному дереву этого самого скана.
         val prev = last?.prevDisk

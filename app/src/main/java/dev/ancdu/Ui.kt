@@ -218,7 +218,7 @@ fun Context.action(title: String, sub: String?, primary: Boolean, cue: Cue = Cue
             addState(intArrayOf(), box(C.AMBER))
         } else pressable(Color.TRANSPARENT, C.FRAME)
         val fg = if (primary) ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
-            intArrayOf(C.AMBER, C.INK)) else ColorStateList.valueOf(C.TEXT)
+            intArrayOf(C.AMBER_TEXT, C.INK)) else ColorStateList.valueOf(C.TEXT)
         addView(caps(title, sp = 14f).apply { setTextColor(fg); gravity = Gravity.CENTER; isDuplicateParentStateEnabled = true })
         if (sub != null) addView(label(sub, 12f, C.MUTED).apply {
             gravity = Gravity.CENTER

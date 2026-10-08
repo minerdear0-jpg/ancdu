@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- C.BG: фон окна до первого кадра (без белой или чёрной вспышки). -->
-    <color name="bg">#FF0A0D10</color>
+    <!-- C.BG светлой палитры: фон окна и заставки до первого кадра (без вспышки). Тёмная — values-night. -->
+    <color name="bg">#FFF3F1EB</color>
 </resources>

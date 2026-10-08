@@ -56,7 +56,7 @@ class RootPanel(private val a: MainActivity, private val su: Boolean, hasRootCac
             RootState.UNKNOWN -> Look("su", C.MUTED, C.BG, C.FRAME, t.s(R.string.su_desc_ask))
             RootState.ASKING -> Look("su…", C.TEXT, C.BG, C.FRAME, t.s(R.string.su_desc_asking))
             RootState.GRANTED -> Look("root ✓", C.OK, C.OK_BG, C.OK_LINE, t.s(R.string.su_desc_granted))
-            RootState.DENIED -> Look("root ✗", C.AMBER, C.BG, C.FRAME, t.s(R.string.su_desc_denied))
+            RootState.DENIED -> Look("root ✗", C.AMBER_TEXT, C.BG, C.FRAME, t.s(R.string.su_desc_denied))
         }
         p.text = look.text
         p.setTextColor(look.fg)

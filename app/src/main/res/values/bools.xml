@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Светлая тема: тёмные значки строки состояния и навигации. values-night — false. -->
+    <bool name="light_bars">true</bool>
+</resources>

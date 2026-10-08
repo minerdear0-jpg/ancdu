@@ -138,7 +138,7 @@ class ScanActivity : LangActivity() {
         val names = arrayOf(t.s(R.string.tile_files), t.s(R.string.tile_size), t.s(R.string.tile_speed), t.s(R.string.tile_time))
         tiles = Array(4) {
             FitText(this, 24f).apply {
-                text = "—"; setTextColor(if (it == 1) C.AMBER else C.TEXT); typeface = Fonts.get(this@ScanActivity, mono = true, bold = true)
+                text = "—"; setTextColor(if (it == 1) C.AMBER_TEXT else C.TEXT); typeface = Fonts.get(this@ScanActivity, mono = true, bold = true)
             }
         }
         for (r in 0 until 2) grid.addView(hbox().apply {

@@ -320,7 +320,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (group == null && p.dir) contactRow(p.selfContact)?.let { selfContactRow = it; addView(it) }
         if ((p.dir || group != null) && p.top.isNotEmpty()) addView(children())
         if (group != null && group.gone > 0) addView(act.label(GroupSheet.gone(t, group.gone), 13f, C.MUTED).also { goneText = it })
-        if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER))
+        if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER_TEXT))
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())

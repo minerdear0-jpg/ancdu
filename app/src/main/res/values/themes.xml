@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Ancdu" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+    <!-- День/ночь: values(-v31) — общая тема, цвета и светлость полос — values / values-night. -->
+    <style name="Theme.Ancdu" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">@bool/light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/light_bars</item>
     </style>
 
     <!-- Окно листа удаления: въезд снизу и уход вниз; затемнение гаснет вместе с окном. -->
