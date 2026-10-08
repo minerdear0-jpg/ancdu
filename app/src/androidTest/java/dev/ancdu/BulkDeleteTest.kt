@@ -18,6 +18,8 @@ import java.nio.file.Paths
  */
 @RunWith(AndroidJUnit4::class)
 class BulkDeleteTest {
+    /** The delete log of this suite goes into a cacheDir sandbox, never filesDir/deletes.tsv. */
+    @get:org.junit.Rule val logSandbox = LogSandboxRule()
     private val ins = InstrumentationRegistry.getInstrumentation()
     private val ctx = ins.targetContext
 

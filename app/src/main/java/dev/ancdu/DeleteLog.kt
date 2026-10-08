@@ -234,7 +234,16 @@ class DeleteLogStore(val file: File) {
  */
 object DeleteLog {
     const val FILE = "deletes.tsv"
-    @Volatile private var store: DeleteLogStore? = null
+    /** filesDir/deletes.tsv — после [init]. */
+    @Volatile private var base: DeleteLogStore? = null
+    /**
+     * Только для тестов: журнал в этом файле (песочница в cacheDir) вместо filesDir/deletes.tsv.
+     * null — настоящий журнал.
+     */
+    @Volatile var fileOverride: File? = null
+
+    /** Действующий журнал (null — [init] ещё не было и подмены нет). */
+    private fun store(): DeleteLogStore? = fileOverride?.let { DeleteLogStore(it) } ?: base
     private var inited = false
     private var seq = 0
     private val main = Handler(Looper.getMainLooper())
@@ -252,7 +261,8 @@ object DeleteLog {
     fun init(ctx: Context, force: Boolean = false) {
         if (inited && !force) return
         inited = true
-        val s = DeleteLogStore(File(ctx.applicationContext.filesDir, FILE)).also { store = it }
+        base = DeleteLogStore(File(ctx.applicationContext.filesDir, FILE))
+        val s = store()!!
         Holder.io.execute {
             val n = safe("read") { DeleteLogModel.notice(DeleteLogModel.entries(s.lines())) }
             main.post { notice = n; listener?.invoke() }
@@ -265,7 +275,7 @@ object DeleteLog {
 
     /** На io, до удаления объекта: запись «начало». Возвращает её id (0 — журнала нет или не записалось). */
     fun started(root: String, su: Boolean, names: List<ByteArray>?, item: DeleteItem, items: Long): Long {
-        val s = store ?: return 0L
+        val s = store() ?: return 0L
         if (names == null) return 0L
         val now = System.currentTimeMillis()
         val id = now * 1000 + (seq++ % 1000)
@@ -277,14 +287,14 @@ object DeleteLog {
     /** На io, сразу после удаления объекта: запись «итог». */
     fun ended(id: Long, code: Int, freed: Long, removed: Long) {
         if (id == 0L) return
-        val s = store ?: return
+        val s = store() ?: return
         safe("end") { s.append(LogRec.End(id, System.currentTimeMillis(), code, freed, removed)) }
     }
 
     /** Главный поток: освобождено стало известно позже (дерево обновилось). */
     fun freed(id: Long, bytes: Long) {
         if (id == 0L) return
-        val s = store ?: return
+        val s = store() ?: return
         Holder.io.execute { safe("freed") { s.append(LogRec.Freed(id, bytes)) } }
     }
 
@@ -292,7 +302,7 @@ object DeleteLog {
     fun markSeen() {
         notice = null
         listener?.invoke()
-        val s = store ?: return
+        val s = store() ?: return
         Holder.io.execute {
             safe("seen") { for (e in DeleteLogModel.interrupted(DeleteLogModel.entries(s.lines()))) s.append(LogRec.Seen(e.start.id)) }
         }
@@ -300,7 +310,7 @@ object DeleteLog {
 
     /** Главный поток: записи для листа журнала (новые сверху) — чтение на io, ответ [done] на главном. */
     fun read(done: (List<LogEntry>) -> Unit) {
-        val s = store
+        val s = store()
         Holder.io.execute {
             val r = if (s == null) emptyList() else safe("read") { DeleteLogModel.shown(DeleteLogModel.entries(s.lines())) } ?: emptyList()
             main.post { done(r) }
@@ -309,7 +319,7 @@ object DeleteLog {
 
     /** Главный поток: очистить журнал и уведомление о прерванном; [done] — на главном (true — очищено). */
     fun clear(done: (Boolean) -> Unit) {
-        val s = store
+        val s = store()
         Holder.io.execute {
             val ok = s != null && safe("clear") { s.clear(); true } == true
             main.post {
@@ -322,7 +332,7 @@ object DeleteLog {
     /** Для тестов: записать «начало» без итога (прерванное удаление), затем перечитать журнал. */
     fun testInterrupt(ctx: Context, root: String, names: List<ByteArray>, dir: Boolean, disk: Long) {
         init(ctx)
-        val s = store!!
+        val s = store()!!
         Holder.io.execute {
             val now = System.currentTimeMillis()
             safe("test") { s.append(LogRec.Start(now * 1000 + 999, now, root, false, names, dir, 1, disk, false, false)) }

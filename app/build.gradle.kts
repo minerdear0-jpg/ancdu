@@ -71,7 +71,7 @@ android {
         targetSdk = 34
         versionCode = 141
         versionName = "1.4.1"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "dev.ancdu.SandboxRunner"
         ndk { abiFilters += abis }
     }
     signingConfigs {

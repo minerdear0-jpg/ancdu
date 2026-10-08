@@ -17,6 +17,8 @@ import java.io.File
 /** Лист удаления: превью из дерева, запреты, пауза серьёзного удаления. */
 @RunWith(AndroidJUnit4::class)
 class DeleteSheetTest {
+    /** The delete log of this suite goes into a cacheDir sandbox, never filesDir/deletes.tsv. */
+    @get:org.junit.Rule val logSandbox = LogSandboxRule()
     private val ins = InstrumentationRegistry.getInstrumentation()
     private val ctx get() = ins.targetContext
     private var act: BrowserActivity? = null

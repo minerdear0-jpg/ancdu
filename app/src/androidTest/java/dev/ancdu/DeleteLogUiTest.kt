@@ -23,40 +23,29 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Delete log UI. DESTRUCTIVE-TEST RULE: the only delete is of one file inside a fresh mkdtemp under
- * cacheDir (absolute path asserted). The user's filesDir/deletes.tsv is copied aside before each
- * test and put back after it, so the log this test writes and clears is never the user's.
+ * cacheDir (absolute path asserted). The log itself lives in another cacheDir mkdtemp
+ * (DeleteLog.fileOverride via [LogSandboxRule]); the user's filesDir/deletes.tsv is never touched.
  */
 @RunWith(AndroidJUnit4::class)
 class DeleteLogUiTest {
     private val ins = InstrumentationRegistry.getInstrumentation()
     private val ctx: Context get() = ins.targetContext
-    private val log get() = File(ctx.filesDir, DeleteLog.FILE)
-    /** The user's log, copied aside into its own mkdtemp under cacheDir. */
-    private lateinit var keep: File
-    private val saved get() = File(keep, DeleteLog.FILE)
-    private var had = false
+    /** This test's delete log: its own mkdtemp under cacheDir (never filesDir/deletes.tsv). */
+    @get:org.junit.Rule val logSandbox = LogSandboxRule()
+    private val log get() = logSandbox.file
     private var dir: File? = null
     private val opened = ArrayList<android.app.Activity>()
 
-    @Before fun keepUserLog() {
-        drainIo()
-        keep = java.nio.file.Files.createTempDirectory(ctx.cacheDir.toPath(), "dlogkeep").toFile()
-        assertTrue(keep.isAbsolute && keep.path.startsWith(ctx.cacheDir.path + "/"))
-        had = log.exists()
-        if (had) log.copyTo(saved, overwrite = true)
-        // Start empty: the store's own clear (empty tmp + rename), no unlink outside the sandbox.
-        DeleteLogStore(log).clear()
+    @Before fun freshLog() {
+        assertTrue(log.path.startsWith(ctx.cacheDir.path + "/"))
+        assertFalse(log.path.startsWith(ctx.filesDir.path))
         DeleteLog.init(ctx, force = true)
         drainIo()
     }
 
-    @After fun restoreUserLog() {
+    @After fun tearDown() {
         ins.runOnMainSync { for (a in opened) a.finish(); Holder.clear() }
         drainIo()
-        if (had) saved.copyTo(log, overwrite = true) else DeleteLogStore(log).clear()
-        DeleteLog.init(ctx, force = true)
-        drainIo()
-        if (keep.path.startsWith(ctx.cacheDir.path + "/")) keep.deleteRecursively()
         dir?.let { d -> if (d.path.startsWith(ctx.cacheDir.path + "/")) d.deleteRecursively() }
     }
 

@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class BrowserTest {
+    /** The delete log of this suite goes into a cacheDir sandbox, never filesDir/deletes.tsv. */
+    @get:org.junit.Rule val logSandbox = LogSandboxRule()
     private val ins = InstrumentationRegistry.getInstrumentation()
 
     /** Опрос с таймаутом: выходит при успехе, иначе после [ms]. */
