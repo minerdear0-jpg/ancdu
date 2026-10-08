@@ -294,23 +294,31 @@ class Flow(ctx: Context, private val hGap: Int, private val vGap: Int, private v
     private var lineOf = IntArray(0)
     private var lineH = IntArray(0)
 
+    /**
+     * Запас ширины первого видимого ребёнка (px) — только для решения о переносе, не для раскладки:
+     * ребёнок, который может вырасти (появится сегмент), переносит соседей сразу, а не при росте.
+     */
+    var reserve = 0
+        set(v) { if (field != v) { field = v; requestLayout() } }
+
     override fun onMeasure(ws: Int, hs: Int) {
         val wMode = MeasureSpec.getMode(ws)
         val maxW = if (wMode == MeasureSpec.UNSPECIFIED) Int.MAX_VALUE else MeasureSpec.getSize(ws) - paddingLeft - paddingRight
         val n = childCount
         xs = IntArray(n); ys = IntArray(n); lineOf = IntArray(n)
         val heights = ArrayList<Int>()
-        var x = 0; var y = 0; var h = 0; var widest = 0; var started = false
+        var x = 0; var y = 0; var h = 0; var widest = 0; var started = false; var extra = reserve
         for (i in 0 until n) {
             val c = getChildAt(i)
             if (c.visibility == View.GONE) continue
             c.measure(MeasureSpec.makeMeasureSpec(maxW.coerceAtMost(1 shl 24), if (wMode == MeasureSpec.UNSPECIFIED) MeasureSpec.UNSPECIFIED else MeasureSpec.AT_MOST),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
             val cw = c.measuredWidth
-            if (started && x + hGap + cw > maxW) { heights += h; y += h + vGap; x = 0; h = 0; started = false }
+            if (started && x + hGap + cw > maxW) { heights += h; y += h + vGap; x = 0; h = 0; started = false; extra = 0 }
             if (started) x += hGap
             xs[i] = x; ys[i] = y; lineOf[i] = heights.size
-            x += cw
+            // Запас — к ширине строки первого ребёнка (решение о переносе), не к его позиции.
+            x += cw + extra; extra = 0
             h = max(h, c.measuredHeight)
             widest = max(widest, x)
             started = true
