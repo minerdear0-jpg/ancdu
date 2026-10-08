@@ -109,7 +109,7 @@ class ErrorsSheet(private val act: Activity, val list: ErrList, private val root
         fun load(h: Long, viaRoot: Boolean, root: String, rootTitle: String): ErrList {
             val ids = IntArray(ScanErrors.CAP)
             val total = Native.errorNodes(h, ids)
-            val k = minOf(total, ids.size)
+            val k = Native.errorNodesWritten(total, ids.size)
             val inf = LongArray(4 * maxOf(k, 1))
             if (k > 0) Native.nodeInfo(h, ids, k, inf)
             val rows = (0 until k).map { i ->

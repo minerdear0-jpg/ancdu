@@ -52,8 +52,13 @@ object Native {
      *  повторных жёстких ссылок (F_HLDUP), удалённого и пустых; число записанных. Только чтение. */
     @JvmStatic external fun topFiles(h: Long, out: IntArray): Int
     /** Узлы с ошибкой скана или частичного удаления (F_ERR, не удалённые), по возрастанию id: первые
-     *  out.size в out. Возвращает их общее число; записано min(его, out.size). Только чтение дерева. */
+     *  min(out.size, [ERROR_NODES_MAX]) в out. Возвращает их общее число; записано ровно
+     *  [errorNodesWritten] (total, out.size). Только чтение дерева. */
     @JvmStatic external fun errorNodes(h: Long, out: IntArray): Int
+    /** Сколько id записал [errorNodes] при общем числе [total] и буфере [size]. */
+    fun errorNodesWritten(total: Int, size: Int): Int = minOf(maxOf(total, 0), size, ERROR_NODES_MAX)
+    /** Буфер [errorNodes] — на стеке ядра, не больше стольких id за вызов. */
+    const val ERROR_NODES_MAX = 256
     @JvmStatic external fun name(h: Long, node: Int): ByteArray
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int

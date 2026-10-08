@@ -262,19 +262,24 @@ FN(jint, topFiles)(JNIEnv *e, jclass c, jlong h, jintArray out) {
   return (jint)k;
 }
 
-/* Узлы с ошибкой (csr_error_nodes): первые out.size id по возрастанию в out; возвращает, сколько
- * их всего (0 — нет дерева или ошибок). Записано min(результат, out.size). Только чтение. */
+/* Узлы с ошибкой (csr_error_nodes): первые min(out.size, 256) id по возрастанию в out; возвращает,
+ * сколько их всего (0 — нет дерева или ошибок). Записано РОВНО min(результат, out.size, 256): буфер
+ * на стеке, неудачи выделения нет. Только чтение. */
 FN(jint, errorNodes)(JNIEnv *e, jclass c, jlong h, jintArray out) {
   (void)c;
   arena *a = tree(h, 0);
   if (!a) return 0;
   jsize cap = out ? (*e)->GetArrayLength(e, out) : 0;
-  uint32_t *ids = cap > 0 ? malloc((size_t)cap * sizeof *ids) : NULL;
-  if (!ids) cap = 0;
+  if (cap > 256) cap = 256;
+  if (cap < 0) cap = 0;
+  uint32_t ids[256];
   uint64_t total = 0;
   uint32_t k = csr_error_nodes(a, (uint32_t)cap, ids, &total);
-  if (k) (*e)->SetIntArrayRegion(e, out, 0, (jsize)k, (const jint *)ids);
-  free(ids);
+  if (k) {
+    jint j[256];
+    for (uint32_t i = 0; i < k; i++) j[i] = (jint)ids[i];
+    (*e)->SetIntArrayRegion(e, out, 0, (jsize)k, j);
+  }
   return total > INT32_MAX ? INT32_MAX : (jint)total;
 }
 
