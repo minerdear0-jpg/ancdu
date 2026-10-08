@@ -423,13 +423,13 @@ object DeleteLog {
         }
     }
 
-    /** Главный поток: записи для листа журнала (новые сверху) — чтение на io, ответ [done] на главном. */
     /** На Holder.io: все записи журнала сейчас (пусто — журнала нет или он не читается). */
     fun entriesNow(): List<LogEntry> {
         val s = store() ?: return emptyList()
         return safe("read") { DeleteLogModel.entries(s.lines()) } ?: emptyList()
     }
 
+    /** Главный поток: записи для листа журнала (новые сверху) — чтение на io, ответ [done] на главном. */
     fun read(done: (List<LogEntry>) -> Unit) {
         val s = store()
         Holder.io.execute {
@@ -439,12 +439,16 @@ object DeleteLog {
     }
 
     /** Главный поток: очистить журнал и уведомление о прерванном; [done] — на главном (true — очищено). */
+    /** Сколько раз журнал очищен в этом процессе (главный поток): ключ памяти строк главного экрана. */
+    var clears = 0
+        private set
+
     fun clear(done: (Boolean) -> Unit) {
         val s = store()
         Holder.io.execute {
             val ok = s != null && safe("clear") { s.clear(); true } == true
             main.post {
-                if (ok) { notice = null; listener?.invoke() }
+                if (ok) { notice = null; clears++; listener?.invoke() }
                 done(ok)
             }
         }

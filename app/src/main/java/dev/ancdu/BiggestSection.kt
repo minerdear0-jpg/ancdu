@@ -84,7 +84,8 @@ class BiggestSection(private val a: MainActivity) {
             val d = Growth.forTree(Holder.h, Holder.gen)
             // Δ нового дерева ещё считается — прежняя строка «что выросло» остаётся (без мигания).
             val keep = d == null && Growth.pending(Holder.h, Holder.gen)
-            val k = "tree:${Holder.gen}:${Holder.deletes}:${d?.let { System.identityHashCode(it) }}"
+            // Очистка журнала меняет поправку «своих удалений» строки «что выросло» — и ключ.
+            val k = "tree:${Holder.gen}:${Holder.deletes}:${d?.let { System.identityHashCode(it) }}:${DeleteLog.clears}"
             if (!force && k == key) return
             key = k
             loads++
@@ -95,7 +96,7 @@ class BiggestSection(private val a: MainActivity) {
             val rootKey = Holder.root
             Holder.io.execute {
                 val r = runCatching { load(app, txt, h, self, d) }.getOrDefault(emptyList())
-                val g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, rootKey, it.baseTime)) }.getOrNull() }
+                val g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, rootKey, it)) }.getOrNull() }
                 val n = runCatching { giants(h) }.getOrDefault(0L)
                 a.runOnUiThread { show(my, r, kind, time, g, keepGrowth = keep, giants = n) }
             }
@@ -104,7 +105,7 @@ class BiggestSection(private val a: MainActivity) {
         val meta = Scans.meta(a, Scans.STORAGE, false) ?: run { hide(); return }
         val file = Holder.cacheFile(a, Scans.STORAGE, false)
         val base = Baseline.files(a, Scans.STORAGE, false)
-        val k = "cache:${meta.time}:${file.length()}:${file.lastModified()}:${base.a.length()}:${base.a.lastModified()}"
+        val k = "cache:${meta.time}:${file.length()}:${file.lastModified()}:${base.a.length()}:${base.a.lastModified()}:${DeleteLog.clears}"
         if (!force && k == key) return
         key = k
         loads++
@@ -117,7 +118,7 @@ class BiggestSection(private val a: MainActivity) {
                 if (h == 0L) emptyList() else try {
                     // Кэш открыт только на этот ответ: Δ против точки отсчёта — здесь же, на io.
                     val d = runCatching { Growth.compute(h, 0L, base) }.getOrNull()
-                    g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, Scans.STORAGE, it.baseTime)) }.getOrNull() }
+                    g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, Scans.STORAGE, it)) }.getOrNull() }
                     n = runCatching { giants(h) }.getOrDefault(0L)
                     load(app, txt, h, self, d)
                 } finally { Native.free(h) }

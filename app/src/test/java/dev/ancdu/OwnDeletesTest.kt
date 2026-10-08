@@ -51,17 +51,58 @@ class OwnDeletesTest {
         return cur
     }
 
-    @Test fun freedBytesGoToEveryAncestor() {
+    /** В дереве точки отсчёта удалённое лежит в «ушло» своей папки (delta.c пропускает F_DELETED). */
+    @Test fun freedBytesGoToEveryAncestorCappedByGone() {
+        val gone = mapOf(3 to 4 * gib, 1 to gib, 0 to mib)
         val own = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies", "Series", "e1.mkv"), 4 * gib),
-            OwnDeletes.Freed(chain("Movies", "a.mkv"), gib), OwnDeletes.Freed(chain("Gone", "x"), mib)), ::deepest) { parent[it] ?: -1 }
+            OwnDeletes.Freed(chain("Movies", "a.mkv"), gib), OwnDeletes.Freed(chain("Gone", "x"), mib)), ::deepest, gone) { parent[it] ?: -1 }
         assertEquals(4 * gib, own[3])
         assertEquals(5 * gib, own[1])
         assertNull(own[2])
         assertEquals(5 * gib + mib, own[0])
         // Насыщение вместо переполнения.
         val big = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies"), Long.MAX_VALUE),
-            OwnDeletes.Freed(chain("Movies"), Long.MAX_VALUE)), ::deepest) { parent[it] ?: -1 }
+            OwnDeletes.Freed(chain("Movies"), Long.MAX_VALUE)), ::deepest, mapOf(1 to Long.MAX_VALUE)) { parent[it] ?: -1 }
         assertEquals(Long.MAX_VALUE, big[0])
+    }
+
+    /** Файл создан после точки отсчёта и удалён в ancdu: в «ушло» его нет — ничего не возвращается, строки нет. */
+    @Test fun newAfterBaseThenDeletedAddsNothing() {
+        val own = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies", "new.mkv"), 5 * gib)), ::deepest, emptyMap()) { parent[it] ?: -1 }
+        assertTrue(own.isEmpty())
+        // Сырая Δ ±0 (создан и удалён между сканами) — строки нет.
+        assertFalse(GrowthText.homeShown(OwnDeletes.corrected(0, own[0] ?: 0)))
+    }
+
+    /** Путь создан заново после удаления: цепочка доходит до НОВОГО узла (у файла «ушло» нет) — ничего не возвращается. */
+    @Test fun recreatedPathAddsNothing() {
+        // Movies/Series «пересоздан»: deepest() доходит до узла 3; «ушло» удалённого e1.mkv — у 3 нет (его нет в базе
+        // как ушедшего: вместо него сопоставлен новый узел), у Movies тоже нет.
+        val own = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies", "Series"), 4 * gib)), ::deepest, emptyMap()) { parent[it] ?: -1 }
+        assertTrue(own.isEmpty())
+        // Старое дерево (кэш до удаления): объект ещё в дереве, «ушло» пусто — двойного счёта нет.
+        assertTrue(OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies", "Series"), 4 * gib)), ::deepest,
+            mapOf(1 to 4 * gib)) { parent[it] ?: -1 }.isEmpty())
+    }
+
+    /** Группа из разных папок: цепочка — общая папка, предел — «ушло» во всём её поддереве. */
+    @Test fun mixedGroupIsCappedByGoneInItsSubtree() {
+        // Общая папка — корень (0): удалено 6 ГиБ; в базе ушло 4 ГиБ под Series (3) и 1 ГиБ под Download (2).
+        val gone = mapOf(3 to 4 * gib, 2 to gib)
+        val own = OwnDeletes.byNode(listOf(OwnDeletes.Freed(emptyList(), 6 * gib, mixed = true)), ::deepest, gone) { parent[it] ?: -1 }
+        assertEquals(5 * gib, own[0])
+        // Поправка — только у корня (вниз не раздаётся: куда именно, журнал знает лишь для 20 имён).
+        assertNull(own[1])
+        // Группа одной папки: предел — «ушло» самой папки.
+        val one = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies"), 3 * gib)), ::deepest, mapOf(1 to 2 * gib, 3 to gib)) { parent[it] ?: -1 }
+        assertEquals(2 * gib, one[1]); assertEquals(2 * gib, one[0])
+    }
+
+    /** Удалил 5 ГиБ и вырос на 2 ГиБ в той же папке: сырая −3, поправка 5 (НЕ ограничена −Δ папки) → +2. */
+    @Test fun deleteFiveGrowTwoShowsPlusTwo() {
+        val own = OwnDeletes.byNode(listOf(OwnDeletes.Freed(chain("Movies", "big.mkv"), 5 * gib)), ::deepest, mapOf(1 to 5 * gib)) { parent[it] ?: -1 }
+        assertEquals(2 * gib, OwnDeletes.corrected(-3 * gib, own[0]!!))
+        assertEquals(2 * gib, OwnDeletes.corrected(-3 * gib, own[1]!!))
     }
 
     @Test fun signFlipsAndOwnDeletesOnlyHideTheLine() {
