@@ -136,8 +136,12 @@ abstract class LangActivity : Activity() {
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
 
+    /** Палитра [C.p] — по ночному режиму конфигурации ЭТОГО экрана (до построения его view). */
+    private fun applyPalette() { C.p = Palette.of(resources.configuration.isNightModeActive) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         lang = Lang.stored(this)
+        applyPalette()
         super.onCreate(savedInstanceState)
         Feedback.init(this)
         if (Build.VERSION.SDK_INT >= 34) {
@@ -176,6 +180,8 @@ abstract class LangActivity : Activity() {
     private fun pending(open: Boolean) = Motion.transition(open).let { (e, x) -> overridePendingTransition(e, x) }
 
     override fun onResume() {
+        // Экран под этим мог поставить свою палитру: отрисовка этого читает токены заново.
+        applyPalette()
         super.onResume()
         if (Build.VERSION.SDK_INT < 33 && Lang.stored(this) != lang) { relaunching = true; recreate() }
     }

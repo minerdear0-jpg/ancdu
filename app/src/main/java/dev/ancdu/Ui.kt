@@ -25,38 +25,55 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Токены «ANCDU // TERMINAL». Красный — только опасность; свободное место — синее.
+ * Токены «ANCDU // TERMINAL» действующей палитры [p] ([Palette]): каждое обращение читает её
+ * (не const — не встраивается). Красный — только опасность; свободное место — синее.
  * Каждая пара текст/фон — не ниже 4.5:1 (TokenContrastTest).
  */
 object C {
-    const val BG = 0xFF0A0D10.toInt()
-    const val PANEL = 0xFF11171D.toInt()
+    /** Действующая палитра: ставит [LangActivity] по ночному режиму своей конфигурации. */
+    @Volatile var p: Palette = Palette.DARK
+
+    val BG get() = p.bg
+    val PANEL get() = p.panel
     /** Нажатое / выбранное. */
-    const val PANEL2 = 0xFF17202A.toInt()
+    val PANEL2 get() = p.panel2
     /** Разделители, дорожки. */
-    const val LINE = 0xFF26323D.toInt()
+    val LINE get() = p.line
     /** Скобки, контуры полос и кнопок — не текст. */
-    const val FRAME = 0xFF5A6E80.toInt()
-    const val TEXT = 0xFFE8E6E1.toInt()
-    const val MUTED = 0xFF9AA7B2.toInt()
-    /** Занято / каталоги / основное действие. */
-    const val AMBER = 0xFFF2A93B.toInt()
+    val FRAME get() = p.frame
+    val TEXT get() = p.text
+    val MUTED get() = p.muted
+    /** Заливки: занято / каталоги / основное действие (не текст — для текста [AMBER_TEXT]). */
+    val AMBER get() = p.amber
+    /** Амберный текст. */
+    val AMBER_TEXT get() = p.amberText
     /** Текст на амбере. */
-    const val INK = 0xFF0A0D10.toInt()
-    /** Свободно / файлы / сведения. */
-    const val BLUE = 0xFF5B9BD5.toInt()
+    val INK get() = p.ink
+    /** Свободно / файлы / сведения (полосы). */
+    val BLUE get() = p.blue
     /** Мелкий синий текст. */
-    const val BLUE_HI = 0xFF8CC0EE.toInt()
-    const val DANGER_TEXT = 0xFFFF7466.toInt()
+    val BLUE_HI get() = p.blueHi
+    /** Свободная часть полосы раздела и её квадрат в легенде. */
+    val FREE get() = p.free
+    val DANGER_TEXT get() = p.dangerText
     /** Заливка кнопки удаления; текст на ней — белый. */
-    const val DANGER_FILL = 0xFFB3261E.toInt()
+    val DANGER_FILL get() = p.dangerFill
+    val DANGER_PRESSED get() = p.dangerPressed
     const val WHITE = 0xFFFFFFFF.toInt()
     /** Только «root ✓»: текст, фон, контур. */
-    const val OK = 0xFF8FD18F.toInt()
-    const val OK_BG = 0xFF142017.toInt()
-    const val OK_LINE = 0xFF2E4A32.toInt()
+    val OK get() = p.ok
+    val OK_BG get() = p.okBg
+    val OK_LINE get() = p.okLine
     /** Тёмная ступень амбера — только заливки сегментов яруса 0 (не текст). */
-    const val AMBER_DIM = 0xFFA87628.toInt()
+    val AMBER_DIM get() = p.amberDim
+    val AUDIO_FILL get() = p.audioFill
+    val FOCUS get() = p.focus
+    val SCRIM get() = p.scrim
+    val DIS_FILL get() = p.disFill
+    val DIS_TEXT get() = p.disText
+    val THUMB_LINE get() = p.thumbLine
+    val STAGE_SCRIM get() = p.stageScrim
+    val STAGE_TEXT get() = p.stageText
 }
 
 /** Шрифты из res/font: Exo 2 — подписи и текст, JetBrains Mono — только данные. Главный поток. */

@@ -519,7 +519,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             minHeight = act.dp(56)
             setPadding(act.dp(12), act.dp(8), act.dp(12), act.dp(8))
             background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), act.box(DANGER_PRESSED))
+                addState(intArrayOf(android.R.attr.state_pressed), act.box(C.DANGER_PRESSED))
                 addState(intArrayOf(android.R.attr.state_focused), act.box(bg, Color.WHITE))
                 addState(intArrayOf(), act.box(bg))
             }
@@ -529,8 +529,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
 
     companion object {
-        /** Нажатая «Удалить»: темнее DANGER_FILL (белый текст на нём контрастнее). */
-        private const val DANGER_PRESSED = 0xFF8C1D17.toInt()
         /** «Удалить» не принимает касаний столько после закрытия карточки поверх листа. */
         const val CARD_GUARD_MS = 500L
     }

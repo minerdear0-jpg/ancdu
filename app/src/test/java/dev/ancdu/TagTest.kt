@@ -3,6 +3,7 @@ package dev.ancdu
 import dev.ancdu.XmlTxt.Companion.EN
 import dev.ancdu.XmlTxt.Companion.RU
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -129,12 +130,33 @@ class TagTest {
     }
 
     @Test fun colorsAndText() {
+        assertEquals(Role.MUTED, TagKind.SYS.role)
+        assertEquals(Role.MUTED, TagKind.APP.role)
+        assertEquals(Role.BLUE_HI, TagKind.CACHE.role)
+        assertEquals(Role.BLUE_HI, TagKind.DL.role)
+        assertEquals(Role.MUTED, TagKind.MEDIA.role)
         assertEquals(C.MUTED, TagKind.SYS.color)
-        assertEquals(C.MUTED, TagKind.APP.color)
         assertEquals(C.BLUE_HI, TagKind.CACHE.color)
-        assertEquals(C.BLUE_HI, TagKind.DL.color)
-        assertEquals(C.MUTED, TagKind.MEDIA.color)
         assertEquals(listOf("sys", "app", "cache", "dl", "media"), TagKind.entries.map { Tag(it).text(null) })
+    }
+
+    /** Цвет метки — по роли из ТЕКУЩЕЙ палитры: смена палитры меняет его и у уже созданной метки. */
+    @Test fun roleColorFollowsPalette() {
+        val prev = C.p
+        try {
+            for (p in listOf(Palette.LIGHT, Palette.DARK)) {
+                C.p = p
+                assertEquals(p.blueHi, TagKind.CACHE.color)
+                assertEquals(p.muted, TagKind.SYS.color)
+            }
+            C.p = Palette.DARK
+            val shown = Tag(TagKind.DL).resolve(EN, null)
+            assertEquals(Palette.DARK.blueHi, shown.color)
+            C.p = Palette.LIGHT
+            assertEquals(Palette.LIGHT.blueHi, shown.color)
+            assertEquals(Palette.LIGHT.blueHi, C.BLUE_HI)
+            assertNotEquals(Palette.LIGHT.blueHi, Palette.DARK.blueHi)
+        } finally { C.p = prev }
     }
 
     @Test fun descriptions() {

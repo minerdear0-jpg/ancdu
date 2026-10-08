@@ -1,12 +1,18 @@
 package dev.ancdu
 
-/** Вид метки безопасности: цвет текста метки и описание для TalkBack ([desc]). */
-enum class TagKind(val word: String, val color: Int, val desc: Int) {
-    SYS("sys", C.MUTED, R.string.tag_sys),
-    APP("app", C.MUTED, R.string.tag_app),
-    CACHE("cache", C.BLUE_HI, R.string.tag_cache),
-    DL("dl", C.BLUE_HI, R.string.tag_dl),
-    MEDIA("media", C.MUTED, R.string.tag_media),
+/**
+ * Вид метки безопасности: роль цвета текста метки ([role]; цвет — из действующей палитры при
+ * отрисовке) и описание для TalkBack ([desc]).
+ */
+enum class TagKind(val word: String, val role: Role, val desc: Int) {
+    SYS("sys", Role.MUTED, R.string.tag_sys),
+    APP("app", Role.MUTED, R.string.tag_app),
+    CACHE("cache", Role.BLUE_HI, R.string.tag_cache),
+    DL("dl", Role.BLUE_HI, R.string.tag_dl),
+    MEDIA("media", Role.MUTED, R.string.tag_media);
+
+    /** Цвет текста метки в действующей палитре. */
+    val color: Int get() = role.color()
 }
 
 /**
@@ -114,11 +120,14 @@ class Tag(val kind: TagKind, val pkg: String? = null) {
     }
 }
 
-/** Метка для показа: текст, цвет и добавка к описанию TalkBack («, кэш»). */
-class TagText(val text: String, val color: Int, val desc: String)
+/** Метка для показа: текст, роль цвета и добавка к описанию TalkBack («, кэш»). */
+class TagText(val text: String, val role: Role, val desc: String) {
+    /** Цвет в действующей палитре (метки кэшируются — цвет не запоминается). */
+    val color: Int get() = role.color()
+}
 
 /** [label] — метка приложения владельца (у [TagKind.APP]) или null. */
-fun Tag.resolve(t: Txt, label: String?): TagText = TagText(text(label), kind.color, desc(t, label))
+fun Tag.resolve(t: Txt, label: String?): TagText = TagText(text(label), kind.role, desc(t, label))
 
 /** Чистый Kotlin: когда метка приложения в кэше устарела. */
 object LabelPolicy {
