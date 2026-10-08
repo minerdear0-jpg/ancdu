@@ -61,9 +61,62 @@ static uint32_t table_get(const table *t, const arena *b, const char *p, size_t 
   }
 }
 
-/* x — живой ребёнок o в базе (порядок детей проверяется: файл базы недоверенный). */
-static int base_child(const arena *b, uint64_t m, uint32_t o, uint32_t x) {
-  return x < m && x != 0 && b->parent[x] == o && !(b->flags[x] & F_DELETED);
+/* x — ребёнок o в базе: порядок детей проверяется (файл базы недоверенный). Чужой узел в диапазоне o —
+ * диапазон испорчен: обход его детей на этом обрывается (работа не больше child_count[o]). */
+static int base_owned(const arena *b, uint64_t m, uint32_t o, uint32_t x) {
+  return x < m && x != 0 && b->parent[x] == o;
+}
+
+/* Насыщающее a − b (размеры — uint64; Δ вне int64 не переполняется со знаком). */
+static int64_t sat_sub(uint64_t a, uint64_t b) {
+  if (a >= b) return a - b > (uint64_t)INT64_MAX ? INT64_MAX : (int64_t)(a - b);
+  return b - a > (uint64_t)INT64_MAX ? INT64_MIN : -(int64_t)(b - a);
+}
+
+/* Множество ino узлов F_HLDUP дерева (открытая адресация, 0 — пусто; ino 0 — «неизвестно», не входит). */
+typedef struct {
+  uint64_t *slot;
+  size_t cap;
+} inoset;
+
+static uint64_t ino_mix(uint64_t v) {
+  v ^= v >> 33;
+  v *= 0xff51afd7ed558ccdull;
+  return v ^ (v >> 33);
+}
+
+static int inoset_build(inoset *s, const arena *a, uint64_t n) {
+  s->slot = NULL;
+  s->cap = 0;
+  uint64_t k = 0;
+  for (uint64_t i = 1; i < n; i++) k += (a->flags[i] & F_HLDUP) && a->ino[i];
+  if (!k) return 0;
+  size_t cap = 16;
+  while (cap < k * 2) cap <<= 1;
+  s->slot = calloc(cap, sizeof *s->slot);
+  if (!s->slot) return -ENOMEM;
+  s->cap = cap;
+  for (uint64_t i = 1; i < n; i++) {
+    uint64_t v = a->ino[i];
+    if (!(a->flags[i] & F_HLDUP) || !v) continue;
+    size_t j = ino_mix(v) & (cap - 1);
+    while (s->slot[j] && s->slot[j] != v) j = (j + 1) & (cap - 1);
+    s->slot[j] = v;
+  }
+  return 0;
+}
+
+static int inoset_has(const inoset *s, uint64_t v) {
+  if (!s->cap || !v) return 0;
+  for (size_t j = ino_mix(v) & (s->cap - 1); s->slot[j]; j = (j + 1) & (s->cap - 1))
+    if (s->slot[j] == v) return 1;
+  return 0;
+}
+
+/* Файл — одна из нескольких жёстких ссылок внутри дерева: F_HLDUP или первая ссылка, чей ino есть у
+ * F_HLDUP. Какая ссылка несёт размер, решает порядок скана — между сканами он может смениться. */
+static int linked(const arena *a, const inoset *s, uint64_t x) {
+  return !(a->flags[x] & F_DIR) && ((a->flags[x] & F_HLDUP) || inoset_has(s, a->ino[x]));
 }
 
 /* om[]: 0 — не встречен, 1 — в таблице своего каталога, 2 — сопоставлен, 3 — учтён как ушедший. */
@@ -98,14 +151,15 @@ int delta_compute(const arena *cur, const arena *base, int64_t *d_disk, int64_t 
     if ((r = table_reset(&t, oc))) goto out;
     for (uint32_t j = 0; j < oc; j++) {
       uint32_t x = base->order[os + j];
-      if (!base_child(base, m, o, x) || om[x] != OM_NONE) continue;
+      if (!base_owned(base, m, o, x)) break;
+      if (base->flags[x] & F_DELETED || om[x] != OM_NONE) continue;
       om[x] = OM_LISTED;
       table_put(&t, base, x);
     }
     for (uint32_t j = 0; j < cc; j++) {
       uint32_t c = cur->order[cs + j];
-      if (c >= n || c == 0 || cur->parent[c] != i || cur->flags[c] & F_DELETED || d_app[c] >= 0)
-        continue;
+      if (c >= n || c == 0 || cur->parent[c] != i) break;
+      if (cur->flags[c] & F_DELETED || d_app[c] >= 0) continue;
       uint32_t x = table_get(&t, base, arena_name(cur, c), cur->name_len[c]);
       /* Файл ↔ каталог под тем же именем — не тот же объект: ушло + новое. */
       if (x == ANCDU_NONE || om[x] != OM_LISTED || dir_bit(base, x) != dir_bit(cur, c)) continue;
@@ -116,11 +170,12 @@ int delta_compute(const arena *cur, const arena *base, int64_t *d_disk, int64_t 
     uint64_t gd = 0, ga = 0;
     for (uint32_t j = 0; j < oc; j++) {
       uint32_t x = base->order[os + j];
-      if (!base_child(base, m, o, x) || om[x] != OM_LISTED) continue;
+      if (!base_owned(base, m, o, x)) break;
+      if (base->flags[x] & F_DELETED || om[x] != OM_LISTED) continue;
       om[x] = OM_GONE;
       cnt++;
-      gd += base->disk[x];
-      ga += base->apparent[x];
+      gd = base->disk[x] > UINT64_MAX - gd ? UINT64_MAX : gd + base->disk[x];
+      ga = base->apparent[x] > UINT64_MAX - ga ? UINT64_MAX : ga + base->apparent[x];
     }
     if (cnt) {
       if (gn == gcap) {
@@ -133,6 +188,10 @@ int delta_compute(const arena *cur, const arena *base, int64_t *d_disk, int64_t 
       g[gn++] = (delta_gone){(uint32_t)i, cnt, gd, ga};
     }
   }
+  /* Жёсткие ссылки обоих деревьев (обычно их нет — множества пусты, без выделения). */
+  inoset hc, hb;
+  if ((r = inoset_build(&hc, cur, n))) goto out;
+  if ((r = inoset_build(&hb, base, m))) { free(hc.slot); goto out; }
   /* Δ, NEW и DEAD; parent < ребёнка — «под удалённым» наследуется одним проходом. */
   for (uint64_t i = 0; i < n; i++) {
     int dead = (cur->flags[i] & F_DELETED) || (i > 0 && st[cur->parent[i]] == DELTA_DEAD);
@@ -142,14 +201,22 @@ int delta_compute(const arena *cur, const arena *base, int64_t *d_disk, int64_t 
       d_disk[i] = d_app[i] = 0;
     } else if (o >= 0) {
       st[i] = DELTA_SAME;
-      d_disk[i] = (int64_t)cur->disk[i] - (int64_t)base->disk[o];
-      d_app[i] = (int64_t)cur->apparent[i] - (int64_t)base->apparent[o];
+      /* Жёсткая ссылка с любой стороны: какая из ссылок несёт размер — дело порядка скана, Δ 0
+       * (иначе фантомные ±X у пары ссылок). Предки считают Δ по своим итогам — они верны. */
+      if (linked(cur, &hc, i) || linked(base, &hb, (uint64_t)o)) {
+        d_disk[i] = d_app[i] = 0;
+      } else {
+        d_disk[i] = sat_sub(cur->disk[i], base->disk[o]);
+        d_app[i] = sat_sub(cur->apparent[i], base->apparent[o]);
+      }
     } else {
       st[i] = DELTA_NEW;
-      d_disk[i] = (int64_t)cur->disk[i];
-      d_app[i] = (int64_t)cur->apparent[i];
+      d_disk[i] = sat_sub(cur->disk[i], 0);
+      d_app[i] = sat_sub(cur->apparent[i], 0);
     }
   }
+  free(hc.slot);
+  free(hb.slot);
 out:
   free(t.slot);
   free(om);

@@ -200,6 +200,95 @@ static void test_synthetic(void) {
   arena_unmap(&c);
 }
 
+/* Жёсткие ссылки: размер несёт первая увиденная ссылка, остальные — F_HLDUP с нулями. Порядок скана
+ * между сканами может смениться — Δ таких файлов 0 (без фантомных ±X); у предков — честная Δ. */
+static void test_hardlinks(void) {
+  arena b, c;
+  CHECK(arena_alloc_anon(&b, 32, 4096, "/r", SRC_SCAN) == 0);
+  CHECK(arena_alloc_anon(&c, 32, 4096, "/r", SRC_SCAN) == 0);
+  name_chunk kb = {0, 0}, kc = {0, 0};
+  N(&b, &kb, ANCDU_NONE, "", F_DIR, 0, 0);
+  N(&c, &kc, ANCDU_NONE, "", F_DIR, 0, 0);
+  /* база: p/x — первая ссылка (4096, ino 7), q/y — F_HLDUP (ino 7); z — обычный файл */
+  uint32_t bp = N(&b, &kb, 0, "p", F_DIR, 0, 0), bq = N(&b, &kb, 0, "q", F_DIR, 0, 0);
+  uint32_t bx = N(&b, &kb, bp, "x", 0, 4096, 4000), by = N(&b, &kb, bq, "y", F_HLDUP, 0, 0);
+  uint32_t bz = N(&b, &kb, 0, "z", 0, 100, 100);
+  b.ino[bx] = b.ino[by] = 7;
+  b.ino[bz] = 9;
+  /* новое: порядок сменился — q/y первая (4096), p/x — F_HLDUP; z вырос */
+  uint32_t cq = N(&c, &kc, 0, "q", F_DIR, 0, 0), cp = N(&c, &kc, 0, "p", F_DIR, 0, 0);
+  uint32_t cy = N(&c, &kc, cq, "y", 0, 4096, 4000), cx = N(&c, &kc, cp, "x", F_HLDUP, 0, 0);
+  uint32_t cz = N(&c, &kc, 0, "z", 0, 300, 300);
+  c.ino[cy] = c.ino[cx] = 7;
+  c.ino[cz] = 9;
+  atomic_store(&b.h->state, ST_DONE);
+  atomic_store(&c.h->state, ST_DONE);
+  CHECK(post_process(&b, 1) == 0);
+  CHECK(post_process(&c, 1) == 0);
+  res r;
+  CHECK(run(&c, &b, &r) == 0);
+  CHECK_EQ_I(r.disk[cx], 0);
+  CHECK_EQ_I(r.app[cx], 0);
+  CHECK_EQ_I(r.disk[cy], 0);
+  CHECK_EQ_I(r.app[cy], 0);
+  CHECK_EQ_U(r.st[cx], DELTA_SAME);
+  CHECK_EQ_U(r.st[cy], DELTA_SAME);
+  /* предки — по своим итогам: q +4096, p −4096, корень = только рост z */
+  CHECK_EQ_I(r.disk[cq], 4096);
+  CHECK_EQ_I(r.disk[cp], -4096);
+  CHECK_EQ_I(r.disk[0], 200);
+  CHECK_EQ_I(r.disk[cz], 200); /* обычный файл с другим ino — как прежде */
+  done(&r);
+  arena_unmap(&b);
+  arena_unmap(&c);
+}
+
+/* Размеры вне int64 (недоверенный файл базы): Δ насыщается, без переполнения со знаком. */
+static void test_saturating(void) {
+  arena b, c;
+  CHECK(arena_alloc_anon(&b, 8, 256, "/r", SRC_SCAN) == 0);
+  CHECK(arena_alloc_anon(&c, 8, 256, "/r", SRC_SCAN) == 0);
+  name_chunk kb = {0, 0}, kc = {0, 0};
+  N(&b, &kb, ANCDU_NONE, "", F_DIR, 0, 0);
+  N(&c, &kc, ANCDU_NONE, "", F_DIR, 0, 0);
+  N(&b, &kb, 0, "big", 0, UINT64_MAX, 0);
+  N(&c, &kc, 0, "big", 0, 0, UINT64_MAX);
+  N(&c, &kc, 0, "huge", 0, UINT64_MAX, UINT64_MAX);
+  atomic_store(&b.h->state, ST_DONE);
+  atomic_store(&c.h->state, ST_DONE);
+  /* без post_process: корни не суммируются (UINT64_MAX + … переполнило бы и сами данные теста) */
+  b.child_start[0] = 0; b.child_count[0] = 1; b.order[0] = 1;
+  c.child_start[0] = 0; c.child_count[0] = 2; c.order[0] = 1; c.order[1] = 2;
+  res r;
+  CHECK(run(&c, &b, &r) == 0);
+  CHECK_EQ_I(r.disk[1], INT64_MIN);
+  CHECK_EQ_I(r.app[1], INT64_MAX);
+  CHECK_EQ_I(r.disk[2], INT64_MAX);
+  CHECK_EQ_U(r.st[2], DELTA_NEW);
+  done(&r);
+  arena_unmap(&b);
+  arena_unmap(&c);
+}
+
+/* Испорченный диапазон детей базы (чужой узел в нём): обход этого каталога обрывается, ничего не
+ * читается за его пределами; дети нового дерева без пары — NEW, «ушло» не выдумывается. */
+static void test_corrupt_order(void) {
+  arena b, c;
+  build_base(&b);
+  build_cur(&c);
+  /* первый в диапазоне корня — внук a/a1 (его родитель не корень) */
+  uint32_t a1 = at(&b, "a/a1");
+  b.order[b.child_start[0]] = a1;
+  res r;
+  CHECK(run(&c, &b, &r) == 0);
+  uint32_t cc = c.child_count[0], cs = c.child_start[0];
+  for (uint32_t j = 0; j < cc; j++) CHECK_EQ_U(r.st[c.order[cs + j]], DELTA_NEW);
+  CHECK(gone_of(r.gone, r.gone_n, 0) == NULL);
+  done(&r);
+  arena_unmap(&b);
+  arena_unmap(&c);
+}
+
 /* Каталог шире начальной хеш-таблицы, имена с общим префиксом: каждое находится. */
 static void test_wide_dir(void) {
   enum { W = 5000 };
@@ -420,6 +509,9 @@ static void test_bench(void) {
 
 int main(void) {
   test_synthetic();
+  test_hardlinks();
+  test_saturating();
+  test_corrupt_order();
   test_wide_dir();
   test_scan_file();
   test_bench();
