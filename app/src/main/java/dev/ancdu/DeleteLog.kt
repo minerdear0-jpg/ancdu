@@ -104,16 +104,18 @@ sealed class LogRec {
     /**
      * Начало ОДНОГО действия удаления (пишется на io ДО удаления): [root]/[su] — дерево, [names] —
      * путь от корня (байты): объекта или, у группы, её папки; [items]/[disk] — на момент
-     * подтверждения (у группы — суммы), [viaRoot] — через su, [fast] — /data/media. [count] —
-     * объектов (1 — одиночное); [itemNames] — у группы до [LogActions.NAMES] имён, крупнейшие первыми:
-     * для истории и будущего подробного вида (сейчас лист их не показывает).
+     * подтверждения (у группы — суммы), [viaRoot] — через su, [fast] — /data/media. [group] — явно:
+     * группа (несколько объектов одной папки; группа из одного пишется как одиночное удаление этого
+     * объекта). [count] — объектов; [itemNames] — у группы до [LogActions.NAMES] имён, крупнейшие
+     * первыми: для истории и будущего подробного вида (сейчас лист их не показывает).
+     * Поле 11: «g<N>» у группы, «<N>» у одиночного (запись раунда 3 без «g» — группа, если N > 1).
      */
     class Start(override val id: Long, val time: Long, val root: String, val su: Boolean, val names: List<ByteArray>,
                 val dir: Boolean, val items: Long, val disk: Long, val viaRoot: Boolean, val fast: Boolean,
-                val count: Int = 1, val itemNames: List<ByteArray> = emptyList()) : LogRec() {
-        val group: Boolean get() = count > 1
+                val count: Int = 1, val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false) : LogRec() {
         override fun format() = (listOf("S", id, time, b(su), LogCodec.escape(root.toByteArray(Charsets.UTF_8)), LogCodec.rel(names),
-            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast), count) + itemNames.map { LogCodec.escape(it) }).joinToString("\t")
+            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast), (if (group) "g" else "") + count) +
+            (if (group) itemNames.map { LogCodec.escape(it) } else emptyList())).joinToString("\t")
     }
 
     /**
@@ -148,7 +150,8 @@ sealed class LogRec {
                 "S" -> if (f.size < 11) null else Start(f[1].toLong(), f[2].toLong(), String(LogCodec.unescape(f[4]), Charsets.UTF_8),
                     bool(f[3]), LogCodec.names(f[5]), when (f[6]) { "d" -> true; "f" -> false; else -> throw IllegalArgumentException() },
                     f[7].toLong(), f[8].toLong(), bool(f[9]), bool(f[10]),
-                    if (f.size > 11) f[11].toInt().also { require(it >= 1) } else 1, f.drop(12).map { LogCodec.unescape(it) })
+                    if (f.size > 11) f[11].removePrefix("g").toInt().also { require(it >= 1) } else 1, f.drop(12).map { LogCodec.unescape(it) },
+                    group = f.size > 11 && (f[11].startsWith("g") || f[11].toInt() > 1))
                 "E" -> when {
                     f.size >= 9 -> End(f[1].toLong(), f[2].toLong(), f[3].toInt(), f[4].toLong(), f[5].toLong(),
                         f[6].toInt(), f[7].toInt(), f[8].toInt())
@@ -205,7 +208,8 @@ object DeleteLogModel {
 
     /** Самое новое непросмотренное прерванное удаление — строка статуса главного экрана. */
     fun notice(entries: List<LogEntry>): InterruptedDelete? = interrupted(entries).lastOrNull()?.start?.let {
-        InterruptedDelete(it.id, it.root, it.su, it.names, it.dir, it.disk, it.time, count = it.count, items = it.itemNames)
+        InterruptedDelete(it.id, it.root, it.su, it.names, it.dir, it.disk, it.time, count = it.count, items = it.itemNames,
+            group = it.group)
     }
 }
 
@@ -224,6 +228,12 @@ class DeleteLogStore(val file: File) {
         private set
     var rewrites = 0
         private set
+    /** Для тестов: неудавшихся переписываний (диск полон) и подмена «переписать не вышло». */
+    var rewriteFailures = 0
+        private set
+    @Volatile var failRewrite = false
+    /** После неудачного переписывания — не раньше этого числа записей (не на каждой записи). */
+    private var retryAt = 0
 
     fun lines(): List<String> = if (!file.exists()) emptyList() else file.readLines(Charsets.UTF_8).filter { it.isNotEmpty() }
 
@@ -234,7 +244,15 @@ class DeleteLogStore(val file: File) {
         val line = rec.format()
         val n = size()
         appends++
-        if (n + 1 > CAP) { rewrite(lines().takeLast(KEEP - 1) + line); return }
+        if (n + 1 > CAP && n + 1 >= retryAt) {
+            try { rewrite(lines().takeLast(KEEP - 1) + line); return } catch (e: java.io.IOException) {
+                // Переписать не вышло (диск полон): запись всё равно дописывается, повтор — через [BACKOFF].
+                rewriteFailures++
+                tmp.delete()
+                retryAt = n + 1 + BACKOFF
+                if (count == null) count = n
+            }
+        }
         // Прошлую запись могли оборвать (процесс убит посреди write): новая — с новой строки.
         val torn = file.length() > 0 && RandomAccessFile(file, "r").use { it.seek(it.length() - 1); it.read() != '\n'.code }
         FileOutputStream(file, true).use { it.write(((if (torn) "\n" else "") + line + "\n").toByteArray(Charsets.UTF_8)) }
@@ -246,6 +264,7 @@ class DeleteLogStore(val file: File) {
 
     private fun rewrite(lines: List<String>) {
         val t = tmp
+        if (failRewrite) throw java.io.IOException("test: rewrite fails")
         FileOutputStream(t).use { out ->
             out.write(lines.joinToString("") { it + "\n" }.toByteArray(Charsets.UTF_8))
             out.fd.sync()
@@ -253,33 +272,44 @@ class DeleteLogStore(val file: File) {
         if (!t.renameTo(file)) { t.delete(); count = null; throw java.io.IOException("rename failed: ${t.name}") }
         count = lines.size
         rewrites++
+        retryAt = 0
     }
 
     companion object {
         const val CAP = 500
         /** После переписывания остаётся столько: запас в сто записей до следующего. */
         const val KEEP = 400
+        /** После неудачного переписывания следующая попытка — через столько записей. */
+        const val BACKOFF = 100
     }
 }
 
 /** Одно действие удаления для журнала: объект или группа объектов одной папки ([LogRec.Start]). */
 class LogAction(val root: String, val su: Boolean, val names: List<ByteArray>, val dir: Boolean, val items: Long,
                 val disk: Long, val viaRoot: Boolean, val fast: Boolean, val count: Int = 1,
-                val itemNames: List<ByteArray> = emptyList())
+                val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false)
+
+/** Объект группы для журнала: имя (байты), размер, каталог ли. */
+data class LogObject(val name: ByteArray, val disk: Long, val dir: Boolean = false)
 
 /** Чистый Kotlin: действие и итог для журнала — одна пара S/E на действие, а не на объект. */
 object LogActions {
     /** Имён объектов группы в записи «начало» не больше стольких (крупнейшие первыми). */
     const val NAMES = 20
 
-    /** Группа [objects] (имя-байты, размер) в папке [folder]: суммы, число и до [NAMES] имён. */
-    fun group(root: String, su: Boolean, folder: List<ByteArray>, objects: List<Pair<ByteArray, Long>>, items: Long,
-              viaRoot: Boolean, fast: Boolean): LogAction =
-        LogAction(root, su, folder, true, items, DeletePolicy.sum(objects.map { it.second }), viaRoot, fast,
-            count = maxOf(1, objects.size), itemNames = objects.sortedByDescending { it.second }.take(NAMES).map { it.first })
+    /**
+     * Группа [objects] в папке [folder]: суммы, число и до [NAMES] имён. Объект один (остальные
+     * отпали после обновления) — это одиночное удаление ЕГО: путь папка + имя, его флаг каталога.
+     */
+    fun group(root: String, su: Boolean, folder: List<ByteArray>, objects: List<LogObject>, items: Long,
+              viaRoot: Boolean, fast: Boolean): LogAction {
+        objects.singleOrNull()?.let { o -> return LogAction(root, su, folder + o.name, o.dir, items, o.disk, viaRoot, fast) }
+        return LogAction(root, su, folder, true, items, DeletePolicy.sum(objects.map { it.disk }), viaRoot, fast,
+            count = objects.size, itemNames = objects.sortedByDescending { it.disk }.take(NAMES).map { it.name }, group = true)
+    }
 
     fun start(id: Long, time: Long, a: LogAction) = LogRec.Start(id, time, a.root, a.su, a.names, a.dir, a.items, a.disk,
-        a.viaRoot, a.fast, a.count, a.itemNames)
+        a.viaRoot, a.fast, a.count, a.itemNames, a.group)
 
     /**
      * Итог действия [id] из итогов объектов [results] ([total] — объектов в действии; не дошедшие
@@ -289,7 +319,9 @@ object LogActions {
     fun end(id: Long, time: Long, code: Int, results: List<ItemResult>, total: Int): LogRec.End {
         val deleted = results.count { it.attempted && it.r == 0 }
         val partial = results.count { it.attempted && it.r != 0 && it.done > 0 }
-        val removed = results.sumOf { maxOf(0L, it.done) }
+        // Итогов меньше, чем объектов: удаление прервалось исключением — сколько удалено, неизвестно
+        // (-1): строка журнала покажет отклонение, а не спрячется как отказ.
+        val removed = if (results.size < total) -1L else results.sumOf { maxOf(0L, it.done) }
         val freed = if (total <= 1) (if (deleted == 1) results.single().disk else -1L)
             else DeletePolicy.sum(results.filter { it.attempted && it.r == 0 }.map { it.disk })
         return LogRec.End(id, time, code, freed, removed, deleted, partial, maxOf(0, total - deleted - partial))
@@ -412,12 +444,12 @@ object DeleteLog {
 
     /** Для тестов: записать «начало» без итога (прерванное удаление), затем перечитать журнал. */
     fun testInterrupt(ctx: Context, root: String, names: List<ByteArray>, dir: Boolean, disk: Long, count: Int = 1,
-                      items: List<ByteArray> = emptyList()) {
+                      items: List<ByteArray> = emptyList(), group: Boolean = false) {
         init(ctx)
         val s = store()!!
         Holder.io.execute {
             val now = System.currentTimeMillis()
-            safe("test") { s.append(LogRec.Start(now * 1000 + 999, now, root, false, names, dir, 1, disk, false, false, count, items)) }
+            safe("test") { s.append(LogRec.Start(now * 1000 + 999, now, root, false, names, dir, 1, disk, false, false, count, items, group)) }
         }
         init(ctx, force = true)
     }

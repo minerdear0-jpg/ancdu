@@ -70,6 +70,7 @@ class StatusLineTest {
     @Test fun textsRu() {
         assertEquals("⚠ прервано: Download/ · 10,3${N}ГиБ ›", StatusLine.text(RU, Status.Interrupted(cut), now, true))
         val part = InterruptedDelete(7, Scans.STORAGE, false, dl, true, (10.3 * gib).toLong(), now, freed = (4.8 * gib).toLong())
+        assertEquals("4,8 из 10,3${N}ГиБ", InterruptedAmount.text(RU, part))
         assertEquals("⚠ прервано: Download/ · 4,8 из 10,3${N}ГиБ ›", StatusLine.text(RU, Status.Interrupted(part), now, true))
         assertEquals("скан 3 дня назад · обновить ›", StatusLine.text(RU, Status.Stale(3 * day, false), now, true))
         assertEquals("скан 1 день назад · обновить ›", StatusLine.text(RU, Status.Stale(day + 5, false), now, true))
@@ -88,18 +89,26 @@ class StatusLineTest {
         assertEquals("+2.1${N}GiB since Oct 1 · Download/ ›", StatusLine.text(EN, Status.Grew(grew), now, false, utc))
     }
 
-    /** A group start without an end: the folder, and «X из Y» once the rest is counted. */
+    /**
+     * A group start without an end: the folder and the OBJECT count — «320 из 1 204» once the
+     * survivors are counted, else «1 204 объекта» (controller's provisional choice; one formatter).
+     */
     @Test fun interruptedGroup() {
         val g = InterruptedDelete(9, Scans.STORAGE, false, listOf("DCIM".toByteArray(), ".thumbnails".toByteArray()), true,
-            (412.6 * (1 shl 20)).toLong(), now, count = 1204, items = listOf("a.jpg".toByteArray()))
-        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 412,6${N}МиБ ›", StatusLine.text(RU, Status.Interrupted(g), now, true))
-        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 380,1 из 412,6${N}МиБ ›",
-            StatusLine.text(RU, Status.Interrupted(g.withFreed((380.1 * (1 shl 20)).toLong())), now, true))
-        // 1 204 objects, 1 name recorded: the rest can't be counted from the tree.
+            (412.6 * (1 shl 20)).toLong(), now, count = 1204, items = listOf("a.jpg".toByteArray()), group = true)
+        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 1${N}204 объекта ›", StatusLine.text(RU, Status.Interrupted(g), now, true))
+        assertEquals("⚠ interrupted: DCIM/.thumbnails/ · 1,204 items ›", StatusLine.text(EN, Status.Interrupted(g), now, true))
+        assertEquals("⚠ прервано: DCIM/.thumbnails/ · 320 из 1${N}204 ›",
+            StatusLine.text(RU, Status.Interrupted(g.withDone(320)), now, true))
+        assertEquals("320 of 1,204", InterruptedAmount.text(EN, g.withDone(320)))
+        // 1 204 objects, 1 name recorded: the survivors can't be counted from the tree.
         assertFalse(g.allNamed)
         assertTrue(InterruptedDelete(9, Scans.STORAGE, false, emptyList(), true, 1, now, count = 2,
-            items = listOf("a".toByteArray(), "b".toByteArray())).allNamed)
-        assertEquals(1204, g.withFreed(1).count)
+            items = listOf("a".toByteArray(), "b".toByteArray()), group = true).allNamed)
+        assertEquals(1204, g.withDone(1).count)
+        assertTrue(g.withDone(1).group)
+        // A single delete keeps the size form.
+        assertEquals("10,3${N}ГиБ", InterruptedAmount.text(RU, cut))
     }
 
     @Test fun interruptedPathOfFileAndHostileName() {

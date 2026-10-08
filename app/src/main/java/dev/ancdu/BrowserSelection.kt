@@ -395,7 +395,8 @@ class BrowserSelection(private val a: BrowserActivity) {
         Log.i("ancdu", "group delete n=${keys.size} kind=$kind viaRoot=$viaRoot fast=$fast items=$total")
         Holder.deleteGroup(handle, jobs, root = viaRoot || fast, name = a.nameOf(folder), total = total, disk = disk,
             names = a.pathNames(handle, folder),
-            objects = keys.mapIndexed { j, key -> key to (found[j]?.let { disks[it] } ?: 0L) }, fast = fast)
+            objects = keys.mapIndexed { j, key -> LogObject(key, found[j]?.let { disks[it] } ?: 0L, found[j]?.let { it in dirs } ?: false) },
+            fast = fast)
         a.showWait()
         return true
     }

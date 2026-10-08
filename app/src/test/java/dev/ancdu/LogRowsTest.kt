@@ -46,7 +46,7 @@ class LogRowsTest {
         assertEquals("Download/a.bin", LogRows.path(entry(1, oct8, listOf("Download", "a.bin"), false, 1, null)))
         // A group: the folder and the count (names are kept for the record, not shown).
         val g = LogEntry(LogRec.Start(5, oct8, Scans.STORAGE, false, listOf("DCIM".toByteArray(), ".thumbnails".toByteArray()),
-            true, 1300, 412L shl 20, false, false, 1204, listOf("a.jpg".toByteArray())), null, null, false)
+            true, 1300, 412L shl 20, false, false, 1204, listOf("a.jpg".toByteArray()), group = true), null, null, false)
         assertEquals("DCIM/.thumbnails/ · 1${N}204 объекта", LogRows.title(RU, g))
         assertEquals("DCIM/.thumbnails/ · 1,204 items", LogRows.title(EN, g))
         assertEquals("Download/a.bin", LogRows.title(RU, entry(1, oct8, listOf("Download", "a.bin"), false, 1, null)))

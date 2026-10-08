@@ -268,13 +268,13 @@ object Holder {
      */
     fun deleteGroup(handle: Long, jobs: List<GroupJob>, root: Boolean, done: (Int) -> Unit = {},
                     name: String = "", total: Long = 1L, disk: Long = 0L, names: List<ByteArray> = emptyList(),
-                    objects: List<Pair<ByteArray, Long>> = emptyList(), fast: Boolean = false) {
+                    objects: List<LogObject> = emptyList(), fast: Boolean = false) {
         checkMain("Holder.deleteGroup")
         check(!deleting) { "a delete is already running" }
         begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
         // Журнал: одна пара «начало/итог» на всё действие — папка, число, сумма, до 20 имён.
         val action = LogActions.group(this.root, viaRoot, names,
-            objects.ifEmpty { jobs.map { it.name.toByteArray(Charsets.UTF_8) to it.disk } }, total, root, fast)
+            objects.ifEmpty { jobs.map { LogObject(it.name.toByteArray(Charsets.UTF_8), it.disk, it.dir) } }, total, root, fast)
         run(handle, jobs, group = true, root = root, done = done, action = action)
     }
 

@@ -333,16 +333,17 @@ class StorageCard(private val a: MainActivity) {
      * освобождено — размер на момент удаления минус то, что осталось (узла нет — всё).
      */
     private fun withFreed(d: InterruptedDelete): InterruptedDelete {
-        if (d.freed != null || d.su || d.root != Scans.STORAGE || !storageShown() || Holder.deleting ||
+        if (d.freed != null || d.done != null || d.su || d.root != Scans.STORAGE || !storageShown() || Holder.deleting ||
             Holder.kind == Kind.INDEX || Holder.time <= d.time || !d.allNamed) return d
         val hit = PathWalk.resolve(d.names) { nd, nm -> child(nd, nm) }
         fun disk(nd: Int) = LongArray(4).also { Native.nodeInfo(Holder.h, intArrayOf(nd), 1, it) }[0]
-        // Группа: осталось — сумма тех её объектов, что ещё есть в папке; одиночное — сам узел.
-        val left = when {
-            !hit.exact -> 0L
-            d.count > 1 -> d.items.sumOf { nm -> child(hit.node, nm)?.let { disk(it) } ?: 0L }
-            else -> disk(hit.node)
+        // Группа: удалено — те её объекты, которых в папке больше нет (и сколько освобождено);
+        // одиночное — остаток самого узла.
+        if (d.group) {
+            val alive = if (hit.exact) d.items.mapNotNull { nm -> child(hit.node, nm) } else emptyList()
+            return d.withDone(d.count - alive.size).withFreed(maxOf(0L, d.disk - alive.sumOf { disk(it) }))
         }
+        val left = if (hit.exact) disk(hit.node) else 0L
         return d.withFreed(maxOf(0L, d.disk - left))
     }
 

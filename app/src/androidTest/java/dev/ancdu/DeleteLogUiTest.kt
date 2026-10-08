@@ -164,6 +164,44 @@ class DeleteLogUiTest {
         }
     }
 
+    /**
+     * A selection reduced to ONE object (what askGroup does after a refresh drops the others) is
+     * logged as that object: its path and file flag, not the folder and not a group.
+     */
+    @Test fun groupOfOneIsLoggedAsTheObject() {
+        val d = sandbox()
+        val sub = File(d, "sub").apply { mkdirs() }
+        val victim = File(sub, "only.bin").apply { writeBytes(ByteArray(4096)) }
+        val keep = File(sub, "keep.bin").apply { writeBytes(ByteArray(10)) }
+        for (f in listOf(victim, keep)) assertTrue(f.isAbsolute && f.path.startsWith(d.path + "/"))
+        val a = browse(d)
+        val k = index(a, "sub/")
+        ins.runOnMainSync { a.list.source!!.click(k) }
+        ins.waitForIdleSync()
+        val i = index(a, "only.bin")
+        ins.runOnMainSync {
+            a.list.source!!.longClick(i)
+            assertEquals(1, a.selection.count)
+            a.sel.openGroupSheet(gone = 0)                      // the group sheet, as after a refresh
+        }
+        assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
+        ins.runOnMainSync {
+            assertEquals(1, a.sheet!!.group!!.count)
+            assertTrue(a.sheet!!.pathText!!.text.toString(), a.sheet!!.pathText!!.text.endsWith("/sub/only.bin"))
+            a.sheet!!.deleteButton!!.performClick()
+        }
+        assertTrue(waitFor(30_000) { !a.busy && a.list.source != null })
+        assertFalse(victim.exists())
+        assertTrue(keep.exists())
+        drainIo()
+        val e = DeleteLogModel.entries(DeleteLogStore(log).lines()).single()
+        assertFalse(e.start.group)
+        assertEquals(listOf("sub", "only.bin"), e.start.names.map { String(it) })
+        assertFalse(e.start.dir)
+        assertEquals(LogOutcome.DELETED, e.outcome)
+        ins.runOnMainSync { assertEquals("sub/only.bin", LogRows.title(a.tx, e)) }
+    }
+
     /** Clear: Cancel keeps the entries; an early double tap on «Очистить» is ignored; Confirm empties the log. */
     @Test fun clearAsksAndGuardsDoubleTap() {
         val (_, s) = deleteOneAndOpenLog()

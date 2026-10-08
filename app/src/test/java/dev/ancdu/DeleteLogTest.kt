@@ -153,10 +153,10 @@ class DeleteLogTest {
     /** A group is ONE start and ONE end: folder, count, total, up to 20 names (largest first). */
     @Test fun groupIsOnePairOfRecords() {
         val folder = listOf(b("DCIM"), b(".thumbnails"))
-        val objects = (1..1204).map { b("f$it.jpg") to it.toLong() * 1000 }
+        val objects = (1..1204).map { LogObject(b("f$it.jpg"), it.toLong() * 1000) }
         val a = LogActions.group(Scans.STORAGE, false, folder, objects, items = 1300, viaRoot = false, fast = false)
         assertEquals(1204, a.count)
-        assertEquals(objects.sumOf { it.second }, a.disk)
+        assertEquals(objects.sumOf { it.disk }, a.disk)
         assertEquals(LogActions.NAMES, a.itemNames.size)
         assertArrayEquals(b("f1204.jpg"), a.itemNames.first())             // largest first
         val start = LogActions.start(77, 1, a)
@@ -177,7 +177,7 @@ class DeleteLogTest {
         val end = LogActions.end(77, 2, -4, results, total = 1204)
         val e2 = LogRec.parse(end.format()) as LogRec.End
         assertEquals(1200, e2.deleted); assertEquals(1, e2.partial); assertEquals(3, e2.failed)
-        assertEquals(objects.take(1200).sumOf { it.second }, e2.freed)
+        assertEquals(objects.take(1200).sumOf { it.disk }, e2.freed)
         assertEquals(1203L, e2.removed)
         val entry = LogEntry(back, e2, null, false)
         assertEquals(LogOutcome.PARTIAL, entry.outcome)
@@ -193,10 +193,74 @@ class DeleteLogTest {
         assertEquals("DCIM/.thumbnails/", n.path); assertEquals(1204, n.count); assertEquals(20, n.items.size)
     }
 
+    /**
+     * A group of ONE object (the others dropped after a refresh) is logged exactly like a single
+     * delete of that object: folder + its name, its own dir flag, not a group.
+     */
+    @Test fun groupOfOneIsLoggedAsTheObject() {
+        val folder = listOf(b("DCIM"))
+        val file = LogActions.group(Scans.STORAGE, false, folder, listOf(LogObject(b("a.jpg"), 500, dir = false)), 1, false, false)
+        assertFalse(file.group)
+        assertEquals(1, file.count)
+        assertEquals(listOf("DCIM", "a.jpg"), file.names.map { String(it) })
+        assertFalse(file.dir)
+        assertEquals(500L, file.disk)
+        assertTrue(file.itemNames.isEmpty())
+        val st = LogRec.parse(LogActions.start(3, 1, file).format()) as LogRec.Start
+        assertFalse(st.group)
+        assertEquals("DCIM/a.jpg", DeleteLogModel.notice(listOf(LogEntry(st, null, null, false)))!!.path)
+        val dirOne = LogActions.group(Scans.STORAGE, false, folder, listOf(LogObject(b("Camera"), 9, dir = true)), 4, false, false)
+        assertTrue(dirOne.dir); assertFalse(dirOne.group)
+        // Group-ness is explicit: two objects are a group, round-trip keeps it.
+        val two = LogActions.group(Scans.STORAGE, false, folder, listOf(LogObject(b("a"), 1), LogObject(b("b"), 2)), 2, false, false)
+        assertTrue(two.group)
+        assertTrue((LogRec.parse(LogActions.start(4, 1, two).format()) as LogRec.Start).group)
+        // A single start is never a group, whatever its count field says.
+        val single = LogRec.Start(5, 1, Scans.STORAGE, false, listOf(b("x")), true, 1, 1, false, false)
+        assertFalse((LogRec.parse(single.format()) as LogRec.Start).group)
+    }
+
+    /** runItem threw: fewer results than objects — removed is unknown (-1), shown as a deviation, never hidden. */
+    @Test fun thrownDeleteIsNotHidden() {
+        val one = LogActions.end(1, 2, -1, emptyList(), total = 1)
+        assertEquals(-1L, one.removed)
+        val e = LogEntry(start(1), one, null, false)
+        assertFalse(e.refusal)
+        assertEquals(LogOutcome.PARTIAL, e.outcome)
+        val grp = LogActions.end(2, 2, -1, listOf(ItemResult("a", false, 5, 0, 1)), total = 3)
+        assertEquals(-1L, grp.removed)
+        assertEquals(1, grp.deleted)
+        assertFalse(LogEntry(start(2), grp, null, false).refusal)
+        // A real refusal (all results in, nothing removed) stays hidden.
+        val refused = LogActions.end(3, 2, -116, listOf(ItemResult("a", false, 5, -116, 0)), total = 1)
+        assertTrue(LogEntry(start(3), refused, null, false).refusal)
+    }
+
+    /** Disk full during the over-cap rewrite: the record is still appended, and the rewrite backs off. */
+    @Test fun failedTrimStillAppendsAndBacksOff() {
+        val s = store()
+        for (k in 1..DeleteLogStore.CAP.toLong()) s.append(LogRec.Seen(k))
+        s.failRewrite = true
+        s.append(LogRec.Seen(9001))
+        assertEquals(DeleteLogStore.CAP + 1, s.lines().size)
+        assertEquals(LogRec.Seen(9001).format(), s.lines().last())
+        assertEquals(1, s.rewriteFailures)
+        // Next appends don't retry the full rewrite every time.
+        for (k in 1..10L) s.append(LogRec.Seen(9100 + k))
+        assertEquals(1, s.rewriteFailures)
+        assertEquals(DeleteLogStore.CAP + 11, s.lines().size)
+        // After the back-off the trim is tried again and succeeds.
+        s.failRewrite = false
+        for (k in 1..DeleteLogStore.BACKOFF.toLong()) s.append(LogRec.Seen(9200 + k))
+        assertEquals(1, s.rewrites)
+        assertTrue(s.lines().size <= DeleteLogStore.CAP)
+        assertFalse(File(s.file.path + ".tmp").exists())
+    }
+
     /** Micro-bench: a 1 200-object group costs exactly 2 appends and no rewrite. */
     @Test fun groupCostsTwoAppends() {
         val s = store()
-        val objects = (1..1200).map { b("x$it") to 10L }
+        val objects = (1..1200).map { LogObject(b("x$it"), 10L) }
         val a = LogActions.group(Scans.STORAGE, false, listOf(b("Download")), objects, 1200, false, false)
         val t0 = System.nanoTime()
         s.append(LogActions.start(1, 1, a))
