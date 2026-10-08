@@ -25,7 +25,7 @@ class BaselineTest {
     }
 
     @After fun tearDown() {
-        val tmp = File(System.getProperty("java.io.tmpdir")).canonicalFile
+        val tmp = File(System.getProperty("java.io.tmpdir") ?: return).canonicalFile
         if (box.canonicalFile.parentFile == tmp && box.name.startsWith("ancdu-baseline-")) box.deleteRecursively()
     }
 
