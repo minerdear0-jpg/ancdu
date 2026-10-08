@@ -223,6 +223,7 @@ class StorageCard(private val a: MainActivity) {
             pctTxt.text = Fmt.pct(used, total); pctTxt.setTextColor(C.TEXT)
             freeTxt.text = freeLine(free, total)
         }
+        renderErr()
         a.layoutChanged()
     }
 
@@ -384,9 +385,14 @@ class StorageCard(private val a: MainActivity) {
         }
     }
 
+    /**
+     * «⚠ N» — только если ошибок больше 0 и места хватает: при «места нет» акценты — свободное место
+     * и строка статуса (не больше двух на экране); ошибки остаются в подвале браузера.
+     */
     private fun renderErr() {
-        errTxt.visibility = if (errCount > 0) View.VISIBLE else View.GONE
-        if (errCount <= 0) return
+        val show = errCount > 0 && !full
+        errTxt.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
         errTxt.text = ScanErrors.short(t, errCount)
         errTxt.contentDescription = ScanErrors.linkDesc(t, errCount)
     }

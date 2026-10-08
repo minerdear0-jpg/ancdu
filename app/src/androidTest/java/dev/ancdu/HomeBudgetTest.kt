@@ -108,6 +108,8 @@ class HomeBudgetTest {
         val a = launch()
         ins.runOnMainSync {
             assertTrue(a.storage.full)
+            // At most two accents: the free hero and the status line; «⚠ N» waits in the browser footer.
+            assertEquals(View.GONE, a.storage.errTxt.visibility)
             val low = a.getString(R.string.card_low, "")
             assertTrue(a.storage.freeTxt.text.toString(), a.storage.freeTxt.text.startsWith(low))
             assertEquals(View.VISIBLE, a.moreRow.visibility)
