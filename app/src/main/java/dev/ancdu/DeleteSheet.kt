@@ -540,7 +540,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
  * Текст [full] не длиннее [lines] строк: не влезает — самая длинная форма с «…» посередине
  * ([Ellipsis.middleFit]), проверка — StaticLayout с параметрами этого TextView.
  */
-private class MiddleLines(ctx: Context, private val full: String, private val lines: Int) : TextView(ctx) {
+internal class MiddleLines(ctx: Context, private val full: String, private val lines: Int) : TextView(ctx) {
     private var fitW = -1
 
     init { text = full }

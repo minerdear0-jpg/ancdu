@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.media.MediaScannerConnection
 import android.os.Bundle
 import android.os.Handler
@@ -110,6 +111,23 @@ class BrowserActivity : LangActivity() {
     lateinit var badge: TextView
         private set
     private lateinit var footer: TextView
+    /** Подвал: подсказка или сообщение ([footer]) и справа ссылка ошибок ([errLink]); в режиме выбора — GONE. */
+    private lateinit var footerBar: LinearLayout
+    /** «⚠ 2 ошибки ›» — открывает лист ошибок; видна, только если ошибок больше 0. */
+    lateinit var errLink: TextView
+        private set
+    /** Для тестов: открытый лист ошибок скана. */
+    var errorsSheet: ErrorsSheet? = null
+        private set
+    /** Узлов с ошибкой в дереве (Native.errorNodes, считается на io) — число в [errLink]. */
+    var errCount = 0
+        private set
+    /** Для чего посчитан [errCount]: поколение сессии и счётчик удалений (null — пересчитать). */
+    private var errKey: String? = null
+    /** Номер запроса числа ошибок: ответ для старого дерева отбрасывается. */
+    private var errSeq = 0
+    /** Лист ошибок собирается на io (второй тап не открывает второй лист). */
+    private var errLoading = false
     /** «галерея: очистка N…», пока идёт MediaClean; иначе скрыта. */
     lateinit var gallery: TextView
         private set
@@ -289,7 +307,8 @@ class BrowserActivity : LangActivity() {
     /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). В режиме выбора подвала нет. */
     private fun setFooter(text: CharSequence) {
         footer.text = text
-        footer.visibility = if (selection.active) View.GONE else if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
+        footer.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
+        footerBar.visibility = if (selection.active) View.GONE else View.VISIBLE
     }
 
     /** Подвал: [text] на 4 с, затем обычная подсказка. В режиме выбора — поверх низа списка. */
@@ -461,6 +480,21 @@ class BrowserActivity : LangActivity() {
             setPadding(dp(16), dp(10), dp(16), dp(10))
             visibility = View.INVISIBLE
         }
+        errLink = label("", 12f, C.AMBER, mono = true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(44); minWidth = dp(44)
+            setPadding(dp(12), 0, dp(16), 0)
+            background = pressable(android.graphics.Color.TRANSPARENT)
+            isClickable = true; isFocusable = true
+            feedbackClick { openErrors() }
+            visibility = View.GONE
+        }
+        // Высота подвала — всегда не меньше касания ссылки: её появление не двигает список.
+        footerBar = hbox().apply {
+            minimumHeight = dp(44)
+            addView(footer, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(errLink, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        }
         gallery = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), 0, dp(16), dp(10))
             visibility = View.GONE
@@ -483,7 +517,7 @@ class BrowserActivity : LangActivity() {
                 addView(empty, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
                 addView(notice, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM))
             }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            addView(footer)
+            addView(footerBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             // Режим выбора: панель вместо подвала — сдвигается низ списка, шапка и верх — нет.
             addView(selBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(gallery)
@@ -568,7 +602,7 @@ class BrowserActivity : LangActivity() {
 
     /** Открыт лист удаления, карточка или панель пути: дерево не подставляется под ними (их id узлов устарели бы). */
     private fun sheetOpen(): Boolean = sheet?.dialog?.isShowing == true || quickLook?.dialog?.isShowing == true ||
-        pathPanel?.dialog?.isShowing == true
+        pathPanel?.dialog?.isShowing == true || errorsSheet?.dialog?.isShowing == true
 
     /**
      * Показать/скрыть «новее · обновить». Главный поток; Holder.offer слушателей не зовёт.
@@ -722,6 +756,8 @@ class BrowserActivity : LangActivity() {
         const val HINT_SESSIONS = 3
         /** Плашка вида дерева: до двух строк рядом с чипом «новее». */
         const val BADGE_LINES = 2
+        /** Root-скан общего хранилища напрямую (чип «/data/media» главного экрана). */
+        const val ROOT_MEDIA = "/data/media"
     }
 
     /**
@@ -735,8 +771,9 @@ class BrowserActivity : LangActivity() {
         // Байты имён, не строки: невалидный UTF-8 декодируется неоднозначно.
         val names = pathNames(h, node)
         val keep = list.scroll
-        // Строки панели пути — узлы старого дерева.
+        // Строки панели пути и листа ошибок — узлы старого дерева.
         pathPanel?.dismiss(); pathPanel = null
+        errorsSheet?.dismiss(); errorsSheet = null
         list.source = null
         promoting = true
         try { Holder.promote() } finally { promoting = false }
@@ -797,6 +834,7 @@ class BrowserActivity : LangActivity() {
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
         pathPanel?.dismiss(); pathPanel = null
+        errorsSheet?.dismiss(); errorsSheet = null
         quickLook?.dismiss(); quickLook = null
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
@@ -884,9 +922,9 @@ class BrowserActivity : LangActivity() {
         val full = p[0] == ST_FULL.toLong()
         sourceBadge = Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
         if (scanState == ScanState.NONE) setBadge(sourceBadge, active = false, polite = false)
-        hint = listOfNotNull(if (showHint) txt.s(R.string.browser_hint) else null,
-            if (p[3] > 0) "⚠ " + txt.q(R.plurals.errors, p[3], Fmt.count(p[3], txt.locale)) else null).joinToString("   ")
+        hint = if (showHint) txt.s(R.string.browser_hint) else ""
         setFooter(idleFooter())
+        refreshErrors()
         renderChips()
         refreshPending()
         slide(dir)
@@ -1021,7 +1059,7 @@ class BrowserActivity : LangActivity() {
         val on = selection.active
         selBar.visibility = if (on) View.VISIBLE else View.GONE
         if (on) {
-            footer.visibility = View.GONE
+            footerBar.visibility = View.GONE
             val nodes = selection.nodes
             val inf = LongArray(4 * maxOf(nodes.size, 1))
             if (nodes.isNotEmpty() && h != 0L) Native.nodeInfo(h, nodes, nodes.size, inf)
@@ -1033,6 +1071,7 @@ class BrowserActivity : LangActivity() {
         } else {
             notice.visibility = View.GONE
             footer.visibility = if (footer.text.isEmpty()) View.INVISIBLE else View.VISIBLE
+            footerBar.visibility = View.VISIBLE
         }
         list.refresh()
     }
@@ -1092,6 +1131,83 @@ class BrowserActivity : LangActivity() {
     }
 
     private fun nameOf(nd: Int): String = Native.str(Native.name(h, nd))
+
+    /**
+     * Число узлов с ошибкой — на io (Native.errorNodes, O(n)), один раз на дерево и после каждого
+     * удаления; иначе только перерисовка ссылки. Во время удаления дерево не читается.
+     */
+    private fun refreshErrors() {
+        val k = "${Holder.gen}:${Holder.deletes}"
+        if (k == errKey || h == 0L || h != Holder.h || Holder.deleting) { renderErrLink(); return }
+        errKey = k
+        val handle = h
+        val my = ++errSeq
+        Holder.io.execute {
+            val total = runCatching { Native.errorNodes(handle, IntArray(0)) }.getOrDefault(0)
+            ui.post {
+                if (my != errSeq || h != handle || isDestroyed) return@post
+                errCount = total
+                renderErrLink()
+            }
+        }
+    }
+
+    private fun renderErrLink() {
+        errLink.visibility = if (errCount > 0) View.VISIBLE else View.GONE
+        if (errCount <= 0) return
+        errLink.text = ScanErrors.link(txt, errCount)
+        errLink.contentDescription = ScanErrors.linkDesc(txt, errCount)
+    }
+
+    /**
+     * Лист ошибок: узлы, пути и повторная попытка — на io; лист — на главном. Ошибок уже нет (удалены)
+     * — листа нет, ссылка прячется.
+     */
+    fun openErrors() {
+        if (busy || h == 0L || h != Holder.h || Holder.deleting || errLoading) return
+        val handle = h
+        val viaRoot = Holder.viaRoot
+        val root = rootPath()
+        val rootTitle = PathText.rootTitle(root, txt.s(R.string.internal_storage))
+        errLoading = true
+        Holder.io.execute {
+            val r = runCatching { ErrorsSheet.load(handle, viaRoot, root, rootTitle) }.getOrNull()
+            ui.post {
+                errLoading = false
+                if (r == null || isFinishing || isDestroyed || h != handle || busy) return@post
+                errCount = r.total
+                renderErrLink()
+                if (r.rows.isEmpty()) return@post
+                errorsSheet?.dismiss()
+                errorsSheet = ErrorsSheet(this, r, Root.state == RootState.GRANTED,
+                    onPick = { nd -> errorsSheet?.dismiss(); revealNode(handle, nd) },
+                    onRoot = { errorsSheet?.dismiss(); scanAsRoot() },
+                    onClose = { refreshPending() }).also { it.show() }
+            }
+        }
+    }
+
+    /**
+     * Узел [target] из листа ошибок: его папка, строка видна. Узла уже нет (удалён он или предок,
+     * дерево сменилось) — сообщение в подвале.
+     */
+    private fun revealNode(handle: Long, target: Int) {
+        if (busy || h == 0L) return
+        val hit = if (h == handle) resolveNode(pathNames(h, target)) else null
+        if (hit == null || !hit.exact || hit.node != target) { note(txt.s(R.string.err_node_gone)); return }
+        if (target == 0) { if (node != 0) load(0, 0, dir = -1); return }
+        val parent = maxOf(Native.parent(h, target), 0)
+        if (parent != node) load(parent, 0)
+        val i = kids.indexOf(target)
+        if (i in 0 until n) list.reveal(i)
+    }
+
+    /** «СКАНИРОВАТЬ ОТ ROOT»: тот же root-скан /data/media, что чип главного экрана; браузер уходит. */
+    private fun scanAsRoot() {
+        if (busy) return
+        finish()
+        startActivity(Intent(this, ScanActivity::class.java).putExtra(EXTRA_ROOT, ROOT_MEDIA).putExtra(EXTRA_SU, true))
+    }
 
     /** Переход к предку [target] из панели пути: его прокрутка восстанавливается, более глубоких — забываются. */
     fun jumpTo(target: Int) {
