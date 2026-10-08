@@ -51,6 +51,9 @@ object Native {
     /** Крупнейшие файлы всего дерева: до out.size (≤ 256) id узлов по убыванию disk, без каталогов,
      *  повторных жёстких ссылок (F_HLDUP), удалённого и пустых; число записанных. Только чтение. */
     @JvmStatic external fun topFiles(h: Long, out: IntArray): Int
+    /** Узлы с ошибкой скана или частичного удаления (F_ERR, не удалённые), по возрастанию id: первые
+     *  out.size в out. Возвращает их общее число; записано min(его, out.size). Только чтение дерева. */
+    @JvmStatic external fun errorNodes(h: Long, out: IntArray): Int
     @JvmStatic external fun name(h: Long, node: Int): ByteArray
     @JvmStatic external fun path(h: Long, node: Int): ByteArray
     @JvmStatic external fun parent(h: Long, node: Int): Int

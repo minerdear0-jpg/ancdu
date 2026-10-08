@@ -242,3 +242,27 @@ uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
   }
   return m;
 }
+
+uint32_t csr_error_nodes(const arena *a, uint32_t cap, uint32_t *out, uint64_t *total) {
+  uint64_t n = atomic_load(&a->h->count);
+  uint8_t *dead = NULL;
+  int any = 0;
+  for (uint64_t i = 0; i < n && !any; i++) any = (a->flags[i] & F_DELETED) != 0;
+  if (any && (dead = malloc(n))) {
+    dead[0] = (a->flags[0] & F_DELETED) != 0;
+    for (uint64_t i = 1; i < n; i++)
+      dead[i] = (a->flags[i] & F_DELETED) || dead[a->parent[i]];
+  }
+  uint64_t t = 0;
+  uint32_t w = 0;
+  for (uint64_t i = 0; i < n; i++) {
+    uint32_t x = (uint32_t)i;
+    if (!(a->flags[x] & F_ERR) || a->flags[x] & F_DELETED) continue;
+    if (dead ? dead[x] : any && under_deleted(a, x)) continue;
+    if (w < cap) out[w++] = x;
+    t++;
+  }
+  free(dead);
+  if (total) *total = t;
+  return w;
+}
