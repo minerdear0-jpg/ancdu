@@ -183,13 +183,23 @@ class HardlinkFooterTest {
         assertFalse(GroupResult.hardlink(listOf(plain)))
         // Не удалённая жёсткая ссылка места и не обещала.
         assertFalse(GroupResult.hardlink(listOf(plain, ItemResult("c", false, gib, -13, 0, hardlink = true))))
-        val done = GroupResult.outcome(listOf(plain, ok))
-        assertEquals(EN.s(R.string.hardlink_note), GroupResult.footer(EN, done, hardlink = true))
+        val mixed = listOf(plain, ok)
+        val done = GroupResult.outcome(mixed)
+        val l = GroupResult.links(mixed)
+        assertEquals(1, l.count); assertEquals(gib, l.disk)
+        // Часть — ссылки: освобождено без них и короткая приписка.
+        assertEquals(DeleteProgress.freed(EN, gib) + " · excl. hard links", GroupResult.footer(EN, done, l))
+        assertEquals(DeleteProgress.freed(RU, gib) + " · без жёстких ссылок", GroupResult.footer(RU, done, l))
         assertEquals(DeleteProgress.freed(EN, 2 * gib), GroupResult.footer(EN, done))
-        val stopped = GroupResult.Outcome.Stopped(1, 3, gib)
-        assertTrue(GroupResult.footer(RU, stopped, hardlink = true).endsWith(RU.s(R.string.hardlink_note)))
+        // Все удалённые — ссылки: только примечание.
+        val allLinks = listOf(ok, ItemResult("d", false, gib, 0, 1, hardlink = true))
+        assertEquals(EN.s(R.string.hardlink_note), GroupResult.footer(EN, GroupResult.outcome(allLinks), GroupResult.links(allLinks)))
+        // Не удалённая ссылка не в счёт.
+        assertEquals(0, GroupResult.links(listOf(plain, ItemResult("c", false, gib, -13, 0, hardlink = true))).count)
+        val stopped = GroupResult.Outcome.Stopped(2, 3, 2 * gib)
+        assertTrue(GroupResult.footer(RU, stopped, l).endsWith(DeleteProgress.freed(RU, gib) + " · без жёстких ссылок"))
         val partial = GroupResult.outcome(listOf(ok, ItemResult("c", false, gib, -13, 0)))
-        val (_, body) = GroupResult.alert(EN, partial as GroupResult.Outcome.Partial, hardlink = true)
+        val (_, body) = GroupResult.alert(EN, partial as GroupResult.Outcome.Partial, GroupResult.links(listOf(ok)))
         assertTrue(body, body.startsWith(EN.s(R.string.hardlink_note)))
     }
 }

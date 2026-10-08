@@ -194,19 +194,37 @@ object GroupResult {
     /** Среди удалённых — жёсткая ссылка: итог не обещает освобождённого места. */
     fun hardlink(results: List<ItemResult>): Boolean = results.any { it.hardlink && it.attempted && it.r == 0 }
 
-    fun footer(t: Txt, o: Outcome, hardlink: Boolean = false): String = when (o) {
+    /** Удалённые целиком жёсткие ссылки группы: сколько и их размер (место за них не обещается). */
+    class Links(val count: Int, val disk: Long) { companion object { val NONE = Links(0, 0L) } }
+
+    fun links(results: List<ItemResult>): Links {
+        val l = results.filter { it.hardlink && it.attempted && it.r == 0 }
+        return Links(l.size, DeletePolicy.sum(l.map { it.disk }))
+    }
+
+    /**
+     * «освобождено X» группы: ссылок нет — как есть; часть удалённых — ссылки — X без них и « · без жёстких
+     * ссылок»; все удалённые — ссылки — только «Жёсткая ссылка — место может не освободиться».
+     */
+    fun freed(t: Txt, o: Outcome, links: Links = Links.NONE): String = when {
+        links.count == 0 -> DeleteProgress.freed(t, o.freed)
+        links.count >= o.deleted -> t.s(R.string.hardlink_note)
+        else -> DeleteProgress.freed(t, maxOf(0L, o.freed - links.disk)) + " · " + t.s(R.string.hardlink_excluded)
+    }
+
+    fun footer(t: Txt, o: Outcome, links: Links = Links.NONE): String = when (o) {
         is Outcome.Stopped -> t.s(R.string.group_stopped, Fmt.count(o.deleted.toLong(), t.locale),
-            Fmt.count(o.total.toLong(), t.locale), DeleteProgress.freed(t, o.freed, hardlink))
-        else -> DeleteProgress.freed(t, o.freed, hardlink)
+            Fmt.count(o.total.toLong(), t.locale), freed(t, o, links))
+        else -> freed(t, o, links)
     }
 
     /** Сообщение частичного итога: заголовок «Удалено 2 из 3», текст — освобождено и «Не удалено:» по строке. */
-    fun alert(t: Txt, o: Outcome.Partial, hardlink: Boolean = false): Pair<String, String> {
+    fun alert(t: Txt, o: Outcome.Partial, links: Links = Links.NONE): Pair<String, String> {
         val title = t.s(if (o.stopped) R.string.group_partial_stopped else R.string.group_partial,
             Fmt.count(o.deleted.toLong(), t.locale), Fmt.count(o.total.toLong(), t.locale))
         val lines = o.fails.take(MAX_LINES).joinToString("\n") { (nm, f) -> t.s(R.string.fail_line, Bidi.visible(nm), t.s(f.res)) } +
             if (o.fails.size > MAX_LINES) "\n" + t.s(R.string.more_children, Fmt.count((o.fails.size - MAX_LINES).toLong(), t.locale)) else ""
-        return title to DeleteProgress.freed(t, o.freed, hardlink) + "\n\n" + t.s(R.string.not_deleted) + "\n" + lines
+        return title to freed(t, o, links) + "\n\n" + t.s(R.string.not_deleted) + "\n" + lines
     }
 
     /** Каталог удалён частично (как [DeleteProgress.refreshAfter] у одного): дерево надо обновить. */

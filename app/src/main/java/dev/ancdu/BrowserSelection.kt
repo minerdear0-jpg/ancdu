@@ -105,7 +105,7 @@ class BrowserSelection(private val a: BrowserActivity) {
         a.load(a.node, a.keepScroll)
         if (a.isFinishing) return
         val o = GroupResult.outcome(results)
-        val hard = GroupResult.hardlink(results)
+        val hard = GroupResult.links(results)
         val text = when (o) {
             is GroupResult.Outcome.Done -> { Feedback.cue(a.list, Cue.DONE); GroupResult.footer(a.txt, o, hard).also { a.note(it, log = true) } }
             is GroupResult.Outcome.Stopped -> GroupResult.footer(a.txt, o, hard).also { a.note(it, log = o.deleted > 0) }

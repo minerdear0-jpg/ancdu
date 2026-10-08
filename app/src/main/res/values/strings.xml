@@ -417,5 +417,6 @@
     </plurals>
     <string name="warn_trash">No trash.</string>
     <string name="hardlink_note">Hard link — space may not be freed</string>
+    <string name="hardlink_excluded">excl. hard links</string>
     <string name="warn_hardlink">Hard link — space may not be freed.</string>
 </resources>
