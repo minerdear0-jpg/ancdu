@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 
 class BrowserActivity : LangActivity() {
     /** Тексты в языке экрана (смена языка пересоздаёт экран). */
-    private val txt: Txt by lazy { tx }
+    internal val txt: Txt by lazy { tx }
     lateinit var list: NcduListView
     var node = 0
         private set
@@ -41,39 +41,40 @@ class BrowserActivity : LangActivity() {
     var loads = 0
         private set
     private var sort = SORT_SIZE
-    private var apparent = false
-    private var kids = IntArray(0)
-    private var n = 0
-    private var info = LongArray(0)
+    internal var apparent = false
+        private set
+    internal var kids = IntArray(0)
+    internal var n = 0
+        private set
+    internal var info = LongArray(0)
     // Строки строк считаются лениво при первом bind и живут до следующего load().
     private var names = arrayOfNulls<String>(0)
     private var shown = arrayOfNulls<String>(0)
-    private var sizes = arrayOfNulls<String>(0)
-    private var pcts = arrayOfNulls<String>(0)
+    internal var sizes = arrayOfNulls<String>(0)
+        private set
+    internal var pcts = arrayOfNulls<String>(0)
+        private set
     private var descs = arrayOfNulls<String>(0)
     /** Метки безопасности строк текущей папки; пришла метка приложения — строки перерисовываются. */
     private val rowTags by lazy { RowTags(this, txt) { descs = arrayOfNulls(n); list.invalidate() } }
     private var maxV = 0L
     private var parentV = 0L
-    /** Δ показанного дерева (Growth.forTree) на момент load; null — точки отсчёта нет или Δ считается. */
-    private var delta: Delta? = null
+    /** Δ уровня: сортировка Δ, «ушло», лист точки отсчёта. */
+    private val deltaLevel = DeltaLevel(this)
     /** На этом уровне показана сортировка Δ (выбрана и Δ есть). */
-    var deltaShown = false
-        private set
-    /** Δ строк уровня (в режиме размера: диск или видимый). */
-    private var dvals = LongArray(0)
+    val deltaShown get() = deltaLevel.shown
     /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
-    var goneText: String? = null
-        private set
+    val goneText get() = deltaLevel.goneText
     /** Для тестов: открытый лист точки отсчёта. */
-    var baselineSheet: BaselineSheet? = null
-        private set
+    val baselineSheet get() = deltaLevel.sheet
     /** Δ посчитана заново (новое дерево, удаление, «Отметить сейчас») или пропала. */
     private val onGrowth: () -> Unit = { growthChanged() }
     /** Единственный дескриптор, с которым экран вызывает Native; id узлов относятся к нему. */
-    private var h = 0L
+    internal var h = 0L
+        private set
     /** Holder.gen дескриптора [h]: ключ сохранённого пути вместе с h. */
-    private var gen = 0L
+    internal var gen = 0L
+        private set
     private var keepScroll = 0
     private var wait: AlertDialog? = null
     /** Для тестов: полоса, счётчик и кнопка «Стоп» диалога удаления (null — диалога нет). */
@@ -352,7 +353,7 @@ class BrowserActivity : LangActivity() {
         alert(title, msg)
     }
 
-    private fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
+    internal fun value(index: Int): Long = info[4 * index + if (apparent) 1 else 0]
 
     /** Метка пути [path] узла с флагами [flags] и запретом [block] дерева [h], уже для показа. */
     private fun tagOf(path: String, flags: Int, block: Block?): TagText? = rowTags.of(path, flags, block)
@@ -371,15 +372,8 @@ class BrowserActivity : LangActivity() {
             val nm = nameAt(index)
             // Управляющие направления текста — видимыми («⟨U+202E⟩»): имя не переставляется.
             row.name = shown[index] ?: Bidi.visible(if (dir) "$nm/" else nm).also { shown[index] = it }
-            val d = delta
-            val dv = if (deltaShown) dvals[index] else 0L
-            val isNew = deltaShown && d != null && d.isNew(kids[index])
             if (deltaShown) {
-                // Δ: знаковый размер (рост — AMBER_TEXT, сжатие и ±0 — MUTED), без полосы, справа — текущий размер.
-                row.size = sizes[index] ?: GrowthText.signed(dv, txt).also { sizes[index] = it }
-                row.sizeColor = GrowthText.role(dv).color()
-                row.pct = pcts[index] ?: Fmt.size(v, txt).also { pcts[index] = it }
-                if (isNew) row.badge = txt.s(R.string.new_badge)
+                deltaLevel.bind(index, row, v)
             } else {
                 row.size = sizes[index] ?: (if (flags and F_OTHERFS != 0) "—" else Fmt.size(v, txt)).also { sizes[index] = it }
                 row.bar = ListMath.bar(v, maxV)
@@ -396,7 +390,8 @@ class BrowserActivity : LangActivity() {
                 flags and F_HLDUP != 0 -> row.mark = "≡"
             }
             row.desc = descs[index] ?: buildString {
-                if (deltaShown && d != null) append(GrowthText.rowDesc(txt, nm, dv, v, d.baseTime, isNew, dir))
+                val dd = deltaLevel.rowDesc(index, nm, v, dir)
+                if (dd != null) append(dd)
                 else {
                     append(nm); append(", "); append(row.size)
                     if (row.pct.isNotEmpty()) { append(", "); append(row.pct) }
@@ -476,7 +471,7 @@ class BrowserActivity : LangActivity() {
             maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER_VERTICAL
             // В сортировке Δ — «Δ с 1 окт. 09:12»: тап открывает лист точки отсчёта (load включает касание).
-            feedbackClick { openBaseline() }
+            feedbackClick { deltaLevel.openBaseline() }
             isClickable = false; isFocusable = false
         }
         newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
@@ -823,7 +818,7 @@ class BrowserActivity : LangActivity() {
         // Строки панели пути и листа ошибок — узлы старого дерева.
         pathPanel?.dismiss(); pathPanel = null
         errorsSheet?.dismiss(); errorsSheet = null
-        baselineSheet?.dismiss(); baselineSheet = null
+        deltaLevel.dismissSheet()
         list.source = null
         promoting = true
         try { Holder.promote() } finally { promoting = false }
@@ -886,7 +881,7 @@ class BrowserActivity : LangActivity() {
         sheet?.dismiss(); sheet = null
         pathPanel?.dismiss(); pathPanel = null
         errorsSheet?.dismiss(); errorsSheet = null
-        baselineSheet?.dismiss(); baselineSheet = null
+        deltaLevel.dispose()
         quickLook?.dismiss(); quickLook = null
         if (::list.isInitialized) list.animate().cancel()
         super.onDestroy()
@@ -969,10 +964,7 @@ class BrowserActivity : LangActivity() {
         loads++
         node = target
         // Δ посчитана заранее на io (Growth): здесь только чтения массивов, без работы с базой.
-        delta = Growth.forTree(h, gen)
-        if (sort == SORT_DELTA && delta == null && !Growth.pending(h, gen)) sort = SORT_SIZE
-        val d = delta
-        deltaShown = sort == SORT_DELTA && d != null
+        sort = deltaLevel.begin(sort)
         // Массив — по childCount (с удалёнными детьми); показываем столько, сколько вернул children().
         kids = IntArray(Native.childCount(h, node))
         // Δ — сортировка Kotlin поверх готового порядка по размеру (ядро SORT_DELTA не знает).
@@ -982,17 +974,7 @@ class BrowserActivity : LangActivity() {
         keys = arrayOfNulls(n); selState = ByteArray(n); selBlocks = arrayOfNulls(n); selectableRows = null
         info = LongArray(4 * maxOf(n, 1))
         if (n > 0) Native.nodeInfo(h, kids, n, info)
-        if (deltaShown && d != null) orderByDelta(d) else dvals = LongArray(0)
-        goneText = if (deltaShown && d != null) d.gone[node]?.let { GrowthText.goneOrNull(txt, it.count, it.bytes(apparent)) } else null
-        // Δ: колонка текущего размера — по самому длинному тексту уровня (строки и кэшируются здесь).
-        list.rightSample = if (!deltaShown) null else {
-            var longest = ""
-            for (i in 0 until n) {
-                val s = Fmt.size(value(i), txt).also { pcts[i] = it }
-                if (s.length > longest.length) longest = s
-            }
-            longest
-        }
+        deltaLevel.order()
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
@@ -1000,11 +982,10 @@ class BrowserActivity : LangActivity() {
         rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind)
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
-        summary.text = if (deltaShown && d != null) GrowthText.summary(txt, parentV, d.of(node, apparent), d.baseTime)
-            else "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
+        summary.text = deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        sourceBadge = if (deltaShown && d != null) GrowthText.badge(txt, d.baseTime) else Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
+        sourceBadge = deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
         // Плашка Δ — касаемая (лист точки отсчёта), 44dp; иначе — просто текст.
         badge.isClickable = deltaShown; badge.isFocusable = deltaShown
         badge.minHeight = if (deltaShown) dp(44) else 0
@@ -1020,17 +1001,6 @@ class BrowserActivity : LangActivity() {
         if (dropped > 0) note(GroupSheet.cleared(txt, dropped))
     }
 
-    /** Дети уровня (и их nodeInfo) — по Δ убыв., при равной — по размеру ([GrowthSort]); Δ строк. */
-    private fun orderByDelta(d: Delta) {
-        val pos = IntArray(n) { it }
-        GrowthSort.sort(pos, n, { d.of(kids[it], apparent) }, { value(it) })
-        val k2 = IntArray(kids.size)
-        val i2 = LongArray(info.size)
-        for (j in 0 until n) { k2[j] = kids[pos[j]]; System.arraycopy(info, 4 * pos[j], i2, 4 * j, 4) }
-        kids = k2; info = i2
-        dvals = LongArray(n) { d.of(kids[it], apparent) }
-    }
-
     /**
      * Δ дерева сменилась (Growth): в сортировке Δ — тот же уровень заново (прокрутка и ждущий лист
      * остаются); иначе — только сегмент Δ появляется или пропадает.
@@ -1040,16 +1010,6 @@ class BrowserActivity : LangActivity() {
         // Holder уже держит другое дерево (Holder.set зовёт Growth раньше слушателей сессии): экран пересоздаётся.
         if (Holder.h != h || Holder.gen != gen) return
         if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else renderChips()
-    }
-
-    /** Тап по плашке «Δ с …»: лист точки отсчёта (дата, возраст, размер; «Отметить сейчас»). */
-    fun openBaseline() {
-        val d = delta
-        if (busy || h == 0L || !deltaShown || d == null) return
-        baselineSheet?.dismiss()
-        baselineSheet = BaselineSheet(this, d.baseTime, d.baseBytes,
-            onMark = { baselineSheet?.dismiss(); Growth.markNow(this) },
-            onClose = { refreshPending() }).also { it.show() }
     }
 
     private fun samePath(a: List<ByteArray>, b: List<ByteArray>): Boolean =
