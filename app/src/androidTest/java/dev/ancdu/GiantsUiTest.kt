@@ -318,6 +318,49 @@ class GiantsUiTest {
         }
     }
 
+    /**
+     * Одно имя в двух папках (Download/big.iso и Movies/big.iso): удаляется ровно выбранный — по цепочке
+     * имён, второй остаётся; в журнале — путь именно удалённого.
+     */
+    @Test fun sameNameInTwoFoldersDeletesOnlyTheChosenOne() {
+        val t = inBox("same").apply { assertTrue(mkdirs()) }
+        val dl = put("same/Download/big.iso", 300_000)
+        val mv = put("same/Movies/big.iso", 200_000)
+        val other = put("same/Movies/other.bin", 150_000)
+        scanIn(t)
+        val b = giants()
+        var i = -1
+        ins.runOnMainSync {
+            val r = rows(b)
+            assertEquals(listOf("big.iso", "big.iso", "other.bin"), r.map { it.name })
+            assertEquals(listOf("Download/", "Movies/", "Movies/"), r.map { it.sub })
+            i = 1
+        }
+        // Удалить второй big.iso (Movies/) — группой с other.bin, чтобы путь шёл через цепочки.
+        ins.runOnMainSync { val s = b.list.source!!; s.longClick(i); s.click(2); b.deleteSelected() }
+        assertTrue(waitFor { b.sheet?.dialog?.isShowing == true })
+        ins.runOnMainSync {
+            assertEquals(listOf("Movies/big.iso", "Movies/other.bin"), b.sheet!!.childNames)
+            b.sheet!!.deleteButton!!.performClick()
+        }
+        assertTrue(waitFor(30_000) { !b.busy && b.list.source != null })
+        assertTrue(dl.path, dl.exists())
+        assertFalse(mv.path, mv.exists())
+        assertFalse(other.path, other.exists())
+        val e = DeleteLogModel.entries(DeleteLogStore(logSandbox.file).lines()).single()
+        // Общая папка — Movies/, имена — от неё.
+        assertEquals(listOf("Movies"), e.start.names.map { String(it) })
+        assertEquals(listOf("big.iso", "other.bin"), e.start.itemNames.map { String(it) })
+        ins.runOnMainSync { assertEquals(listOf("big.iso"), rows(b).map { it.name }); assertEquals("Download/", rows(b)[0].sub) }
+
+        // И одиночное удаление: оставшийся Download/big.iso — путь в журнале его.
+        val k = index(b, "big.iso")
+        assertEquals(0, b.deleteBlocking(k))
+        assertFalse(dl.exists())
+        val last = DeleteLogModel.entries(DeleteLogStore(logSandbox.file).lines()).last()
+        assertEquals(listOf("Download", "big.iso"), last.start.names.map { String(it) })
+    }
+
     private companion object {
         const val MIN = 100_000L
     }
