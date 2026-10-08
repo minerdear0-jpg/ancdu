@@ -523,6 +523,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             minHeight = act.dp(56)
             setPadding(act.dp(12), act.dp(8), act.dp(12), act.dp(8))
             background = if (bg == null) act.pressable(Color.TRANSPARENT, C.FRAME) else StateListDrawable().apply {
+                // Выключенная в фокусе (отсчёт, клавиатура / переключатели): кольцо FOCUS видно и тут.
+                addState(intArrayOf(-android.R.attr.state_enabled, android.R.attr.state_focused), act.box(C.DIS_FILL, C.FOCUS))
                 addState(intArrayOf(-android.R.attr.state_enabled), act.box(C.DIS_FILL))
                 addState(intArrayOf(android.R.attr.state_pressed), act.box(C.DANGER_PRESSED))
                 addState(intArrayOf(android.R.attr.state_focused), act.box(bg, C.FOCUS))
