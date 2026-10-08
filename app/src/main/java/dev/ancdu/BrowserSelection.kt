@@ -14,7 +14,7 @@ import android.widget.TextView
 /**
  * Режим выбора браузера [a] и удаление группы: ключи и запреты строк, панель выбора внизу, лист
  * группы и его запуск. Удаление группы — по ИМЕНАМ (байты) в папке, каждое к своему началу ищется
- * в живом дереве и снова проверяется политикой ([GroupResolver], [groupJob]). Главный поток.
+ * в живом дереве и снова проверяется политикой ([GroupResolver], [ChainResolver], [groupJob]). Главный поток.
  */
 class BrowserSelection(private val a: BrowserActivity) {
     /**
@@ -437,7 +437,7 @@ class BrowserSelection(private val a: BrowserActivity) {
             val nd = found[j]
             val name = Native.str(key)
             GroupJob(name, nd != null && nd in dirs, nd?.let { disks[it] } ?: 0L) {
-                groupJob(app, resolver, key, name, fast, kind, viaRoot, sessionRoot)
+                groupJob(app, handle, { resolver.find(key) }, name, fast, kind, viaRoot, sessionRoot)
             }
         }
         a.keepScroll = a.list.scroll
@@ -519,7 +519,7 @@ class BrowserSelection(private val a: BrowserActivity) {
             val nd = found[j]
             val name = ChainKey(chain).rel
             GroupJob(name, nd != null && nd in dirs, nd?.let { disks[it] } ?: 0L) {
-                giantJob(app, resolver, chain, name, fast, kind, viaRoot, sessionRoot)
+                groupJob(app, handle, { resolver.find(chain) }, name, fast, kind, viaRoot, sessionRoot)
             }
         }
         val (folder, objects) = Giants.logObjects(chains.mapIndexed { j, c ->
@@ -547,65 +547,4 @@ class BrowserSelection(private val a: BrowserActivity) {
         const val SAVE_MAX = 2000
         const val SAVE_BYTES = 256 * 1024
     }
-}
-
-/**
- * Дети папки [folder] дерева [handle] по байтам имени — только на io, внутри удаления группы.
- * Карта строится один раз к началу первого объекта (из живого дерева), каждый найденный узел
- * перед удалением проверяется заново: не удалён, родитель — [folder], имя — ровно то же.
- * Не сошлось — полный проход по живым детям.
- */
-private class GroupResolver(val handle: Long, val folder: Int) {
-    private var map: HashMap<NameKey, Int>? = null
-
-    private fun live(): Pair<IntArray, Int> {
-        val c = IntArray(Native.childCount(handle, folder))
-        return c to maxOf(0, Native.children(handle, folder, SORT_NAME, false, c))
-    }
-
-    fun find(key: ByteArray): Int? {
-        val m = map ?: HashMap<NameKey, Int>().also { m ->
-            val (c, k) = live()
-            for (i in 0 until k) m[NameKey(Native.name(handle, c[i]))] = c[i]
-            map = m
-        }
-        m[NameKey(key)]?.let { if (verified(it, key)) return it }
-        val (c, k) = live()
-        for (i in 0 until k) if (verified(c[i], key)) return c[i]
-        return null
-    }
-
-    private fun verified(nd: Int, key: ByteArray): Boolean {
-        val f = LongArray(8).also { Native.nodeInfo(handle, intArrayOf(nd, folder), 2, it) }
-        return f[3].toInt() and F_DELETED == 0 && f[7].toInt() and F_DELETED == 0 &&
-            Native.parent(handle, nd) == folder && Native.name(handle, nd).contentEquals(key)
-    }
-}
-
-/**
- * На io, к началу объекта группы: ребёнок папки с именем ровно [key] в ЖИВОМ дереве (не по
- * старому id узла), повторная проверка запрета ([kind], [sessionRoot] — сессии на момент
- * подтверждения), затем тот же путь удаления, что у одного ([deleteItem]). Нет в дереве —
- * ENOENT (уже удалён); запрещён — не отправляется.
- */
-private fun groupJob(app: Context, res: GroupResolver, key: ByteArray, name: String, fast: Boolean, kind: Kind,
-                     viaRoot: Boolean, sessionRoot: String): Planned = try {
-    val handle = res.handle
-    val node = res.find(key)
-    if (node == null) Planned.Skip(ItemResult(name, false, 0L, -GroupResult.ENOENT, 0L))
-    else {
-        val inf = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(node), 1, it) }
-        val flags = inf[3].toInt()
-        val dir = flags and F_DIR != 0
-        val path = Native.str(Native.path(handle, node))
-        val block = DeletePolicy.blockReason(path, false, res.folder == 0, sessionRoot, flags, kind)
-            ?: if (fast && (DeletePolicy.fastBlockReason(path) != null || !Root.suExists())) Block.NO_FAST else null
-        if (block != null) {
-            Log.i("ancdu", "group item not sent: $block")
-            Planned.Skip(ItemResult(name, dir, inf[0], -1, 0L, attempted = false, block = block))
-        } else Planned.Go(deleteItem(app, handle, node, fast, kind, viaRoot))
-    }
-} catch (e: Exception) {
-    Log.w("ancdu", "group item skipped", e)
-    Planned.Skip(ItemResult(name, false, 0L, -5, 0L, attempted = false))
 }

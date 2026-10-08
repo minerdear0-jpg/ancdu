@@ -99,6 +99,16 @@ object DeletePolicy {
     }
 
     /**
+     * Повторная проверка объекта группы к его началу (на io, после поиска в живом дереве): [blockReason]
+     * узла ([parentIsRoot] — его родитель — корень дерева), затем, если выбран [fast], — разрешён ли
+     * сопоставленный путь /data/media и есть ли su ([su] — только тогда и спрашивается). null — отправить.
+     */
+    fun itemBlock(path: String, parentIsRoot: Boolean, sessionRoot: String, flags: Int, kind: Kind, fast: Boolean,
+                  su: () -> Boolean): Block? =
+        blockReason(path, false, parentIsRoot, sessionRoot, flags, kind)
+            ?: if (fast && (fastBlockReason(path) != null || !su())) Block.NO_FAST else null
+
+    /**
      * Быстрый путь root в обход FUSE: /storage/emulated/<n>/X → /data/media/<n>/X, иначе null.
      * <n> — только ASCII-цифры; X непуст, без пустых компонентов, «.» и «..» (и без «/» в конце).
      * Те же правила, что у media_path в ядре (session_root.c).

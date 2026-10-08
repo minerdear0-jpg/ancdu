@@ -259,4 +259,34 @@ class DeleteTierTest {
         for (t in listOf(XmlTxt.EN, XmlTxt.RU))
             assertTrue(SheetWarning.text(t, true, emptyList()).endsWith(t.s(R.string.no_trash)))
     }
+
+    /** Общая повторная проверка объекта группы (папка и «гиганты» — одна функция). */
+    @Test fun itemBlockIsBlockReasonThenFast() {
+        val root = "/storage/emulated/0"
+        var asked = 0
+        val su = { asked++; true }
+        val noSu = { asked++; false }
+        val f = "$root/Download/a.bin"
+        // Разрешённый файл: без быстрого пути su не спрашивается.
+        assertNull(DeletePolicy.itemBlock(f, false, root, 0, Kind.SCAN, false, noSu))
+        assertEquals(0, asked)
+        // Быстрый путь: сопоставленный /data/media разрешён — решает su.
+        assertNull(DeletePolicy.itemBlock(f, false, root, 0, Kind.SCAN, true, su))
+        assertEquals(Block.NO_FAST, DeletePolicy.itemBlock(f, false, root, 0, Kind.SCAN, true, noSu))
+        assertEquals(2, asked)
+        // Путь без сопоставления — NO_FAST, su не спрашивается.
+        assertEquals(Block.NO_FAST, DeletePolicy.itemBlock("/sdcard2/x.bin", false, "/sdcard2", 0, Kind.SCAN, true, su))
+        assertEquals(2, asked)
+        // Запрет политики — раньше быстрого пути и ровно как blockReason.
+        for (fast in listOf(false, true)) {
+            assertEquals(Block.SYSTEM, DeletePolicy.itemBlock("/data/system/x", false, "/data", 0, Kind.SCAN, fast, su))
+            assertEquals(Block.SYSTEM, DeletePolicy.itemBlock("/x", true, "/", 0, Kind.SCAN, fast, su))
+            assertEquals(Block.OTHER_FS, DeletePolicy.itemBlock(f, false, root, F_OTHERFS, Kind.SCAN, fast, su))
+            assertEquals(Block.REFRESH_FAILED, DeletePolicy.itemBlock("$root/Download", false, root, F_DIR, Kind.CACHE, fast, su))
+        }
+        assertEquals(2, asked)
+        for (p in listOf(f, "$root/Android/data/x", "/data/data/com.x/a", "/data/system/y"))
+            for (pr in listOf(false, true)) for (k in Kind.entries)
+                assertEquals(DeletePolicy.blockReason(p, false, pr, root, 0, k), DeletePolicy.itemBlock(p, pr, root, 0, k, false, su))
+    }
 }
