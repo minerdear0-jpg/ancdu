@@ -57,6 +57,7 @@ class MainActivity : LangActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Theme.reconcile(this)
         systemBars()
         Root.load(this)
         val prefs = getSharedPreferences(Scans.PREFS, MODE_PRIVATE)

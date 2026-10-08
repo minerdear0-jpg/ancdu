@@ -46,6 +46,20 @@ object ThemePrefs {
         }
     }
 
+    /** Ночной ли экран при выборе [c], когда у системы ночной режим [systemNight]. */
+    fun night(c: ThemeChoice, systemNight: Boolean): Boolean = when (c) {
+        ThemeChoice.SYSTEM -> systemNight
+        ThemeChoice.DARK -> true
+        ThemeChoice.LIGHT -> false
+    }
+
+    /**
+     * API 31+: экран ночной [actualNight], а выбор [c] при системном [systemNight] ждёт другого —
+     * режим приложения в системе разошёлся с prefs (восстановление из копии и т. п.).
+     */
+    fun needsReapply(c: ThemeChoice, systemNight: Boolean, actualNight: Boolean): Boolean =
+        night(c, systemNight) != actualNight
+
     /** [uiMode] с ночными битами [night] (тип устройства не меняется). */
     fun withNight(uiMode: Int, night: Int): Int = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
 }
@@ -70,6 +84,25 @@ object Theme {
         } else {
             a.recreate()
         }
+    }
+
+    /** Сверка уже сделана в этом процессе: повторно не переприменяет (нет цикла пересозданий). */
+    private var reconciled = false
+
+    /**
+     * API 31+, onCreate главного экрана: prefs — правда. Публичного чтения режима приложения
+     * (getApplicationNightMode) нет, поэтому сверяется итог: ночной ли [a] против ожидаемого по
+     * выбору и ночному режиму системы (Resources.getSystem — без поправки приложения). Разошлись —
+     * setApplicationNightMode(выбор) один раз на процесс: система пересоздаст экран, второй
+     * onCreate сверку уже не делает, даже если режим так и не совпал.
+     */
+    fun reconcile(a: Activity) {
+        if (Build.VERSION.SDK_INT < 31 || reconciled) return
+        reconciled = true
+        val c = choice(a)
+        val systemNight = android.content.res.Resources.getSystem().configuration.isNightModeActive
+        if (ThemePrefs.needsReapply(c, systemNight, a.resources.configuration.isNightModeActive))
+            a.getSystemService(UiModeManager::class.java)?.setApplicationNightMode(ThemePrefs.appNightMode(c))
     }
 
     /** Диалог «Тема: Как в системе / Тёмная / Светлая» (пункт меню «···»). */

@@ -54,6 +54,28 @@ class ThemeTest {
             ThemePrefs.withNight(car or Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES))
     }
 
+    /** Ожидаемый ночной режим выбора: системный — как у системы, явный — свой. */
+    @Test fun expectedNight() {
+        for (sys in listOf(true, false)) {
+            assertEquals(sys, ThemePrefs.night(ThemeChoice.SYSTEM, sys))
+            assertEquals(true, ThemePrefs.night(ThemeChoice.DARK, sys))
+            assertEquals(false, ThemePrefs.night(ThemeChoice.LIGHT, sys))
+        }
+    }
+
+    /**
+     * API 31+: режим приложения в системе разошёлся с prefs (восстановление из резервной копии и т. п.)
+     * — экран не в той теме, что ждёт выбор: переприменить. Совпало — ничего.
+     */
+    @Test fun reapplyOnlyOnMismatch() {
+        assertEquals(false, ThemePrefs.needsReapply(ThemeChoice.SYSTEM, systemNight = true, actualNight = true))
+        assertEquals(true, ThemePrefs.needsReapply(ThemeChoice.SYSTEM, systemNight = false, actualNight = true))
+        assertEquals(true, ThemePrefs.needsReapply(ThemeChoice.LIGHT, systemNight = false, actualNight = true))
+        assertEquals(false, ThemePrefs.needsReapply(ThemeChoice.LIGHT, systemNight = true, actualNight = false))
+        assertEquals(true, ThemePrefs.needsReapply(ThemeChoice.DARK, systemNight = true, actualNight = false))
+        assertEquals(false, ThemePrefs.needsReapply(ThemeChoice.DARK, systemNight = false, actualNight = true))
+    }
+
     /** Палитра — по ночному режиму конфигурации экрана. */
     @Test fun paletteForNightMode() {
         assertEquals(Palette.DARK, Palette.of(night = true))
