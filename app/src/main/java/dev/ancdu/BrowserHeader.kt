@@ -134,6 +134,10 @@ class BrowserHeader(private val a: BrowserActivity) {
         badge.setTextColor(if (badgeActive || a.deltaShown && !newerOutlined) C.AMBER_TEXT else C.MUTED)
     }
 
+    /** Плашка видна и амберная (ход скана или касаемая Δ) — акцент экрана. */
+    val badgeAmber: Boolean get() = ::badge.isInitialized && badge.visibility == View.VISIBLE &&
+        badge.text.isNotEmpty() && (badgeActive || a.deltaShown && !newerOutlined)
+
     /** Чип «новее» сейчас в контуре (не амберная заливка). */
     var newerOutlined = false
         private set

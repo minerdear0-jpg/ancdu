@@ -170,6 +170,10 @@ class BrowserActivity : LangActivity() {
 
     /** Режим выбора в одной папке, панель выбора и удаление группы. */
     internal val sel = BrowserSelection(this)
+    /** Курсор «вы были здесь» (по именам). */
+    internal val cursor = BrowserCursor(this)
+    /** Для тестов: строка курсора «вы были здесь»; -1 — нет. */
+    val cursorRow get() = cursor.row
     val selection get() = sel.selection
     /** Панель выбора внизу (вместо подвала): ✕, итог и число, «ВСЕ»/«НИЧЕГО», «УДАЛИТЬ…». */
     val selBar get() = sel.selBar
@@ -388,6 +392,8 @@ class BrowserActivity : LangActivity() {
                 if (flags and F_ERR != 0) { append(", "); append(txt.s(R.string.desc_incomplete)) }
                 if (tag != null) append(tag.desc)
             }.also { descs[index] = it }
+            // Блок курсора — оформление; TalkBack слышит коротко «, вы были здесь».
+            if (index == cursor.row) row.desc += txt.s(R.string.cursor_here)
             if (selection.active) {
                 sel.bind(index, row, dir)
             } else if (!dir) {
@@ -396,6 +402,7 @@ class BrowserActivity : LangActivity() {
         }
         override fun click(index: Int) {
             if (busy || index >= n) return
+            cursor.clear()
             // В режиме выбора тап выбирает (и каталог: вглубь нельзя).
             if (selection.active) { sel.toggleRow(index); return }
             // Файл — карточка быстрого просмотра; долгое нажатие — режим выбора.
@@ -405,6 +412,7 @@ class BrowserActivity : LangActivity() {
         }
         override fun longClick(index: Int) {
             if (busy || index >= n) return
+            cursor.clear()
             if (!selection.active) { sel.enterSelection(index); return }
             val flags = info[4 * index + 3].toInt()
             if (flags and F_DIR == 0) previews.openQuickLook(kids[index], value(index), flags) else sel.toggleRow(index)
@@ -417,10 +425,20 @@ class BrowserActivity : LangActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         systemBars()
+        if (savedInstanceState != null) BrowserState.testProcessDeath?.let { BrowserState.testProcessDeath = null; it(savedInstanceState) }
         h = Holder.h
         gen = Holder.gen
-        if (h == 0L) { finish(); return }
         giant.on = intent.getBooleanExtra(EXTRA_GIANTS, false)
+        // Состояние умершего процесса: его дескриптор и id узлов ничего не значат — папка по именам.
+        val dead = BrowserState.decode(savedInstanceState?.getByteArray(S_STATE))
+            ?.takeIf { savedInstanceState?.getLong(S_PROC) != BrowserState.process }
+        var named: BrowserState.Saved? = null
+        if (dead != null) when (decideRestore(dead)) {
+            BrowserState.Restore.LIVE -> named = dead
+            BrowserState.Restore.CACHE -> { reopen(dead, savedInstanceState!!); return }
+            BrowserState.Restore.NONE -> Log.i("ancdu", "browser state not restored")
+        }
+        if (h == 0L) { finish(); return }
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
@@ -491,12 +509,17 @@ class BrowserActivity : LangActivity() {
         BgScan.addListener(onBg)
         Growth.addListener(onGrowth)
         // Пересоздание (смена языка, системой) того же дерева: та же папка, сортировка и режим размера.
-        val st = savedInstanceState?.takeIf { it.getLong(S_H) == h && it.getLong(S_GEN, -1) == gen }
+        val st = savedInstanceState?.takeIf {
+            it.getLong(S_PROC) == BrowserState.process && it.getLong(S_H) == h && it.getLong(S_GEN, -1) == gen
+        }
         if (st != null) {
             sort = st.getInt(S_SORT, SORT_SIZE)
             apparent = st.getBoolean(S_APPARENT, false)
             node = st.getInt(S_NODE, 0)
             keepScroll = st.getInt(S_SCROLL, 0)   // и для onDeleted, если удаление ещё идёт
+        } else if (named != null) {
+            sort = named.sort
+            apparent = named.apparent
         } else if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_DELTA, false)) {
             // Строка «что выросло» главного экрана: сразу в сортировке Δ (Δ может ещё считаться на io).
             sort = SORT_DELTA
@@ -506,8 +529,12 @@ class BrowserActivity : LangActivity() {
             showWait()
         } else {
             list.source = src
-            load(node, keepScroll)
-            if (st != null) sel.restoreSelection(st)
+            if (named != null) restoreNamed(named, savedInstanceState!!)
+            else load(node, keepScroll)
+            if (st != null) {
+                sel.restoreSelection(st)
+                cursor.restore(BrowserState.decode(st.getByteArray(S_STATE))?.cursor, flash = false)
+            }
             // Только при первом создании: пересоздание держит свою папку и прокрутку.
             else if (savedInstanceState == null) Focus.parse(intent.getByteArrayExtra(EXTRA_FOCUS))?.let { focus(it) }
             // «⚠ N» на карточке главного экрана: сразу лист ошибок (после первого кадра).
@@ -518,6 +545,12 @@ class BrowserActivity : LangActivity() {
 
     override fun onSaveInstanceState(out: Bundle) {
         super.onSaveInstanceState(out)
+        // Ждём кэш для восстановления: отдать то же состояние следующему экземпляру.
+        if (restoring) { pendingState?.let { out.putAll(it) }; return }
+        out.putLong(S_PROC, BrowserState.process)
+        // Путь по именам — для нового процесса. Во время удаления дерево не читается: не сохраняется
+        // (после смерти процесса посреди удаления — обычный старт).
+        if (!busy && h != 0L && h == Holder.h) out.putByteArray(S_STATE, BrowserState.encode(savedState()))
         out.putLong(S_H, h)
         out.putLong(S_GEN, gen)
         out.putInt(S_NODE, node)
@@ -529,7 +562,7 @@ class BrowserActivity : LangActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (relaunching) return   // LangActivity уже пересоздаёт экран
+        if (relaunching || restoring) return   // LangActivity уже пересоздаёт экран; ждём кэш
         // Сессию сменили, пока экран был скрыт: старые id узлов к новому дереву не относятся.
         if (!busy && Holder.h != h) { list.source = null; recreate(); return }
         refreshPending()
@@ -558,6 +591,20 @@ class BrowserActivity : LangActivity() {
             if (!Holder.deleting && auto.failed(nw, BgScan.active)) refreshFailed(auto.take()!!)
         }
         newer.visibility = if (hasNewer() && h != 0L) View.VISIBLE else View.GONE
+        cursor.budget()
+    }
+
+    /**
+     * Амберные акценты экрана сейчас, кроме вспышки курсора ([CursorPlace.accents]): ссылка «⚠ N»,
+     * чип «новее» с заливкой, амберная плашка Δ.
+     */
+    internal fun accentsShown(): Int = CursorPlace.accents(errors = errLink.visibility == View.VISIBLE,
+        newerFilled = newer.visibility == View.VISIBLE && !head.newerOutlined, badgeAmber = head.badgeAmber)
+
+    override fun onRestart() {
+        super.onRestart()
+        // Вернулись на экран (из другого экрана или приложения): строка курсора подсвечивается.
+        if (!restoring && ::list.isInitialized) cursor.arrived()
     }
 
     /** Обновлённое дерево готово: подставить (путь сохраняется) и показать итог запроса [r]. */
@@ -638,7 +685,63 @@ class BrowserActivity : LangActivity() {
         return chain
     }
 
+    /** Состояние для нового процесса: папка по именам, корень и режим su, время, вид списка. Главный поток, не во время удаления. */
+    private fun savedState() = BrowserState.Saved(process = BrowserState.process, root = Holder.root, su = Holder.viaRoot,
+        savedAt = System.currentTimeMillis(), giants = giant.on, sort = sort, apparent = apparent, scroll = list.scroll,
+        chain = pathNames(h, node), cursor = cursor.state())
+
+    private fun decideRestore(s: BrowserState.Saved): BrowserState.Restore = BrowserState.decide(s,
+        System.currentTimeMillis(), if (Holder.h != 0L) BrowserState.Live(Holder.root, Holder.viaRoot) else null,
+        Scans.meta(this, s.root, s.su)?.root, java.io.File(s.root).isDirectory, Holder.deleting, giant.on)
+
+    /** Ждём кэш умершего процесса: экран пустой, ни дерева, ни слушателей. */
+    private var restoring = false
+    /** Для тестов: экземпляр ждёт кэш (у него нет списка). */
+    val restoringFromCache get() = restoring
+    private var pendingState: Bundle? = null
+
+    /**
+     * Смерть процесса, дерева нет: открыть кэш корня [s] на Holder.io (как карточка главного экрана)
+     * и пересоздать экран — новый экземпляр найдёт папку по именам в живом дереве. Кэш не открылся —
+     * обычный старт (браузер закрывается, как без дерева), без сообщения.
+     */
+    private fun reopen(s: BrowserState.Saved, state: Bundle) {
+        restoring = true
+        pendingState = Bundle(state)
+        setContentView(View(this).apply { setBackgroundColor(C.BG) })
+        val meta = Scans.meta(this, s.root, s.su)
+        val file = Holder.cacheFile(this, s.root, s.su)
+        if (meta == null) { finish(); return }
+        Holder.io.execute {
+            val t = try { Native.openCache(file.path, IntArray(1)) } catch (e: Exception) { 0L }
+            runOnUiThread {
+                if (isDestroyed || isFinishing || t == 0L || Holder.h != 0L || Holder.deleting) {
+                    if (t != 0L) Holder.io.execute { Native.free(t) }
+                    // Дерево успело появиться (или удаление) — решит новый экземпляр; кэша нет — обычный старт.
+                    if (!isDestroyed && !isFinishing) { if (t == 0L) finish() else recreate() }
+                    return@runOnUiThread
+                }
+                Holder.set(t, Kind.CACHE, s.root, s.su, meta.time)
+                recreate()
+            }
+        }
+    }
+
+    /**
+     * Восстановление после смерти процесса: папка [s] по именам в живом дереве [h] (одним вызовом
+     * ядра). Найдена — её прокрутка и выбор (по именам, [state]); нет — ближайший предок и «Папки уже нет: …».
+     */
+    private fun restoreNamed(s: BrowserState.Saved, state: Bundle) {
+        val (nd, depth) = Native.resolveDepth(h, s.chain, dirOnly = true)
+        val exact = depth >= s.chain.size
+        load(nd, if (exact) s.scroll else 0)
+        if (exact) { sel.restoreSelection(state); cursor.restore(s.cursor, flash = true) }
+        else note(txt.s(R.string.folder_gone, Bidi.visible(Native.str(s.chain[depth]))))
+    }
+
     private companion object {
+        const val S_PROC = "proc"
+        const val S_STATE = BrowserState.KEY
         const val S_H = "h"
         const val S_GEN = "gen"
         const val S_NODE = "node"
@@ -804,6 +907,8 @@ class BrowserActivity : LangActivity() {
         slide(dir)
         sel.renderSelection()
         list.scroll = restore
+        // Курсор — заново по именам (другой порядок, новое дерево, удаление); другая папка — снят.
+        cursor.relocate()
         if (dropped > 0) note(GroupSheet.cleared(txt, dropped))
     }
 
@@ -879,8 +984,11 @@ class BrowserActivity : LangActivity() {
         if (selection.active) { sel.leaveSelection(cleared = true); return }
         cancelAsk()
         if (node != 0) {
+            val from = node
             val p = maxOf(Native.parent(h, node), 0)
             load(p, scrollAt.remove(p) ?: 0, dir = -1)
+            // «Вы были здесь»: строка папки, из которой вернулись.
+            cursor.set(kids.indexOf(from).takeIf { it in 0 until n } ?: -1, flash = true)
         } else {
             super.onBackPressed()
         }
@@ -1049,6 +1157,8 @@ class BrowserActivity : LangActivity() {
         if (fast && !fastAllowed(path)) return false
         val items = LongArray(4).also { Native.nodeInfo(handle, intArrayOf(target), 1, it) }[2]
         keepScroll = list.scroll
+        // Курсор — на месте удаляемого (после удаления — сосед, без «уже нет на диске»).
+        cursor.atDeleted(intArrayOf(target))
         val item = deleteItem(applicationContext, handle, target, fast, Holder.kind, Holder.viaRoot, testBulk)
         Holder.delete(handle, item, done, total = items, names = pathNames(handle, target))
         showWait()

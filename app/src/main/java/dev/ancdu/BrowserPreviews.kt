@@ -28,11 +28,17 @@ class BrowserPreviews(private val a: BrowserActivity) {
         // «ВЫБРАТЬ»: вне выбора — войти в него с этим файлом, в выборе — переключить файл.
         val selected = a.selection.active && a.selection.contains(target)
         // Закрыта карточка — подставить дерево, если оно пришло, пока она была открыта.
-        quickLook = QuickLook(a, info, onClose = { a.refreshPending() },
+        quickLook = QuickLook(a, info, onClose = { cardClosed(handle, target); a.refreshPending() },
             selectLabel = a.txt.s(if (selected) R.string.sel_deselect else R.string.ql_select),
             onSelect = { if (!a.busy && a.h == handle && !a.isFinishing) a.sel.selectFromCard(target) }) {
             if (!a.busy && a.h == handle && !a.isFinishing) a.ask(target, fromCard = true)
         }.also { it.show() }
+    }
+
+    /** Карточка закрыта: «вы были здесь» — на строке её файла (не при уходе экрана и не в режиме выбора). */
+    private fun cardClosed(handle: Long, target: Int) {
+        if (a.busy || a.h != handle || a.isFinishing || a.isDestroyed || a.isChangingConfigurations || a.selection.active) return
+        a.cursor.set(a.kids.indexOf(target).takeIf { it in 0 until a.n } ?: -1, flash = true)
     }
 
     fun preview(handle: Long, target: Int, name: String): DeletePreview {

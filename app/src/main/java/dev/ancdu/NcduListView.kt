@@ -176,6 +176,30 @@ class NcduListView(ctx: Context) : View(ctx) {
         set(v) { if (field != v) { field = v; invalidate() } }
     private val unpress = Runnable { pressed = -1 }
 
+    /**
+     * Курсор «вы были здесь»: постоянный амберный блок у левого края строки (как каретка — не акцент);
+     * -1 — нет. Только один на список.
+     */
+    var cursorRow = -1
+        set(v) { if (field != v) { field = v; if (v < 0) stopFlash(); invalidate() } }
+    /** Идёт вспышка строки курсора ([flash]) — единственная анимация внимания в приложении. */
+    var flashing = false
+        private set
+    private val endFlash = Runnable { flashing = false; invalidate() }
+    /** Строка курсора подсвечена [ms] мс (затем — только блок). Решение «можно ли» — у вызывающего. */
+    fun flash(ms: Long) {
+        if (cursorRow < 0) return
+        flashing = true
+        removeCallbacks(endFlash); postDelayed(endFlash, ms)
+        invalidate()
+    }
+    /** Снять вспышку сейчас (блок остаётся). */
+    fun stopFlash() {
+        removeCallbacks(endFlash)
+        if (flashing) { flashing = false; invalidate() }
+    }
+    private val blockW = ctx.dp(6)
+
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean { scroller.forceFinished(true); return true }
         override fun onShowPress(e: MotionEvent) {
@@ -263,13 +287,18 @@ class NcduListView(ctx: Context) : View(ctx) {
         for (i in first..last) {
             row.reset()
             src.bind(i, row)
-            drawRow(c, i * rh - scroll, rh, i == pressed)
+            drawRow(c, i * rh - scroll, rh, i == pressed, i == cursorRow)
         }
     }
 
-    private fun drawRow(c: Canvas, top: Int, rh: Int, down: Boolean) {
+    private fun drawRow(c: Canvas, top: Int, rh: Int, down: Boolean, cursor: Boolean = false) {
         val w = width
         row.note?.let { drawNote(c, it, top, rh); return }
+        // Вспышка курсора: строка в амберной подложке 1,5 с (нажатая — своя подложка и скобка).
+        if (cursor && flashing && !down) {
+            fill.color = (C.AMBER and 0x00FFFFFF) or 0x38000000
+            c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
+        }
         if (down) {
             fill.color = C.PANEL2
             c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
@@ -330,6 +359,12 @@ class NcduListView(ctx: Context) : View(ctx) {
             tagPaint.color = row.tagColor
             c.drawText(tag, right - tw, base, tagPaint)
             avail = maxOf(avail - tw - gap, 0f)
+        }
+        // Блок «█» курсора — у левого края, высотой со строку текста (AMBER_TEXT: ≥3:1 в обеих палитрах).
+        if (cursor && !down) {
+            fill.color = C.AMBER_TEXT
+            val bx = context.dp(4).toFloat()
+            c.drawRect(bx, blockTop.toFloat(), bx + blockW, (blockTop + mainH).toFloat(), fill)
         }
         val name = if (keepExt) Ellipsis.stemKeepExt(row.name, avail, mono::measureText)
             else TextUtils.ellipsize(row.name, mono, avail, TextUtils.TruncateAt.END).toString()
@@ -484,6 +519,11 @@ class NcduListView(ctx: Context) : View(ctx) {
     }
 
     override fun getAccessibilityNodeProvider(): AccessibilityNodeProvider = a11y
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(endFlash); flashing = false
+        super.onDetachedFromWindow()
+    }
 
     override fun performAccessibilityAction(action: Int, args: Bundle?): Boolean {
         val n = source?.count ?: 0

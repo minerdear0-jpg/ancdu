@@ -329,6 +329,8 @@
     <string name="err_android_private">Android 11+ closes this folder to other apps — its size is visible only in a root scan</string>
     <string name="err_scan_root">Scan as root</string>
     <string name="err_node_gone">This folder is no longer in the tree</string>
+    <string name="folder_gone">Folder no longer exists: %1$s</string>
+    <string name="cursor_here">, you were here</string>
 
     <!-- What grew: Δ against a rolling baseline -->
     <string name="sort_delta">Δ</string>

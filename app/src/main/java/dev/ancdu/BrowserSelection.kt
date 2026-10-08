@@ -442,6 +442,7 @@ class BrowserSelection(private val a: BrowserActivity) {
             }
         }
         a.keepScroll = a.list.scroll
+        a.cursor.atDeleted(live)
         Log.i("ancdu", "group delete n=${keys.size} kind=$kind viaRoot=$viaRoot fast=$fast items=$total")
         Holder.deleteGroup(handle, jobs, root = viaRoot || fast, name = a.nameOf(folder), total = total, disk = disk,
             names = a.pathNames(handle, folder),
@@ -527,6 +528,7 @@ class BrowserSelection(private val a: BrowserActivity) {
             GiantObject(c, found[j]?.let { disks[it] } ?: 0L, found[j]?.let { it in dirs } ?: false)
         })
         a.keepScroll = a.list.scroll
+        a.cursor.atDeleted(live)
         Log.i("ancdu", "giants delete n=${chains.size} kind=$kind viaRoot=$viaRoot fast=$fast items=$total")
         Holder.deleteGroup(handle, jobs, root = viaRoot || fast,
             name = if (folder.isEmpty()) a.txt.s(R.string.log_several_folders) else Native.str(folder.last()),
