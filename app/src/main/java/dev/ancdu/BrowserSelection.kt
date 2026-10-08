@@ -24,11 +24,11 @@ class BrowserSelection(private val a: BrowserActivity) {
     val selection = Selection()
     private var selScope: List<ByteArray> = emptyList()
     // Ключи строк и запрет выбора — лениво, до следующего load().
-    private var keys = arrayOfNulls<NameKey>(0)
+    private var keys = arrayOfNulls<SelKey>(0)
     /** 0 — не считано, 1 — можно выбрать, 2 — нельзя ([selBlocks]). */
     private var selState = ByteArray(0)
     private var selBlocks = arrayOfNulls<Block>(0)
-    private var selectableRows: List<Pair<NameKey, Int>>? = null
+    private var selectableRows: List<Pair<SelKey, Int>>? = null
     /** Панель выбора внизу (вместо подвала): ✕, итог и число, «ВСЕ»/«НИЧЕГО», «УДАЛИТЬ…». */
     lateinit var selBar: LinearLayout
         private set
@@ -75,9 +75,10 @@ class BrowserSelection(private val a: BrowserActivity) {
     fun save(out: Bundle) {
         if (selection.active && !a.busy) {
             val ks = selection.keys
-            if (ks.size <= SAVE_MAX && ks.sumOf { it.bytes.size } <= SAVE_BYTES) {
+            val raw = ks.map { (it as NameKey).bytes }
+            if (ks.size <= SAVE_MAX && raw.sumOf { it.size } <= SAVE_BYTES) {
                 out.putInt(S_SEL_N, ks.size)
-                for ((i, k) in ks.withIndex()) out.putByteArray(S_SEL + i, k.bytes)
+                for ((i, k) in raw.withIndex()) out.putByteArray(S_SEL + i, k)
             }
         }
     }
@@ -141,7 +142,7 @@ class BrowserSelection(private val a: BrowserActivity) {
 
     // ---------- режим выбора ----------
 
-    private fun keyAt(i: Int): NameKey = keys[i] ?: NameKey(Native.name(a.h, a.kids[i])).also { keys[i] = it }
+    private fun keyAt(i: Int): SelKey = keys[i] ?: NameKey(Native.name(a.h, a.kids[i])).also { keys[i] = it }
 
     /** Запрет выбора строки [i] или null. Каталог устаревшего дерева выбрать можно: лист сам обновит дерево. */
     private fun blockAt(i: Int): Block? {
@@ -153,7 +154,7 @@ class BrowserSelection(private val a: BrowserActivity) {
     }
 
     /** Все выбираемые строки уровня (ключ, узел) — для «ВСЕ»; один проход на уровень. */
-    private fun selectable(): List<Pair<NameKey, Int>> =
+    private fun selectable(): List<Pair<SelKey, Int>> =
         selectableRows ?: (0 until a.n).filter { blockAt(it) == null }.map { keyAt(it) to a.kids[it] }.also { selectableRows = it }
 
     private fun refuse(b: Block) {
@@ -332,7 +333,7 @@ class BrowserSelection(private val a: BrowserActivity) {
         val folder = a.node
         a.sheet?.dismiss()
         val nodes = selection.nodes
-        val keys = selection.keys.map { it.bytes }
+        val keys = selection.keys.map { (it as NameKey).bytes }
         val inf = LongArray(4 * nodes.size).also { Native.nodeInfo(handle, nodes, nodes.size, it) }
         val items = nodes.indices.map { j ->
             val nd = nodes[j]

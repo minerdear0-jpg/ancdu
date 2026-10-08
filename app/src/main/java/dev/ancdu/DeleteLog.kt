@@ -108,13 +108,15 @@ sealed class LogRec {
      * группа (несколько объектов одной папки; группа из одного пишется как одиночное удаление этого
      * объекта). [count] — объектов; [itemNames] — у группы до [LogActions.NAMES] имён, крупнейшие
      * первыми: для истории и будущего подробного вида (сейчас лист их не показывает).
-     * Поле 11: «g<N>» у группы, «<N>» у одиночного (запись раунда 3 без «g» — группа, если N > 1).
+     * Поле 11: «g<N>» у группы, «gm<N>» у группы из разных папок ([mixed]: [names] — их общая папка,
+     * [itemNames] — пути от неё через «/»), «<N>» у одиночного (запись раунда 3 без «g» — группа, если N > 1).
      */
     class Start(override val id: Long, val time: Long, val root: String, val su: Boolean, val names: List<ByteArray>,
                 val dir: Boolean, val items: Long, val disk: Long, val viaRoot: Boolean, val fast: Boolean,
-                val count: Int = 1, val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false) : LogRec() {
+                val count: Int = 1, val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false,
+                val mixed: Boolean = false) : LogRec() {
         override fun format() = (listOf("S", id, time, b(su), LogCodec.escape(root.toByteArray(Charsets.UTF_8)), LogCodec.rel(names),
-            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast), (if (group) "g" else "") + count) +
+            if (dir) "d" else "f", items, disk, b(viaRoot), b(fast), (if (group) (if (mixed) "gm" else "g") else "") + count) +
             (if (group) itemNames.map { LogCodec.escape(it) } else emptyList())).joinToString("\t")
     }
 
@@ -150,8 +152,10 @@ sealed class LogRec {
                 "S" -> if (f.size < 11) null else Start(f[1].toLong(), f[2].toLong(), String(LogCodec.unescape(f[4]), Charsets.UTF_8),
                     bool(f[3]), LogCodec.names(f[5]), when (f[6]) { "d" -> true; "f" -> false; else -> throw IllegalArgumentException() },
                     f[7].toLong(), f[8].toLong(), bool(f[9]), bool(f[10]),
-                    if (f.size > 11) f[11].removePrefix("g").toInt().also { require(it >= 1) } else 1, f.drop(12).map { LogCodec.unescape(it) },
-                    group = f.size > 11 && (f[11].startsWith("g") || f[11].toInt() > 1))
+                    if (f.size > 11) f[11].removePrefix("g").removePrefix("m").toInt().also { require(it >= 1) } else 1,
+                    f.drop(12).map { LogCodec.unescape(it) },
+                    group = f.size > 11 && (f[11].startsWith("g") || f[11].toInt() > 1),
+                    mixed = f.size > 11 && f[11].startsWith("gm"))
                 "E" -> when {
                     f.size >= 9 -> End(f[1].toLong(), f[2].toLong(), f[3].toInt(), f[4].toLong(), f[5].toLong(),
                         f[6].toInt(), f[7].toInt(), f[8].toInt())
@@ -209,7 +213,7 @@ object DeleteLogModel {
     /** Самое новое непросмотренное прерванное удаление — строка статуса главного экрана. */
     fun notice(entries: List<LogEntry>): InterruptedDelete? = interrupted(entries).lastOrNull()?.start?.let {
         InterruptedDelete(it.id, it.root, it.su, it.names, it.dir, it.disk, it.time, count = it.count, items = it.itemNames,
-            group = it.group)
+            group = it.group, mixed = it.mixed)
     }
 }
 
@@ -287,7 +291,9 @@ class DeleteLogStore(val file: File) {
 /** Одно действие удаления для журнала: объект или группа объектов одной папки ([LogRec.Start]). */
 class LogAction(val root: String, val su: Boolean, val names: List<ByteArray>, val dir: Boolean, val items: Long,
                 val disk: Long, val viaRoot: Boolean, val fast: Boolean, val count: Int = 1,
-                val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false)
+                val itemNames: List<ByteArray> = emptyList(), val group: Boolean = false,
+                /** Группа из разных папок («гиганты»): [names] — их общая папка, [itemNames] — пути от неё. */
+                val mixed: Boolean = false)
 
 /** Объект группы для журнала: имя (байты), размер, каталог ли. */
 data class LogObject(val name: ByteArray, val disk: Long, val dir: Boolean = false)
@@ -302,14 +308,15 @@ object LogActions {
      * отпали после обновления) — это одиночное удаление ЕГО: путь папка + имя, его флаг каталога.
      */
     fun group(root: String, su: Boolean, folder: List<ByteArray>, objects: List<LogObject>, items: Long,
-              viaRoot: Boolean, fast: Boolean): LogAction {
+              viaRoot: Boolean, fast: Boolean, mixed: Boolean = false): LogAction {
         objects.singleOrNull()?.let { o -> return LogAction(root, su, folder + o.name, o.dir, items, o.disk, viaRoot, fast) }
         return LogAction(root, su, folder, true, items, DeletePolicy.sum(objects.map { it.disk }), viaRoot, fast,
-            count = objects.size, itemNames = objects.sortedByDescending { it.disk }.take(NAMES).map { it.name }, group = true)
+            count = objects.size, itemNames = objects.sortedByDescending { it.disk }.take(NAMES).map { it.name }, group = true,
+            mixed = mixed)
     }
 
     fun start(id: Long, time: Long, a: LogAction) = LogRec.Start(id, time, a.root, a.su, a.names, a.dir, a.items, a.disk,
-        a.viaRoot, a.fast, a.count, a.itemNames, a.group)
+        a.viaRoot, a.fast, a.count, a.itemNames, a.group, a.mixed)
 
     /**
      * Итог действия [id] из итогов объектов [results] ([total] — объектов в действии; не дошедшие

@@ -56,6 +56,10 @@ object Native {
     /** Крупнейшие файлы всего дерева: до out.size (≤ 256) id узлов по убыванию disk, без каталогов,
      *  повторных жёстких ссылок (F_HLDUP), удалённого и пустых; число записанных. Только чтение. */
     @JvmStatic external fun topFiles(h: Long, out: IntArray): Int
+    /** «Гиганты»: файлы с disk ≥ [minBytes] по убыванию disk (при равенстве — меньший id), без каталогов,
+     *  F_HLDUP, удалённого и пустых. Пишет в [out] РОВНО возвращённое число id (≤ min([maxCount], out.size));
+     *  в total[0] — сколько совпало всего (может быть больше записанного). Только чтение, на Holder.io. */
+    @JvmStatic external fun giants(h: Long, minBytes: Long, maxCount: Int, out: IntArray, total: LongArray): Int
     /** Узлы с ошибкой скана или частичного удаления (F_ERR, не удалённые), по возрастанию id: первые
      *  min(out.size, [ERROR_NODES_MAX]) в out. Возвращает их общее число; записано ровно
      *  [errorNodesWritten] (total, out.size). Только чтение дерева. */

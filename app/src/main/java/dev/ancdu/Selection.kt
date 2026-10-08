@@ -4,7 +4,10 @@ package dev.ancdu
  * Имя ребёнка — байты (не строка: разные невалидные UTF-8 имена декодируются в одну строку с
  * U+FFFD). Равенство и хеш — по содержимому, массив копируется.
  */
-class NameKey(bytes: ByteArray) {
+/** Ключ выбора: имя в одной папке ([NameKey]) или цепочка имён от корня ([ChainKey], «гиганты»). */
+interface SelKey
+
+class NameKey(bytes: ByteArray) : SelKey {
     /** Своя копия: чужой массив, изменённый после, ключ не портит. */
     private val b = bytes.copyOf()
     /** Копия байтов имени. */
@@ -14,32 +17,32 @@ class NameKey(bytes: ByteArray) {
 }
 
 /**
- * Режим выбора в ОДНОЙ папке. Чистый Kotlin. Ключ — имя ребёнка (байты), значение — его узел
- * в текущем дереве: узлы годятся только для этого дерева, после подстановки нового —
- * [rebind] по именам. Снят последний — режим выходит сам.
+ * Режим выбора. Чистый Kotlin. Ключ — имя ребёнка папки (байты, [NameKey]) или, в «гигантах», цепочка
+ * имён от корня ([ChainKey]); значение — его узел в текущем дереве: узлы годятся только для этого
+ * дерева, после подстановки нового — [rebind] по ключам. Снят последний — режим выходит сам.
  */
 class Selection {
-    private val map = LinkedHashMap<NameKey, Int>()
+    private val map = LinkedHashMap<SelKey, Int>()
     private val nodeSet = HashSet<Int>()
 
     var active = false
         private set
     val count: Int get() = map.size
-    val keys: List<NameKey> get() = map.keys.toList()
+    val keys: List<SelKey> get() = map.keys.toList()
     val nodes: IntArray get() = map.values.toIntArray()
 
     fun contains(node: Int): Boolean = node in nodeSet
-    fun nodeOf(key: NameKey): Int? = map[key]
+    fun nodeOf(key: SelKey): Int? = map[key]
 
     /** Войти в режим с одним выбранным (прежний выбор забывается). */
-    fun start(key: NameKey, node: Int) {
+    fun start(key: SelKey, node: Int) {
         clear()
         active = true
         put(key, node)
     }
 
     /** Переключить; true — теперь выбран. Снят последний — режим выходит. */
-    fun toggle(key: NameKey, node: Int): Boolean {
+    fun toggle(key: SelKey, node: Int): Boolean {
         if (map.containsKey(key)) {
             map.remove(key)?.let { nodeSet.remove(it) }
             if (map.isEmpty()) active = false
@@ -51,13 +54,13 @@ class Selection {
     }
 
     /** «ВСЕ»: каждый из [rows], кроме запрещённых ([blocked] по узлу). */
-    fun selectAll(rows: List<Pair<NameKey, Int>>, blocked: (Int) -> Boolean) {
+    fun selectAll(rows: List<Pair<SelKey, Int>>, blocked: (Int) -> Boolean) {
         for ((k, nd) in rows) if (!blocked(nd)) put(k, nd)
         if (map.isNotEmpty()) active = true
     }
 
     /** Выбрано всё выбираемое из [rows] (пустое множество выбираемых — не «всё»). */
-    fun isAll(rows: List<Pair<NameKey, Int>>, blocked: (Int) -> Boolean): Boolean {
+    fun isAll(rows: List<Pair<SelKey, Int>>, blocked: (Int) -> Boolean): Boolean {
         var any = false
         for ((k, nd) in rows) {
             if (blocked(nd)) continue
@@ -75,7 +78,7 @@ class Selection {
     }
 
     /** Новое дерево: узлы заново по именам ([lookup] — узел или null); сколько пропало. Пусто — выход. */
-    fun rebind(lookup: (NameKey) -> Int?): Int {
+    fun rebind(lookup: (SelKey) -> Int?): Int {
         val old = map.keys.toList()
         map.clear(); nodeSet.clear()
         var gone = 0
@@ -84,7 +87,7 @@ class Selection {
         return gone
     }
 
-    private fun put(key: NameKey, node: Int) {
+    private fun put(key: SelKey, node: Int) {
         map.put(key, node)?.let { nodeSet.remove(it) }
         nodeSet += node
     }

@@ -274,6 +274,19 @@
     <string name="big_gone">Данные скана устарели — обновляю</string>
     <string name="big_title">Самые крупные файлы</string>
     <string name="big_desc">%1$s, %2$s, в %3$s</string>
+    <!-- Giants: a flat view of every file over 100 MiB -->
+    <plurals name="giants_summary">
+        <item quantity="one">%1$s файл ≥ 100\u00A0МиБ · %2$s</item>
+        <item quantity="few">%1$s файла ≥ 100\u00A0МиБ · %2$s</item>
+        <item quantity="many">%1$s файлов ≥ 100\u00A0МиБ · %2$s</item>
+        <item quantity="other">%1$s файла ≥ 100\u00A0МиБ · %2$s</item>
+    </plurals>
+    <string name="giants_link">все %1$s ›</string>
+    <string name="giants_link_desc">Все крупные файлы: %1$s</string>
+    <string name="giants_empty">Нет файлов больше 100\u00A0МиБ</string>
+    <string name="giants_desc">%1$s, %2$s, в папке %3$s</string>
+    <string name="giants_in_folder">в папке %1$s</string>
+    <string name="log_several_folders">(разные папки)</string>
     <string name="tag_sys">системное</string>
     <string name="tag_app">данные приложения</string>
     <string name="tag_app_named">данные приложения %1$s</string>

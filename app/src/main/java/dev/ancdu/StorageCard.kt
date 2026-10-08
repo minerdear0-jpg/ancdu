@@ -340,11 +340,24 @@ class StorageCard(private val a: MainActivity) {
         // Группа: удалено — те её объекты, которых в папке больше нет (и сколько освобождено);
         // одиночное — остаток самого узла.
         if (d.group) {
-            val alive = if (hit.exact) d.items.mapNotNull { nm -> child(hit.node, nm) } else emptyList()
+            // Имя объекта группы из разных папок — путь от общей папки («Camera/a.mp4»): идём по шагам.
+            val alive = if (hit.exact) d.items.mapNotNull { nm -> walk(hit.node, nm) } else emptyList()
             return d.withDone(d.count - alive.size).withFreed(maxOf(0L, d.disk - alive.sumOf { disk(it) }))
         }
         val left = if (hit.exact) disk(hit.node) else 0L
         return d.withFreed(maxOf(0L, d.disk - left))
+    }
+
+    /** Узел по пути [rel] от [nd] (имена через «/»; у группы одной папки — просто имя) или null. */
+    private fun walk(nd: Int, rel: ByteArray): Int? {
+        var cur = nd
+        var start = 0
+        for (i in 0..rel.size) {
+            if (i < rel.size && rel[i] != '/'.code.toByte()) continue
+            cur = child(cur, rel.copyOfRange(start, i)) ?: return null
+            start = i + 1
+        }
+        return cur
     }
 
     /** Ребёнок [nd] показанного дерева с именем ровно [nm] (байты) или null. Главный поток. */

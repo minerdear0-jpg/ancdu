@@ -11,16 +11,21 @@ import java.util.TimeZone
  */
 class InterruptedDelete(val id: Long, val root: String, val su: Boolean, val names: List<ByteArray>, val dir: Boolean,
                         val disk: Long, val time: Long, val freed: Long? = null, val count: Int = 1,
-                        val items: List<ByteArray> = emptyList(), val group: Boolean = false, val done: Int? = null) {
+                        val items: List<ByteArray> = emptyList(), val group: Boolean = false, val done: Int? = null,
+                        /** Группа из разных папок: [names] — их общая папка, [items] — пути от неё. */
+                        val mixed: Boolean = false) {
     /** «Download/» — путь от корня для показа: невалидный UTF-8 — U+FFFD, у каталога — «/» в конце. */
     val path: String get() = names.joinToString("/") { String(it, Charsets.UTF_8) } + if (dir && names.isNotEmpty()) "/" else ""
 
     /** Папка, которую открывает тап: каталог — он сам, файл — его папка. */
     val folder: List<ByteArray> get() = if (dir) names else names.dropLast(1)
 
-    fun withFreed(f: Long?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, f, count, items, group, done)
+    /** Подпись строки статуса: [path]; у группы из разных папок без общей ниже корня — «(разные папки)». */
+    fun label(t: Txt): String = if (mixed && names.isEmpty()) t.s(R.string.log_several_folders) else path
 
-    fun withDone(n: Int?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, freed, count, items, group, n)
+    fun withFreed(f: Long?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, f, count, items, group, done, mixed)
+
+    fun withDone(n: Int?): InterruptedDelete = InterruptedDelete(id, root, su, names, dir, disk, time, freed, count, items, group, n, mixed)
 
     /** Одиночное или группа, все имена которой записаны: остаток можно сосчитать по дереву. */
     val allNamed: Boolean get() = !group || items.size >= count
@@ -61,7 +66,7 @@ object StatusLine {
      * одну строку; иначе без «больше всего».
      */
     fun text(t: Txt, s: Status, now: Long, wide: Boolean, tz: TimeZone = TimeZone.getDefault()): String? = when (s) {
-        is Status.Interrupted -> t.s(R.string.status_interrupted, Bidi.visible(s.d.path), InterruptedAmount.text(t, s.d))
+        is Status.Interrupted -> t.s(R.string.status_interrupted, Bidi.visible(s.d.label(t)), InterruptedAmount.text(t, s.d))
         is Status.Stale -> when {
             s.approx -> t.s(R.string.status_approx)
             s.ageMs == null -> Freshness.refresh(t)

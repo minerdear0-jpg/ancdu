@@ -288,6 +288,17 @@
     <string name="big_gone">Scan data is out of date — refreshing</string>
     <string name="big_title">Biggest files</string>
     <string name="big_desc">%1$s, %2$s, in %3$s</string>
+    <!-- Giants: a flat view of every file over 100 MiB -->
+    <plurals name="giants_summary">
+        <item quantity="one">%1$s file ≥ 100\u00A0MiB · %2$s</item>
+        <item quantity="other">%1$s files ≥ 100\u00A0MiB · %2$s</item>
+    </plurals>
+    <string name="giants_link">all %1$s ›</string>
+    <string name="giants_link_desc">All %1$s biggest files</string>
+    <string name="giants_empty">No files over 100\u00A0MiB</string>
+    <string name="giants_desc">%1$s, %2$s, in folder %3$s</string>
+    <string name="giants_in_folder">in folder %1$s</string>
+    <string name="log_several_folders">(several folders)</string>
     <string name="tag_sys">system</string>
     <string name="tag_app">app data</string>
     <string name="tag_app_named">%1$s app data</string>

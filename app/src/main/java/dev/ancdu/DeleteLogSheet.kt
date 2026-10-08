@@ -53,7 +53,11 @@ object LogRows {
      * Имена объектов группы (до 20) лист не показывает: они — для истории и будущего подробного вида.
      */
     fun title(t: Txt, e: LogEntry): String =
-        if (e.start.group) path(e) + " · " + GroupSheet.objects(t, e.start.count) else path(e)
+        if (e.start.group) folder(t, e) + " · " + GroupSheet.objects(t, e.start.count) else path(e)
+
+    /** Папка группы; у группы из разных папок без общей папки ниже корня — «(разные папки)». */
+    private fun folder(t: Txt, e: LogEntry): String =
+        if (e.start.mixed && e.start.names.isEmpty()) t.s(R.string.log_several_folders) else path(e)
 }
 
 /**

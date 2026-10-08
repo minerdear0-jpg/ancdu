@@ -262,6 +262,42 @@ FN(jint, topFiles)(JNIEnv *e, jclass c, jlong h, jintArray out) {
   return (jint)k;
 }
 
+/* «Гиганты» (csr_giants): файлы с disk ≥ minBytes по убыванию disk. Пишет в out РОВНО возвращённое
+ * число id — min(maxCount, out.size, совпавших); в total[0] (если массив не пуст) — сколько совпало всего.
+ * Буфер на куче (до maxCount id); нет памяти — 0 и total 0. Только чтение. */
+FN(jint, giants)(JNIEnv *e, jclass c, jlong h, jlong minBytes, jint maxCount, jintArray out,
+                 jlongArray total) {
+  (void)c;
+  jlong t0 = 0;
+  arena *a = tree(h, 0);
+  jsize cap = out ? (*e)->GetArrayLength(e, out) : 0;
+  if (maxCount < cap) cap = maxCount;
+  if (cap < 0) cap = 0;
+  uint32_t k = 0;
+  uint64_t t = 0;
+  if (a) {
+    uint32_t *ids = cap ? malloc((size_t)cap * sizeof *ids) : NULL;
+    if (!cap || ids) {
+      k = csr_giants(a, minBytes < 0 ? 0 : (uint64_t)minBytes, (uint32_t)cap, ids, &t);
+      if (k) {
+        jint *j = malloc((size_t)k * sizeof *j);
+        if (j) {
+          for (uint32_t i = 0; i < k; i++) j[i] = (jint)ids[i];
+          (*e)->SetIntArrayRegion(e, out, 0, (jsize)k, j);
+          free(j);
+        } else {
+          k = 0;
+          t = 0;
+        }
+      }
+    }
+    free(ids);
+    t0 = t > INT64_MAX ? INT64_MAX : (jlong)t;
+  }
+  if (total && (*e)->GetArrayLength(e, total) > 0) (*e)->SetLongArrayRegion(e, total, 0, 1, &t0);
+  return (jint)k;
+}
+
 /* Узлы с ошибкой (csr_error_nodes): первые min(out.size, 256) id по возрастанию в out; возвращает,
  * сколько их всего (0 — нет дерева или ошибок). Записано РОВНО min(результат, out.size, 256): буфер
  * на стеке, неудачи выделения нет. Только чтение. */
