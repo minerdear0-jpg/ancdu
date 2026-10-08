@@ -221,8 +221,12 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         }
     }
 
+    /** uptime, когда лист показан; 0 — ещё нет (касания «Удалить» до этого и [OPEN_GUARD_MS] после — мимо). */
+    private var shownAt = 0L
+
     fun show() {
         dialog.show()
+        shownAt = SystemClock.uptimeMillis()
         cancelButton.requestFocus()
         Feedback.cue(cancelButton, FeedbackPolicy.sheetOpen(blocked = p.block != null, viaRoot = tier.root))
         if (p.block == null && tier.pauseMs > 0) restartCountdown()
@@ -506,6 +510,14 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             contentDescription = t.s(R.string.delete_btn_desc, readyLabel, p.name)
             if (tier.pauseMs > 0) isEnabled = false
         }
+        // Касания «Удалить» в первые OPEN_GUARD_MS после открытия листа — мимо: второй тап двойного
+        // нажатия «Удалить…» в карточке/строке приходится ровно сюда (то же место экрана), а при
+        // уровне без паузы кнопка активна сразу. performClick (TalkBack, клавиатура) — намеренный, проходит.
+        del.setOnTouchListener { _, e ->
+            val early = shownAt == 0L || SystemClock.uptimeMillis() - shownAt < OPEN_GUARD_MS
+            if (early && e.actionMasked == android.view.MotionEvent.ACTION_UP) guardedTaps++
+            early
+        }
         deleteButton = del
         addView(ButtonPair(act, del, cancelButton, listOf(readyLabel, t.s(R.string.delete_in, Fmt.count(9, t.locale)))),
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -538,6 +550,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     companion object {
         /** «Удалить» не принимает касаний столько после закрытия карточки поверх листа. */
         const val CARD_GUARD_MS = 500L
+        /** Окно после открытия листа, когда касания «Удалить» не принимаются (двойной тап). */
+        const val OPEN_GUARD_MS = 500L
     }
 }
 

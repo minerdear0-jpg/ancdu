@@ -202,6 +202,40 @@ class SheetPreviewTest {
      * (файл цел, лист открыт); после — удаляет как обычно. Удаляется только файл в свежем каталоге
      * (mkdtemp) под cacheDir, путь проверен.
      */
+    /**
+     * Двойной тап: второе касание «Удалить» сразу после открытия листа (то же место, что «Удалить…»
+     * карточки) не удаляет, даже без паузы-отсчёта; касание после OPEN_GUARD_MS — удаляет.
+     * Файл — в своём mkdtemp под cacheDir, путь проверен.
+     */
+    @Test fun earlyTouchOnDeleteIsIgnored() {
+        val d = fixture()
+        val f = File(d, "victim.bin").also { it.writeBytes(ByteArray(4096)) }
+        assertTrue(f.isAbsolute && f.canonicalPath.startsWith(ctx.cacheDir.canonicalPath + "/"))
+        val a = browse(d)
+        val s = sheetOf(a, "victim.bin")
+        assertEquals(f.path, s.p.path)
+        fun touch() {
+            val xy = IntArray(2)
+            var w = 0; var h = 0
+            ins.runOnMainSync { val b = s.deleteButton!!; b.getLocationOnScreen(xy); w = b.width; h = b.height }
+            val x = (xy[0] + w / 2).toFloat(); val y = (xy[1] + h / 2).toFloat()
+            val t0 = android.os.SystemClock.uptimeMillis()
+            ins.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(t0, t0, android.view.MotionEvent.ACTION_DOWN, x, y, 0).apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }, true)
+            ins.uiAutomation.injectInputEvent(android.view.MotionEvent.obtain(t0, t0 + 40, android.view.MotionEvent.ACTION_UP, x, y, 0).apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }, true)
+            ins.waitForIdleSync()
+        }
+        var enabled = false
+        ins.runOnMainSync { enabled = s.deleteButton!!.isEnabled }
+        assertTrue("уровень без паузы: кнопка активна сразу", enabled)
+        touch()
+        ins.runOnMainSync { assertTrue("ранний тап отклонён", s.guardedTaps >= 1) }
+        assertTrue("лист открыт", s.dialog.isShowing)
+        assertTrue("файл цел", f.exists())
+        Thread.sleep(DeleteSheet.OPEN_GUARD_MS + 100)
+        touch()
+        assertTrue("после окна — удаляет", waitFor(10_000) { !f.exists() })
+    }
+
     @Test fun closingCardGuardsDelete() {
         val d = fixture()
         val f = File(d, "victim.jpg").also { TestMedia.jpeg(it) }
