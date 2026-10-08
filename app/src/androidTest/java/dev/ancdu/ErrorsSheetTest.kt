@@ -196,6 +196,48 @@ class ErrorsSheetTest {
         }
     }
 
+    /**
+     * Подвал не переносится и не прыгает, когда появляется ссылка: длинный текст подвала — одна строка
+     * с «…», высота полосы подвала с ссылкой и без неё одна и та же (шрифт 100% и 200%).
+     */
+    @Test fun footerHeightStableWithLink() {
+        val root = fixture()
+        try {
+            for (scale in listOf(1f, 2f)) {
+                Lang.fontScale = scale
+                val a = browse(root)
+                assertTrue("link at $scale", waitFor { a.errLink.isShown && a.errCount == 2 })
+                ins.runOnMainSync { a.footer.text = "long footer text ".repeat(20) }
+                ins.waitForIdleSync()
+                var withLink = 0
+                ins.runOnMainSync {
+                    withLink = a.footerBar.height
+                    assertEquals("one line at $scale", 1, a.footer.lineCount)
+                    assertTrue(a.footerBar.height >= a.dp(44))
+                    a.errLink.visibility = android.view.View.GONE
+                }
+                ins.waitForIdleSync()
+                var without = 0
+                ins.runOnMainSync {
+                    without = a.footerBar.height
+                    a.errLink.visibility = android.view.View.VISIBLE
+                }
+                ins.waitForIdleSync()
+                ins.runOnMainSync {
+                    assertEquals("scale $scale: with link vs without", without, withLink)
+                    assertEquals("scale $scale: link back", withLink, a.footerBar.height)
+                    assertEquals(1, a.footer.lineCount)
+                    a.finish()
+                }
+                ins.waitForIdleSync()
+                act = null
+                ins.runOnMainSync { Holder.clear() }
+            }
+        } finally {
+            restore()
+        }
+    }
+
     @Test fun largeFont() {
         Lang.fontScale = 2f
         val root = fixture()

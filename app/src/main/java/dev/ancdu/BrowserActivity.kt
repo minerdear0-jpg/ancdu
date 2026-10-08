@@ -110,9 +110,12 @@ class BrowserActivity : LangActivity() {
     /** Плашка вида дерева («скан · 69 312 эл. · 0,2 с»). */
     lateinit var badge: TextView
         private set
-    private lateinit var footer: TextView
+    /** Подсказка или сообщение подвала: одна строка с «…» в конце (ссылка ошибок не переносит её). */
+    lateinit var footer: TextView
+        private set
     /** Подвал: подсказка или сообщение ([footer]) и справа ссылка ошибок ([errLink]); в режиме выбора — GONE. */
-    private lateinit var footerBar: LinearLayout
+    lateinit var footerBar: LinearLayout
+        private set
     /** «⚠ 2 ошибки ›» — открывает лист ошибок; видна, только если ошибок больше 0. */
     lateinit var errLink: TextView
         private set
@@ -476,8 +479,11 @@ class BrowserActivity : LangActivity() {
             visibility = View.GONE
         }
         scanLine = ScanLine(this)
+        // Всегда одна строка (и при 200%): появление ссылки ошибок не переносит текст и не меняет
+        // высоту подвала. Полный текст — у TalkBack (text не меняется, обрезка только при отрисовке).
         footer = label("", 12f, C.MUTED, mono = true).apply {
             setPadding(dp(16), dp(10), dp(16), dp(10))
+            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             visibility = View.INVISIBLE
         }
         errLink = label("", 12f, C.AMBER, mono = true).apply {
@@ -1140,6 +1146,9 @@ class BrowserActivity : LangActivity() {
         val k = "${Holder.gen}:${Holder.deletes}"
         if (k == errKey || h == 0L || h != Holder.h || Holder.deleting) { renderErrLink(); return }
         errKey = k
+        // Новое дерево: число прежнего не рисуется, ссылка скрыта до ответа io.
+        errCount = 0
+        renderErrLink()
         val handle = h
         val my = ++errSeq
         Holder.io.execute {
@@ -1164,7 +1173,7 @@ class BrowserActivity : LangActivity() {
      * — листа нет, ссылка прячется.
      */
     fun openErrors() {
-        if (busy || h == 0L || h != Holder.h || Holder.deleting || errLoading) return
+        if (busy || h == 0L || h != Holder.h || Holder.deleting || errLoading || sheetOpen() || selection.active) return
         val handle = h
         val viaRoot = Holder.viaRoot
         val root = rootPath()
@@ -1177,7 +1186,8 @@ class BrowserActivity : LangActivity() {
                 if (r == null || isFinishing || isDestroyed || h != handle || busy) return@post
                 errCount = r.total
                 renderErrLink()
-                if (r.rows.isEmpty()) return@post
+                // За время io открылся другой лист или режим выбора — лист ошибок не открывается поверх.
+                if (r.rows.isEmpty() || sheetOpen() || selection.active) return@post
                 errorsSheet?.dismiss()
                 errorsSheet = ErrorsSheet(this, r, Root.state == RootState.GRANTED,
                     onPick = { nd -> errorsSheet?.dismiss(); revealNode(handle, nd) },
@@ -1199,7 +1209,7 @@ class BrowserActivity : LangActivity() {
         val parent = maxOf(Native.parent(h, target), 0)
         if (parent != node) load(parent, 0)
         val i = kids.indexOf(target)
-        if (i in 0 until n) list.reveal(i)
+        if (i in 0 until n) list.reveal(i) else note(txt.s(R.string.err_node_gone))
     }
 
     /** «СКАНИРОВАТЬ ОТ ROOT»: тот же root-скан /data/media, что чип главного экрана; браузер уходит. */
