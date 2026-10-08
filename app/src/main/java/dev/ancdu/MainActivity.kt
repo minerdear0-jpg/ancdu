@@ -353,7 +353,7 @@ class MainActivity : LangActivity() {
      * [focus] — [EXTRA_FOCUS] для браузера (файл в фокусе) или null.
      */
     fun openCache(name: String, root: String, su: Boolean, time: Long, focus: ByteArray? = null, delta: Boolean = false,
-                  errors: Boolean = false) {
+                  errors: Boolean = false, giants: Boolean = false) {
         if (opening) return
         opening = true
         val app = applicationContext
@@ -394,6 +394,7 @@ class MainActivity : LangActivity() {
                     if (focus != null) putExtra(EXTRA_FOCUS, focus)
                     if (delta) putExtra(EXTRA_DELTA, true)
                     if (errors) putExtra(EXTRA_ERRORS, true)
+                    if (giants) putExtra(EXTRA_GIANTS, true)
                 })
             }
         }
@@ -404,7 +405,7 @@ class MainActivity : LangActivity() {
      * корня), строка видна, карточка открыта. Дерево — как у тапа по карточке: ждущее
      * подставляется, готовое живое — сразу, иначе кэш.
      */
-    fun openFocused(names: List<ByteArray>, delta: Boolean = false) {
+    fun openFocused(names: List<ByteArray>, delta: Boolean = false, giants: Boolean = false) {
         if (Holder.deleting || opening) return
         if (BgScan.pendingStorage()) Holder.promote()
         // [delta] — строка «что выросло»: папка «больше всего» (пусто — корень) в сортировке Δ.
@@ -413,10 +414,11 @@ class MainActivity : LangActivity() {
         val browser = Intent(this, BrowserActivity::class.java).apply {
             if (focus != null) putExtra(EXTRA_FOCUS, focus)
             if (delta) putExtra(EXTRA_DELTA, true)
+            if (giants) putExtra(EXTRA_GIANTS, true)
         }
         if (shown && Holder.kind != Kind.INDEX) { startActivity(browser); return }
         val meta = Scans.meta(this, Scans.STORAGE, false)
-        if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus, delta); return }
+        if (meta != null) { openCache(Holder.cacheFile(this, Scans.STORAGE, false).name, Scans.STORAGE, false, meta.time, focus, delta, giants = giants); return }
         if (shown) { startActivity(browser); return }
         // Ни дерева, ни записи кэша (её забыли, пока строки были на экране): строки — заново, и сказать.
         biggest.refresh(force = true)

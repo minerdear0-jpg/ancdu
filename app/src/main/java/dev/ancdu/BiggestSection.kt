@@ -24,6 +24,18 @@ class BiggestSection(private val a: MainActivity) {
     val box: LinearLayout = a.vbox().apply { visibility = View.GONE }
     private val fresh: TextView = a.label("", 12f, C.MUTED, mono = true)
     private val list: LinearLayout = a.vbox()
+    /** «все 312 ›» справа в шапке секции: файлов ≥ 100 МиБ больше, чем строк; тап — «гиганты». */
+    val allLink: TextView = a.label("", 12f, C.TEXT, mono = true).apply {
+        gravity = android.view.Gravity.CENTER_VERTICAL or android.view.Gravity.END
+        minHeight = a.dp(44); minWidth = a.dp(44)
+        setPadding(a.dp(8), 0, 0, 0)
+        background = a.pressable(android.graphics.Color.TRANSPARENT)
+        visibility = View.GONE
+        feedbackClick { a.openFocused(emptyList(), giants = true) }
+    }
+    /** Для тестов: файлов ≥ 100 МиБ во всём дереве по последнему ответу. */
+    var giantsTotal = 0L
+        private set
     /** Для тестов: показанные строки по порядку. */
     var rows: List<BigFile> = emptyList()
         private set
@@ -49,6 +61,7 @@ class BiggestSection(private val a: MainActivity) {
             minimumHeight = a.dp(32)
             addView(a.caps(t.s(R.string.big_title)), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(fresh)
+            addView(allLink)
         })
         box.hairline()
         box.addView(list)
@@ -82,7 +95,8 @@ class BiggestSection(private val a: MainActivity) {
             Holder.io.execute {
                 val r = runCatching { load(app, txt, h, self, d) }.getOrDefault(emptyList())
                 val g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
-                a.runOnUiThread { show(my, r, kind, time, g, keepGrowth = keep) }
+                val n = runCatching { giants(h) }.getOrDefault(0L)
+                a.runOnUiThread { show(my, r, kind, time, g, keepGrowth = keep, giants = n) }
             }
             return
         }
@@ -96,17 +110,20 @@ class BiggestSection(private val a: MainActivity) {
         val my = ++seq
         Holder.io.execute {
             var g: HomeGrowth? = null
+            var n = 0L
             val r = runCatching {
                 val h = Native.openCache(file.path, IntArray(1))
                 if (h == 0L) emptyList() else try {
                     // Кэш открыт только на этот ответ: Δ против точки отсчёта — здесь же, на io.
                     val d = runCatching { Growth.compute(h, 0L, base) }.getOrNull()
                     g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
+                    n = runCatching { giants(h) }.getOrDefault(0L)
                     load(app, txt, h, self, d)
                 } finally { Native.free(h) }
             }.getOrDefault(emptyList())
             val gg = g
-            a.runOnUiThread { show(my, r, Kind.CACHE, meta.time, gg) }
+            val nn = n
+            a.runOnUiThread { show(my, r, Kind.CACHE, meta.time, gg, giants = nn) }
         }
     }
 
@@ -126,9 +143,15 @@ class BiggestSection(private val a: MainActivity) {
     }
 
     /** [keepGrowth] — Δ дерева ещё считается: строку «что выросло» не трогать (её обновит ответ Growth). */
-    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long, growth: HomeGrowth?, keepGrowth: Boolean = false) {
+    private fun show(my: Int, r: List<BigFile>, kind: Kind, time: Long, growth: HomeGrowth?, keepGrowth: Boolean = false,
+                     giants: Long = 0L) {
         if (my != seq || a.isDestroyed) return
         shown++
+        giantsTotal = giants
+        // Ссылка — в шапке секции (новой строки нет), только когда файлов больше показанных.
+        allLink.visibility = if (GiantsText.linkShown(giants)) View.VISIBLE else View.GONE
+        allLink.text = GiantsText.link(t, giants)
+        allLink.contentDescription = GiantsText.linkDesc(t, giants)
         if (!keepGrowth) a.storage.showGrowth(growth)
         if (r.isEmpty()) { clear(); return }
         rows = r
@@ -150,6 +173,9 @@ class BiggestSection(private val a: MainActivity) {
     }
 
     companion object {
+        /** На Holder.io: сколько файлов ≥ 100 МиБ во всём дереве [h] (ядро считает, ничего не пишет). */
+        fun giants(h: Long): Long = LongArray(1).also { Native.giants(h, GiantsLevel.minBytes, 0, IntArray(0), it) }[0]
+
         /**
          * На Holder.io: крупнейшие файлы дерева [h] (только чтения: name, path, parent, nodeInfo).
          * Метки — как в браузере ([Tag.of]; корень дерева — «хранилище»).
