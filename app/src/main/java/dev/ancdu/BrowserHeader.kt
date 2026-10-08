@@ -101,14 +101,6 @@ class BrowserHeader(private val a: BrowserActivity) {
         newer = a.caps(a.txt.s(R.string.newer_chip), C.INK).apply {
             gravity = Gravity.CENTER
             minHeight = a.dp(44)
-            setPadding(a.dp(12), 0, a.dp(12), 0)
-            background = android.graphics.drawable.StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), a.box(C.PANEL2, C.AMBER_TEXT))
-                addState(intArrayOf(android.R.attr.state_focused), a.box(C.PANEL2, C.AMBER_TEXT))
-                addState(intArrayOf(), a.box(C.AMBER))
-            }
-            setTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
-                intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER_TEXT, C.AMBER_TEXT, C.INK)))
             isClickable = true; isFocusable = true
             contentDescription = a.txt.s(R.string.newer_desc)
             feedbackClick { a.promotePending() }
@@ -127,7 +119,31 @@ class BrowserHeader(private val a: BrowserActivity) {
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         })
         top.addView(chips, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        styleNewer(false)
         return top
+    }
+
+    /** Чип «новее» сейчас в контуре (не амберная заливка). */
+    var newerOutlined = false
+        private set
+
+    /**
+     * Стиль чипа «новее»: обычно — амберная заливка; когда на экране уже есть амберная ссылка ошибок
+     * (и ⚠ у строк), чип — в контуре FRAME с подписью TEXT: не больше двух акцентов сразу.
+     */
+    fun styleNewer(outlined: Boolean) {
+        if (::newer.isInitialized && newerOutlined == outlined && newer.background != null) return
+        newerOutlined = outlined
+        newer.background = if (outlined) a.pressable(android.graphics.Color.TRANSPARENT, C.FRAME)
+        else android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), a.box(C.PANEL2, C.AMBER_TEXT))
+            addState(intArrayOf(android.R.attr.state_focused), a.box(C.PANEL2, C.AMBER_TEXT))
+            addState(intArrayOf(), a.box(C.AMBER))
+        }
+        newer.setTextColor(if (outlined) android.content.res.ColorStateList.valueOf(C.TEXT)
+        else android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
+            intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER_TEXT, C.AMBER_TEXT, C.INK)))
+        newer.setPadding(a.dp(12), 0, a.dp(12), 0)
     }
 
     /** onCreate экрана: полоса скана (её кладёт под линию шапки экран). */

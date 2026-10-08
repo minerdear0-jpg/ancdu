@@ -363,7 +363,10 @@ class BrowserTest {
 
             val h2 = scanned(dir)
             ins.runOnMainSync { Holder.offer(h2, Kind.SCAN, dir.path, false); act.refreshPending() }
-            ins.runOnMainSync { assertEquals(View.VISIBLE, act.newer.visibility) }
+            ins.runOnMainSync {
+                assertEquals(View.VISIBLE, act.newer.visibility)
+                assertFalse(act.head.newerOutlined)   // no errors link: the chip keeps its amber fill
+            }
             assertEquals("с чипом «новее»", h1, height())
             // Самая длинная плашка рядом с чипом переносится (до 2 строк), не обрезается; две строки
             // 12sp ниже 44dp строки чипа — высота шапки та же.

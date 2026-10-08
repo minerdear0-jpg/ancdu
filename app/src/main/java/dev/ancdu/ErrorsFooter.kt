@@ -65,6 +65,8 @@ class ErrorsFooter(private val a: BrowserActivity) {
 
     private fun renderErrLink() {
         errLink.visibility = if (errCount > 0) View.VISIBLE else View.GONE
+        // Ошибки — амбер (ссылка и ⚠ строк): чип «новее» тогда в контуре.
+        a.head.styleNewer(errCount > 0)
         if (errCount <= 0) return
         errLink.text = ScanErrors.link(a.txt, errCount)
         errLink.contentDescription = ScanErrors.linkDesc(a.txt, errCount)

@@ -125,6 +125,8 @@ class ErrorsSheetTest {
 
     private fun openSheet(a: BrowserActivity): ErrorsSheet {
         assertTrue("footer link", waitFor { a.errLink.isShown && a.errCount == 2 })
+        // The amber errors link is on screen: the «новее» chip is outlined (<= 2 accents at once).
+        ins.runOnMainSync { assertTrue(a.head.newerOutlined) }
         ins.runOnMainSync { a.errLink.performClick() }
         assertTrue("sheet", waitFor { a.errorsSheet?.dialog?.isShowing == true })
         ins.waitForIdleSync()
