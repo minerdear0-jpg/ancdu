@@ -526,6 +526,9 @@ class BrowserActivity : LangActivity() {
         if (r.quiet) return
         val hit = resolveNode(r.names)
         val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
+        // Частичное удаление одного объекта: сколько освобождено, стало известно — в журнал.
+        val del = r.delDisk
+        if (del != null && r.note == null) DeleteLog.freed(Holder.delLogIds.singleOrNull() ?: 0L, if (hit.exact) maxOf(0L, del - disk) else del)
         when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
             is AutoPromote.Outcome.Footer -> note(o.text)
             AutoPromote.Outcome.Sheet -> openSheet(hit.node)

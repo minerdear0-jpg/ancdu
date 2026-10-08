@@ -66,6 +66,8 @@ class MainActivity : LangActivity() {
     private val onDeleted: (Int) -> Unit = { biggest.refresh(force = true) }
     /** Δ показанного дерева посчитана заново: строка «что выросло» и значки NEW (ключ — сама Δ). */
     private val onGrowth: () -> Unit = { biggest.refresh() }
+    /** Уведомление о прерванном удалении появилось или просмотрено. */
+    private val onNotice: () -> Unit = { storage.interrupted = DeleteLog.notice; storage.render() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,7 +77,9 @@ class MainActivity : LangActivity() {
         val prefs = getSharedPreferences(Scans.PREFS, MODE_PRIVATE)
         val rootCaches = prefs.all.values.any { CacheMeta.parse(it as? String)?.su == true }
         rootPanel = RootPanel(this, Root.suExists(), rootCaches)
-        storage = StorageCard(this)
+        storage = StorageCard(this).apply { onInterrupted = { openInterrupted(it) } }
+        // Журнал удалений: начало без итога — удаление прервано (строка статуса, приоритет 1).
+        DeleteLog.init(this)
         biggest = BiggestSection(this)
         val body = vbox(16).apply { setPadding(dp(16), dp(12), dp(16), dp(24)) }
         body.addView(header())
@@ -101,6 +105,8 @@ class MainActivity : LangActivity() {
         Holder.addSessionListener(onTree)
         Holder.addDeleteListener(onDeleted)
         Growth.addListener(onGrowth)
+        DeleteLog.listener = onNotice
+        storage.interrupted = DeleteLog.notice
         storage.showStatfs()
         // Скан закончился, пока был открыт браузер: здесь его уже никто не держит — подставляем.
         BgScan.promoteOnMain()
@@ -126,6 +132,7 @@ class MainActivity : LangActivity() {
         Holder.removeSessionListener(onTree)
         Holder.removeDeleteListener(onDeleted)
         Growth.removeListener(onGrowth)
+        if (DeleteLog.listener === onNotice) DeleteLog.listener = null
         super.onPause()
     }
 
@@ -172,6 +179,19 @@ class MainActivity : LangActivity() {
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))
+
+    /**
+     * Тап по «⚠ прервано: Download/ · …»: уведомление просмотрено (больше не показывается), папка
+     * открывается — там остаток. Общее хранилище — как строка «крупнейших»; другое дерево — его кэш.
+     */
+    fun openInterrupted(d: InterruptedDelete) {
+        if (Holder.deleting || opening) return
+        DeleteLog.markSeen()
+        if (!d.su && d.root == Scans.STORAGE) { openFocused(d.folder); return }
+        val meta = Scans.meta(this, d.root, d.su) ?: return
+        openCache(Holder.cacheFile(this, d.root, d.su).name, d.root, d.su, meta.time,
+            focus = if (d.folder.isEmpty()) null else Focus.encode(d.folder))
+    }
 
     /**
      * Карточка изменилась (statfs, объём общего хранилища): число «Приложения и система» и правило
