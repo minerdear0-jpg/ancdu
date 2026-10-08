@@ -366,7 +366,15 @@ class GiantsUiTest {
         val t = inBox("hl").apply { assertTrue(mkdirs()) }
         val f = put("hl/a/film.mkv", 300_000)
         val link = inBox("hl/b/film-link.mkv").also { it.parentFile!!.mkdirs() }
-        android.system.Os.link(f.path, link.path)
+        try {
+            android.system.Os.link(f.path, link.path)
+        } catch (e: android.system.ErrnoException) {
+            // SELinux запрещает приложениям link() (Android 9+): на rooted-устройстве — через su, иначе пропуск.
+            val ok = runCatching {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "ln '${f.path}' '${link.path}'")).waitFor() == 0
+            }.getOrDefault(false)
+            org.junit.Assume.assumeTrue("hard link unavailable: ${e.message}", ok && link.exists())
+        }
         scanIn(t)
         val b = giants()
         // Какая ссылка «первая» (несёт размер), решает порядок скана a/ и b/: в списке — ровно одна, любая.
