@@ -128,6 +128,7 @@ class TagsTest {
             assertTrue(sh.dialog.isShowing)
             assertEquals(listOf("dl"), sh.tagTexts)
             assertEquals(listOf("a.pdf"), sh.childNames)
+            assertTrue(sh.pathText!!.text.toString(), sh.pathText!!.text.endsWith("/Download"))
             sh.dismiss()
         }
     }

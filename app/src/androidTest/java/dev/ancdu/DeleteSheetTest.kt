@@ -303,7 +303,15 @@ class DeleteSheetTest {
             s.dismiss()
             val plain = DeleteSheet(a, pv(emptyList())) { chosen = it }.also { it.show() }
             assertEquals("⚠ " + a.getString(R.string.no_trash), plain.warnText!!.text.toString())
+            // One object: the path line answers «what exactly» (H04).
+            assertEquals("/storage/emulated/0/", plain.pathText!!.text.toString())
             plain.dismiss()
+            // A group: no path line (each item shows its own).
+            val g = GroupInfo(count = 2, owners = emptyList(), owned = listOf(false, false), disks = listOf(1L, 1L),
+                hardlink = false, gone = 0, topItems = emptyList())
+            val gs = DeleteSheet(a, pv(emptyList()), group = g) { chosen = it }.also { it.show() }
+            assertNull(gs.pathText)
+            gs.dismiss()
         }
         assertNull(chosen)
     }

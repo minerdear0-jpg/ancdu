@@ -102,6 +102,9 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
     /** Галочка «быстро через root» (null — быстрый путь недоступен). */
     var fastBox: CheckBox? = null
         private set
+    /** Для тестов: строка пути листа одного объекта (null — лист группы). */
+    var pathText: TextView? = null
+        private set
     /** Единственная строка-предупреждение над кнопками (null — удаление запрещено). */
     var warnText: TextView? = null
         private set
@@ -304,8 +307,8 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         addView(act.hbox(8).apply {
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
-                // Путь больше не печатается строкой листа — его читает TalkBack у заголовка.
-                contentDescription = "$title, ${t.s(R.string.path_desc, p.path)}"
+                // У группы путь строкой не печатается — его читает TalkBack у заголовка.
+                if (group != null) contentDescription = "$title, ${t.s(R.string.path_desc, p.path)}"
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             (p.tag ?: p.ownTag)?.let { addView(tagLabel(it)) }
             if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
@@ -314,8 +317,12 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
                 contentDescription = t.s(R.string.as_root_desc)
             })
         })
-        // Ни строки пути (путь — у каждой строки списка и у TalkBack заголовка), ни строки владельцев:
-        // приложение называет предупреждение, если его данные не вернуть.
+        // Один объект: путь целиком, с переносами — «что именно удалится» (H04). У группы путь — у строк
+        // списка. Строки владельцев нет: приложение называет предупреждение, если его данные не вернуть.
+        if (group == null) addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
+            contentDescription = t.s(R.string.path_desc, p.path)
+            pathText = this
+        })
         addView(sizeLine())
         // Лист одного каталога: крупнейшие картинки и видео в нём самом.
         if (group == null && p.dir) contactRow(p.selfContact)?.let { selfContactRow = it; addView(it) }
