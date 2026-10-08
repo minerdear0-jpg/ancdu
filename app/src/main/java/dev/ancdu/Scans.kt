@@ -1,6 +1,7 @@
 package dev.ancdu
 
 import android.content.Context
+import android.util.Log
 
 /**
  * Запись «caches»: «root|su|files|ms|time[|disk|items]». [disk] и [items] — объём и число
@@ -41,7 +42,8 @@ object Scans {
     /**
      * Главный поток, вызывает владелец [h]; скан уже в ST_DONE/ST_FULL ([p] — его последний
      * progress). Читает объём корня, ставит saveCache на Holder.io (FIFO с delete и free этого
-     * дескриптора), а запись «caches» — после успешного сохранения, там же на io.
+     * дескриптора), а запись «caches» и ротацию точки отсчёта ([BaselineFiles.onSaved]) — после
+     * успешного сохранения, там же на io.
      */
     fun finish(ctx: Context, h: Long, root: String, su: Boolean, p: LongArray): Done {
         val app = ctx.applicationContext
@@ -52,8 +54,12 @@ object Scans {
         if (root == STORAGE && !su) lastStorage = done
         val meta = CacheMeta(root, su, p[1], p[4], done.time, done.disk, done.items).format()
         Holder.io.execute {
-            if (Native.saveCache(h, file.path) == 0)
+            if (Native.saveCache(h, file.path) == 0) {
                 app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(file.name, meta).apply()
+                // Точка отсчёта «что выросло»: ссылка/копия только что записанного файла (не пересериализация).
+                runCatching { Baseline.files(app, root, su).onSaved(file, System.currentTimeMillis()) }
+                    .onFailure { Log.w("ancdu", "baseline rotation failed", it) }
+            }
         }
         return done
     }
