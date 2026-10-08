@@ -371,6 +371,9 @@ fun Activity.systemBars() {
     window.statusBarColor = C.BG
     window.navigationBarColor = C.BG
     val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+    // PhoneWindow.getInsetsController() падает (NPE), пока нет DecorView — до setContentView.
+    // Обращение к decorView создаёт его; так вызов безопасен в любой точке onCreate.
+    window.decorView
     window.insetsController?.setSystemBarsAppearance(if (C.p.dark) 0 else mask, mask)
 }
 
