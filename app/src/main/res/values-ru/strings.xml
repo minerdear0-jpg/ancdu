@@ -374,4 +374,26 @@
     <string name="warn_gone">Без корзины. Не вернуть: %1$s.</string>
     <string name="warn_and">%1$s и %2$s</string>
     <string name="warn_root">Удаление от root · %1$s</string>
+    <string name="log_title">Журнал удалений</string>
+    <string name="log_link">журнал ›</string>
+    <string name="log_link_desc">открывает журнал удалений</string>
+    <string name="log_empty">Журнал пуст</string>
+    <string name="log_cleared">Журнал очищен</string>
+    <string name="log_clear">Очистить…</string>
+    <string name="log_clear_title">Очистить журнал?</string>
+    <string name="log_clear_ok">Очистить</string>
+    <string name="log_interrupted">прервано</string>
+    <string name="log_partial">частично</string>
+    <plurals name="log_clear_body">
+        <item quantity="one">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история.</item>
+        <item quantity="few">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история.</item>
+        <item quantity="many">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история.</item>
+        <item quantity="other">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история.</item>
+    </plurals>
+    <plurals name="log_clear_body_notice">
+        <item quantity="one">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
+        <item quantity="few">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
+        <item quantity="many">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
+        <item quantity="other">Записей: %1$s. Удалённые файлы это не вернёт — сотрётся только история и уведомление о прерванном удалении.</item>
+    </plurals>
 </resources>

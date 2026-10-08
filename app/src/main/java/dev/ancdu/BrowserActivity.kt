@@ -215,7 +215,7 @@ class BrowserActivity : LangActivity() {
             load(node, keepScroll)
             // Готово — done; отказ и ошибка — refuse; «Стоп» пользователя (-EINTR) — тишина, tock уже был.
             if (r == 0 || !isFinishing) FeedbackPolicy.afterDelete(r)?.let { Feedback.cue(list, it) }
-            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk))
+            if (r == 0) note(DeleteProgress.freed(txt, Holder.delDisk), log = true)
             if (r != 0 && !isFinishing) {
                 val doneN = Holder.deleteProgress()
                 when {
@@ -247,14 +247,39 @@ class BrowserActivity : LangActivity() {
 
     /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). В режиме выбора подвала нет. */
     private fun setFooter(text: CharSequence) {
+        linkFooter(false)
         footer.text = text
         footer.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
         footerBar.visibility = if (selection.active) View.GONE else View.VISIBLE
     }
 
-    /** Подвал: [text] на 4 с, затем обычная подсказка. В режиме выбора — поверх низа списка. */
-    internal fun note(text: String) {
-        if (selection.active) { notice.text = text; notice.visibility = View.VISIBLE } else setFooter(text)
+    /** Подвал — ссылка «журнал ›» (итог удаления): тап открывает журнал удалений. */
+    private var footerLinked = false
+
+    private fun linkFooter(on: Boolean) {
+        footerLinked = on
+        footer.isClickable = on; footer.isFocusable = on
+        footer.contentDescription = if (on) "${footer.text.toString().removeSuffix(" ›")}, ${txt.s(R.string.log_link_desc)}" else null
+    }
+
+    /** Для тестов: открытый лист журнала удалений. */
+    var logSheet: DeleteLogSheet? = null
+        private set
+
+    /** Лист «Журнал удалений» (подвал «… · журнал ›»). */
+    fun openLog() {
+        if (busy || isFinishing) return
+        DeleteLogSheet.open(this) { s -> logSheet?.dismiss(); logSheet = s }
+    }
+
+    /**
+     * Подвал: [text] на 4 с, затем обычная подсказка. В режиме выбора — поверх низа списка.
+     * [log] — итог удаления: «освобождено 10,3 ГиБ · журнал ›», тап — журнал удалений.
+     */
+    internal fun note(message: String, log: Boolean = false) {
+        val text = if (log) message + " · " + txt.s(R.string.log_link) else message
+        if (selection.active) { notice.text = text; notice.visibility = View.VISIBLE }
+        else { setFooter(text); if (log) linkFooter(true) }
         ui.removeCallbacks(restoreFooter)
         restoreFooter = Runnable {
             if (notice.visibility == View.VISIBLE && notice.text.toString() == text) notice.visibility = View.GONE
@@ -386,6 +411,7 @@ class BrowserActivity : LangActivity() {
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
+        DeleteLog.init(this)
         val top = head.build()
         list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label); keepExt = true }
         empty = label("", 15f, C.MUTED).apply {
@@ -400,6 +426,9 @@ class BrowserActivity : LangActivity() {
             setPadding(dp(16), dp(10), dp(16), dp(10))
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             visibility = View.INVISIBLE
+            background = pressable(android.graphics.Color.TRANSPARENT)
+            feedbackClick { if (footerLinked) openLog() }
+            isClickable = false; isFocusable = false
         }
         errors.link()
         // Высота подвала — всегда не меньше касания ссылки: её появление не двигает список.
@@ -530,7 +559,7 @@ class BrowserActivity : LangActivity() {
         val del = r.delDisk
         if (del != null && r.note == null) DeleteLog.freed(Holder.delLogIds.singleOrNull() ?: 0L, if (hit.exact) maxOf(0L, del - disk) else del)
         when (val o = AutoPromote.outcome(txt, r, hit.exact, disk)) {
-            is AutoPromote.Outcome.Footer -> note(o.text)
+            is AutoPromote.Outcome.Footer -> note(o.text, log = r.delDisk != null)
             AutoPromote.Outcome.Sheet -> openSheet(hit.node)
         }
     }
@@ -547,7 +576,7 @@ class BrowserActivity : LangActivity() {
         val hit = resolveNode(r.names)
         if (r.delDisk != null) {
             val disk = if (hit.exact) LongArray(4).also { Native.nodeInfo(h, intArrayOf(hit.node), 1, it) }[0] else 0L
-            note(AutoPromote.unrefreshed(txt, r, hit.exact, disk))
+            note(AutoPromote.unrefreshed(txt, r, hit.exact, disk), log = true)
         } else if (hit.exact) {
             openSheet(hit.node)
         }
@@ -686,6 +715,7 @@ class BrowserActivity : LangActivity() {
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
+        logSheet?.dismiss(); logSheet = null
         head.dispose()
         errors.dispose()
         deltaLevel.dispose()

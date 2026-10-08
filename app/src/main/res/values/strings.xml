@@ -382,4 +382,22 @@
     <string name="warn_gone">No trash. Gone for good: %1$s.</string>
     <string name="warn_and">%1$s and %2$s</string>
     <string name="warn_root">Deleting as root · %1$s</string>
+    <string name="log_title">Delete log</string>
+    <string name="log_link">log ›</string>
+    <string name="log_link_desc">opens the delete log</string>
+    <string name="log_empty">The log is empty</string>
+    <string name="log_cleared">Log cleared</string>
+    <string name="log_clear">Clear…</string>
+    <string name="log_clear_title">Clear the log?</string>
+    <string name="log_clear_ok">Clear</string>
+    <string name="log_interrupted">interrupted</string>
+    <string name="log_partial">partial</string>
+    <plurals name="log_clear_body">
+        <item quantity="one">%1$s entry. This does not bring back deleted files — only the history is erased.</item>
+        <item quantity="other">%1$s entries. This does not bring back deleted files — only the history is erased.</item>
+    </plurals>
+    <plurals name="log_clear_body_notice">
+        <item quantity="one">%1$s entry. This does not bring back deleted files — only the history and the interrupted-delete notice are erased.</item>
+        <item quantity="other">%1$s entries. This does not bring back deleted files — only the history and the interrupted-delete notice are erased.</item>
+    </plurals>
 </resources>

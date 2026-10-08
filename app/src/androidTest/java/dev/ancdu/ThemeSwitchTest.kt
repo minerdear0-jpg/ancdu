@@ -161,7 +161,7 @@ class ThemeSwitchTest {
             ins.waitForIdleSync()
             ins.runOnMainSync {
                 val m = a.menu!!
-                assertEquals(4, m.rows.size)
+                assertEquals(5, m.rows.size)
                 assertEquals("Theme: Light", m.rows[2].text.toString())
                 m.rows[2].performClick()
                 assertTrue(!m.dialog.isShowing)

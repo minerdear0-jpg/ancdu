@@ -360,8 +360,8 @@ class SelectModeTest {
         assertTrue(s2.exists()); assertTrue(s3.exists())
         ins.runOnMainSync {
             assertNull(a.lastAlert)
-            assertEquals(a.getString(R.string.group_stopped, "1", "3", DeleteProgress.freed(a.tx, Holder.delResults[0].disk)),
-                a.footerText.toString())
+            assertEquals(a.getString(R.string.group_stopped, "1", "3", DeleteProgress.freed(a.tx, Holder.delResults[0].disk)) +
+                " · " + a.getString(R.string.log_link), a.footerText.toString())
         }
     }
 }

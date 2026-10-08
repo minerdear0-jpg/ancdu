@@ -814,7 +814,7 @@ class BrowserTest {
             assertTrue(waitFor(30_000) { Holder.h != h0 && act.footerText.startsWith(act.prefixOf(R.string.freed)) })
             ins.runOnMainSync {
                 assertNull(act.lastAlert)                          // ни «остановлено», ни «частично»
-                assertTrue(act.footerText.toString(), act.footerText.endsWith(act.suffixOf(R.string.freed_left)))
+                assertTrue(act.footerText.toString(), act.footerText.contains(act.suffixOf(R.string.freed_left)))
                 assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
             }
             assertFalse(File(sub, "x.bin").exists())
@@ -944,7 +944,7 @@ class BrowserTest {
             assertTrue(waitFor(30_000) { act.footerText.startsWith(act.prefixOf(R.string.freed)) })
             ins.runOnMainSync {
                 assertNull(act.lastAlert)
-                assertTrue(act.footerText.toString(), act.footerText.endsWith(act.suffixOf(R.string.freed_left)))
+                assertTrue(act.footerText.toString(), act.footerText.contains(act.suffixOf(R.string.freed_left)))
                 assertEquals(File(dir, "a").path, Native.str(Native.path(Holder.h, act.node)))
             }
             assertEquals(10 - k, sub.listFiles()!!.size)

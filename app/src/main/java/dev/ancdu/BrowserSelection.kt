@@ -103,8 +103,8 @@ class BrowserSelection(private val a: BrowserActivity) {
         if (a.isFinishing) return
         val o = GroupResult.outcome(results)
         val text = when (o) {
-            is GroupResult.Outcome.Done -> { Feedback.cue(a.list, Cue.DONE); GroupResult.footer(a.txt, o).also { a.note(it) } }
-            is GroupResult.Outcome.Stopped -> GroupResult.footer(a.txt, o).also { a.note(it) }
+            is GroupResult.Outcome.Done -> { Feedback.cue(a.list, Cue.DONE); GroupResult.footer(a.txt, o).also { a.note(it, log = true) } }
+            is GroupResult.Outcome.Stopped -> GroupResult.footer(a.txt, o).also { a.note(it, log = o.deleted > 0) }
             is GroupResult.Outcome.Partial -> {
                 Feedback.cue(a.list, Cue.REFUSE)
                 val (title, msg) = GroupResult.alert(a.txt, o)

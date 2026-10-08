@@ -48,6 +48,9 @@ class MainActivity : LangActivity() {
         private set
     var about: AboutSheet? = null
         private set
+    /** Для тестов: открытый лист журнала удалений (из меню «···»). */
+    var logSheet: DeleteLogSheet? = null
+        private set
     /** Для тестов: открытый диалог выбора языка. */
     var langDialog: AlertDialog? = null
         private set
@@ -139,6 +142,7 @@ class MainActivity : LangActivity() {
     override fun onDestroy() {
         rootPanel.destroy()
         menu?.dismiss(); about?.dismiss()
+        logSheet?.dismiss(); logSheet = null
         dialog?.dismiss()
         dialog = null
         super.onDestroy()
@@ -175,7 +179,8 @@ class MainActivity : LangActivity() {
             onLang = { dialog = Lang.ask(this).also { langDialog = it } },
             onFx = { dialog = Lang.askFx(this).also { fxDialog = it } },
             onTheme = { dialog = Theme.ask(this).also { themeDialog = it } },
-            onAbout = { about = AboutSheet(this).also { it.show() } }).also { it.show() }
+            onAbout = { about = AboutSheet(this).also { it.show() } },
+            onLog = { DeleteLogSheet.open(this) { s -> logSheet?.dismiss(); logSheet = s } }).also { it.show() }
     }
 
     private fun openApps() = startActivity(Intent(this, AppsActivity::class.java))

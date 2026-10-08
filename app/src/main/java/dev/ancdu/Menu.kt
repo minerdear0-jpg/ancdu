@@ -45,7 +45,8 @@ fun Activity.sheetDialog(title: String, body: View): Dialog =
  * Меню «···» главного экрана: «Язык: …», «Звук и вибрация: …», «Тема: …», «О приложении» — строки 48dp.
  * Пункт закрывает меню и открывает свой выбор.
  */
-class MenuSheet(private val act: Activity, onLang: () -> Unit, onFx: () -> Unit, onTheme: () -> Unit, onAbout: () -> Unit) {
+class MenuSheet(private val act: Activity, onLang: () -> Unit, onFx: () -> Unit, onTheme: () -> Unit, onAbout: () -> Unit,
+                onLog: () -> Unit = {}) {
     private val t: Txt = act.tx
     /** Для тестов: пункты по порядку (язык, звук, тема, о приложении). */
     val rows = ArrayList<TextView>()
@@ -54,6 +55,7 @@ class MenuSheet(private val act: Activity, onLang: () -> Unit, onFx: () -> Unit,
         item(t.s(R.string.menu_lang, t.s(Lang.choice(act).label)), onLang)
         item(t.s(R.string.fx_item, t.s(Feedback.mode.label)), onFx)
         item(t.s(R.string.theme_item, t.s(Theme.choice(act).label)), onTheme)
+        item(t.s(R.string.log_title), onLog)
         item(t.s(R.string.about), onAbout)
     })
 
