@@ -448,8 +448,8 @@ class BrowserActivity : LangActivity() {
             minHeight = dp(44)
             setPadding(dp(12), 0, dp(12), 0)
             background = android.graphics.drawable.StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER))
-                addState(intArrayOf(android.R.attr.state_focused), box(C.PANEL2, C.AMBER))
+                addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER_TEXT))
+                addState(intArrayOf(android.R.attr.state_focused), box(C.PANEL2, C.AMBER_TEXT))
                 addState(intArrayOf(), box(C.AMBER))
             }
             setTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),

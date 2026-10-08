@@ -68,7 +68,9 @@ class TokenContrastTest {
             "BLUE/PANEL" to ratio(p.blue, p.panel),
             // Контур фокуса «Удалить» — рядом с фоном листа.
             "FOCUS/PANEL" to ratio(p.focus, p.panel),
-            "SWEEP/PANEL" to ratio(p.sweepLine, p.panel))
+            "SWEEP/PANEL" to ratio(p.sweepLine, p.panel),
+            // Амберные штрихи на нажатом / выбранном: скобка строки, контуры нажатых кнопок, край флажка.
+            "AMBER_TEXT/PANEL2" to ratio(p.amberText, p.panel2))
     }
 
     /** Светлая палитра — своя (не копия тёмной); видео-сцена в обеих — тёмная. */

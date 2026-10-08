@@ -215,7 +215,8 @@ fun Context.action(title: String, sub: String?, primary: Boolean, cue: Cue = Cue
         gravity = Gravity.CENTER
         setPadding(dp(16), dp(8), dp(16), dp(8))
         background = if (primary) StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER))
+            // Контур нажатой на PANEL2 — AMBER_TEXT (≥3:1 и в светлой).
+            addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER_TEXT))
             addState(intArrayOf(), box(C.AMBER))
         } else pressable(Color.TRANSPARENT, C.FRAME)
         val fg = if (primary) ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),

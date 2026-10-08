@@ -222,7 +222,7 @@ class ScanLine(ctx: Context) : View(ctx) {
     }
 }
 
-/** Галочка 20dp: контур амбером; отмечена — амберная заливка и тёмная «✓». */
+/** Галочка 20dp: контур амбером; отмечена — амберная заливка с краем AMBER_TEXT и тёмная «✓». */
 class Check(ctx: Context) : Drawable() {
     private val size = ctx.dp(20)
     private val one = ctx.dp(1).toFloat()
@@ -245,8 +245,13 @@ class Check(ctx: Context) : Drawable() {
         val l = b.left.toFloat(); val t = b.top.toFloat(); val r = l + size; val bt = t + size
         paint.style = Paint.Style.FILL
         paint.color = C.AMBER
-        if (on) c.drawRect(l, t, r, bt, paint)
-        else { c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
+        if (on) {
+            c.drawRect(l, t, r, bt, paint)
+            // Край 1dp AMBER_TEXT: заливка видна и на PANEL2 (светлая палитра); в тёмной он тот же амбер.
+            paint.color = C.AMBER_TEXT
+            c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
+            c.drawRect(l, t, l + one, bt, paint); c.drawRect(r - one, t, r, bt, paint)
+        } else { c.drawRect(l, t, r, t + one, paint); c.drawRect(l, bt - one, r, bt, paint)
                c.drawRect(l, t, l + one, bt, paint); c.drawRect(r - one, t, r, bt, paint) }
         if (focused) {
             // Фокус (клавиатура, переключатели): контур цвета текста.

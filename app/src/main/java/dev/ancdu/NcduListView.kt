@@ -242,9 +242,9 @@ class NcduListView(ctx: Context) : View(ctx) {
         if (down) {
             fill.color = C.PANEL2
             c.drawRect(0f, top.toFloat(), w.toFloat(), (top + rh).toFloat(), fill)
-            // Маленькая амберная скобка «[» у левого края.
+            // Маленькая амберная скобка «[» у левого края (штрих на PANEL2 — AMBER_TEXT, ≥3:1 в обеих палитрах).
             val bx = context.dp(4).toFloat(); val arm = context.dp(4).toFloat(); val inset = context.dp(8).toFloat()
-            fill.color = C.AMBER
+            fill.color = C.AMBER_TEXT
             c.drawRect(bx, top + inset, bx + one, top + rh - inset, fill)
             c.drawRect(bx, top + inset, bx + arm, top + inset + one, fill)
             c.drawRect(bx, top + rh - inset - one, bx + arm, top + rh - inset, fill)
@@ -299,12 +299,19 @@ class NcduListView(ctx: Context) : View(ctx) {
         }
     }
 
-    /** Флажок 16dp с левым верхним углом ([x], [y]): выбран — амберная заливка и галочка INK, иначе контур 1dp FRAME. */
+    /**
+     * Флажок 16dp с левым верхним углом ([x], [y]): выбран — амберная заливка с краем 1dp AMBER_TEXT и
+     * галочка INK, иначе контур 1dp FRAME.
+     */
     private fun drawCheck(c: Canvas, x: Int, y: Int, on: Boolean) {
         val l = x.toFloat(); val t = y.toFloat(); val s = checkBox.toFloat()
         if (on) {
             fill.color = C.AMBER
             c.drawRect(l, t, l + s, t + s, fill)
+            // Край 1dp AMBER_TEXT: заливка видна и на PANEL2 выбранной строки (светлая палитра).
+            fill.color = C.AMBER_TEXT
+            c.drawRect(l, t, l + s, t + one, fill); c.drawRect(l, t + s - one, l + s, t + s, fill)
+            c.drawRect(l, t, l + one, t + s, fill); c.drawRect(l + s - one, t, l + s, t + s, fill)
             val u = s / 16f
             tickPath.reset()
             tickPath.moveTo(l + 3.5f * u, t + 8.2f * u)
