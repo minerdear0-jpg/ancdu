@@ -191,10 +191,17 @@ class MainActivity : LangActivity() {
      */
     fun openInterrupted(d: InterruptedDelete) {
         if (Holder.deleting || opening) return
+        val shared = !d.su && d.root == Scans.STORAGE
+        val meta = Scans.meta(this, d.root, d.su)
+        // Открыть нечего (ни дерева, ни кэша того корня): уведомление остаётся, открывается журнал.
+        if (meta == null && !(shared && storage.storageShown())) {
+            DeleteLogSheet.open(this) { s -> logSheet?.dismiss(); logSheet = s }
+            return
+        }
         DeleteLog.markSeen()
-        if (!d.su && d.root == Scans.STORAGE) { openFocused(d.folder); return }
-        val meta = Scans.meta(this, d.root, d.su) ?: return
-        openCache(Holder.cacheFile(this, d.root, d.su).name, d.root, d.su, meta.time,
+        if (shared) { openFocused(d.folder); return }
+        val m = meta ?: return
+        openCache(Holder.cacheFile(this, d.root, d.su).name, d.root, d.su, m.time,
             focus = if (d.folder.isEmpty()) null else Focus.encode(d.folder))
     }
 

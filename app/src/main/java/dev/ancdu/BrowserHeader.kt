@@ -123,6 +123,20 @@ class BrowserHeader(private val a: BrowserActivity) {
         return top
     }
 
+    /** Плашка показывает ход скана (не вид дерева). */
+    private var badgeActive = false
+
+    /**
+     * Возраст и вид дерева — факт, не призыв: приглушённо. Ход скана — амбер; плашка Δ (касаемая) —
+     * амбер, пока на экране нет амберной ссылки ошибок (не больше двух акцентов сразу).
+     */
+    private fun tintBadge() {
+        badge.setTextColor(if (badgeActive || a.deltaShown && !newerOutlined) C.AMBER_TEXT else C.MUTED)
+    }
+
+    /** Для тестов: цвет плашки — амбер (иначе приглушённая). */
+    val badgeAmber: Boolean get() = badge.currentTextColor == C.AMBER_TEXT
+
     /** Чип «новее» сейчас в контуре (не амберная заливка). */
     var newerOutlined = false
         private set
@@ -144,6 +158,7 @@ class BrowserHeader(private val a: BrowserActivity) {
         else android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
             intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER_TEXT, C.AMBER_TEXT, C.INK)))
         newer.setPadding(a.dp(12), 0, a.dp(12), 0)
+        if (::badge.isInitialized) tintBadge()
     }
 
     /** onCreate экрана: полоса скана (её кладёт под линию шапки экран). */
@@ -205,8 +220,8 @@ class BrowserHeader(private val a: BrowserActivity) {
     private fun setBadge(text: String, active: Boolean, polite: Boolean) {
         badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
         badge.maxLines = if (active) 1 else BADGE_LINES
-        // Возраст и вид дерева — факт, не призыв: приглушённо. Ход скана и плашка Δ (касаемая) — амбер.
-        badge.setTextColor(if (active || a.deltaShown) C.AMBER_TEXT else C.MUTED)
+        badgeActive = active
+        tintBadge()
         badge.text = text
         // Плашка Δ (касаемая) — с подсказкой «точка отсчёта»; ход скана поверх неё читается как есть.
         badge.contentDescription = if (a.deltaShown && text == sourceBadge) a.txt.s(R.string.badge_delta_desc, text) else null

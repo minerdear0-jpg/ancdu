@@ -178,7 +178,6 @@
     <string name="apparent_size">apparent %1$s</string>
     <string name="disk_size_desc">size on disk %1$s</string>
     <string name="more_children">…%1$s more</string>
-    <string name="hardlink">hard link — space may not be freed</string>
     <string name="index_approx">size from the index, approximate</string>
     <string name="cache_sizes">sizes from the scan of %1$s</string>
     <string name="fast_box">fast via root (bypasses FUSE)</string>
@@ -405,4 +404,6 @@
         <item quantity="one">Show %1$s more past scan</item>
         <item quantity="other">Show %1$s more past scans</item>
     </plurals>
+    <string name="warn_trash">No trash.</string>
+    <string name="warn_hardlink">Hard link — space may not be freed.</string>
 </resources>

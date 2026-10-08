@@ -32,9 +32,11 @@ object SheetWarning {
 
     /**
      * «⚠ Без корзины. Не вернуть: видео 3,8 ГиБ и данные WhatsApp 0,6 ГиБ.»; без необратимого —
-     * «⚠ Без корзины. Отменить нельзя.»; через su — с «Удаление от root · » впереди.
+     * «⚠ Без корзины. Отменить нельзя.»; через su — с «Удаление от root · » впереди. [hardlink] —
+     * жёсткая ссылка: «Жёсткая ссылка — место может не освободиться.» в той же строке (вместо «Отменить
+     * нельзя.», если необратимого нет).
      */
-    fun text(t: Txt, root: Boolean, risks: List<Risk>): String {
+    fun text(t: Txt, root: Boolean, risks: List<Risk>, hardlink: Boolean = false): String {
         val parts = ArrayList<String>(2)
         val media = risks.filter { it.media != null }
         if (media.isNotEmpty()) {
@@ -49,10 +51,15 @@ object SheetWarning {
             parts += names.singleOrNull()?.let { t.s(R.string.warn_app, Bidi.visible(it), size) }
                 ?: t.q(R.plurals.warn_apps, names.size.toLong(), Fmt.count(names.size.toLong(), t.locale), size)
         }
-        val body = when (parts.size) {
-            0 -> t.s(R.string.no_trash)
+        val gone = when (parts.size) {
+            0 -> null
             1 -> t.s(R.string.warn_gone, parts[0])
             else -> t.s(R.string.warn_gone, t.s(R.string.warn_and, parts[0], parts[1]))
+        }
+        val body = when {
+            !hardlink -> gone ?: t.s(R.string.no_trash)
+            gone != null -> gone + " " + t.s(R.string.warn_hardlink)
+            else -> t.s(R.string.warn_trash) + " " + t.s(R.string.warn_hardlink)
         }
         return "⚠ " + if (root) t.s(R.string.warn_root, body) else body
     }

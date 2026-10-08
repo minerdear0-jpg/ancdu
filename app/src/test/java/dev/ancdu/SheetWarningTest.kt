@@ -76,4 +76,16 @@ class SheetWarningTest {
         val bare = listOfNotNull(SheetWarning.risk(app("com.x", null), "a", true, gib))
         assertEquals("⚠ Без корзины. Не вернуть: данные com.x 1,0${N}ГиБ.", SheetWarning.text(RU, false, bare))
     }
+
+    /** A hard link folds into the one warning line instead of a second amber line. */
+    @Test fun hardlinkFolds() {
+        assertEquals("⚠ Без корзины. Жёсткая ссылка — место может не освободиться.",
+            SheetWarning.text(RU, false, emptyList(), hardlink = true))
+        assertEquals("⚠ No trash. Hard link — space may not be freed.", SheetWarning.text(EN, false, emptyList(), hardlink = true))
+        val r = listOfNotNull(SheetWarning.risk(media, "a.mp4", false, gib))
+        assertEquals("⚠ Без корзины. Не вернуть: видео 1,0${N}ГиБ. Жёсткая ссылка — место может не освободиться.",
+            SheetWarning.text(RU, false, r, hardlink = true))
+        assertEquals("⚠ Удаление от root · Без корзины. Жёсткая ссылка — место может не освободиться.",
+            SheetWarning.text(RU, true, emptyList(), hardlink = true))
+    }
 }

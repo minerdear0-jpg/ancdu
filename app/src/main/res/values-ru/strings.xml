@@ -165,7 +165,6 @@
     <string name="apparent_size">видимый %1$s</string>
     <string name="disk_size_desc">размер на диске %1$s</string>
     <string name="more_children">…ещё %1$s</string>
-    <string name="hardlink">жёсткая ссылка — место может не освободиться</string>
     <string name="index_approx">размер по индексу, приблизительно</string>
     <string name="cache_sizes">размеры по скану от %1$s</string>
     <string name="fast_box">быстро через root (в обход FUSE)</string>
@@ -403,4 +402,6 @@
         <item quantity="many">Показать ещё %1$s прошлых сканов</item>
         <item quantity="other">Показать ещё %1$s прошлого скана</item>
     </plurals>
+    <string name="warn_trash">Без корзины.</string>
+    <string name="warn_hardlink">Жёсткая ссылка — место может не освободиться.</string>
 </resources>

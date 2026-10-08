@@ -212,7 +212,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         restartCountdown()
     }
 
-    private fun warning(): String = SheetWarning.text(t, tier.root, p.risks)
+    private fun warning(): String = SheetWarning.text(t, tier.root, p.risks, hardlink)
 
     init {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -308,7 +308,7 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
             addView(act.label(title, 22f, C.TEXT, bold = true).apply {
                 setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
                 // У группы путь строкой не печатается — его читает TalkBack у заголовка.
-                if (group != null) contentDescription = "$title, ${t.s(R.string.path_desc, p.path)}"
+                if (group != null && group.count > 1) contentDescription = "$title, ${t.s(R.string.path_desc, p.path)}"
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             (p.tag ?: p.ownTag)?.let { addView(tagLabel(it)) }
             if (p.viaRoot) addView(act.caps(t.s(R.string.as_root), C.TEXT).apply {
@@ -319,8 +319,10 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         })
         // Один объект: путь целиком, с переносами — «что именно удалится» (H04). У группы путь — у строк
         // списка. Строки владельцев нет: приложение называет предупреждение, если его данные не вернуть.
-        if (group == null) addView(act.label(Bidi.visible(p.path), 12f, C.MUTED, mono = true).apply {
-            contentDescription = t.s(R.string.path_desc, p.path)
+        // Группа из одного объекта — как один объект: его путь (папка + имя).
+        val onePath = if (group == null) p.path else if (group.count == 1 && p.top.size == 1) p.path + p.top[0].first else null
+        if (onePath != null) addView(act.label(Bidi.visible(onePath), 12f, C.MUTED, mono = true).apply {
+            contentDescription = t.s(R.string.path_desc, onePath)
             pathText = this
         })
         addView(sizeLine())
@@ -328,7 +330,6 @@ class DeleteSheet(private val act: Activity, val p: DeletePreview, private val o
         if (group == null && p.dir) contactRow(p.selfContact)?.let { selfContactRow = it; addView(it) }
         if ((p.dir || group != null) && p.top.isNotEmpty()) addView(children())
         if (group != null && group.gone > 0) addView(act.label(GroupSheet.gone(t, group.gone), 13f, C.MUTED).also { goneText = it })
-        if (hardlink) addView(act.label(t.s(R.string.hardlink), 13f, C.AMBER_TEXT))
         if (p.kind == Kind.INDEX) addView(act.label(t.s(R.string.index_approx), 13f, C.MUTED))
         if (p.cacheTime != null) addView(act.label(t.s(R.string.cache_sizes, p.cacheTime), 13f, C.MUTED))
         if (p.block == null && p.fast) addView(fastRow())
