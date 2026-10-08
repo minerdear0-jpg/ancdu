@@ -186,7 +186,11 @@ class DeleteLogSheet(private val act: Activity, entries: List<LogEntry>) {
             d.dismiss()
             DeleteLog.clear { done -> if (done && dialog.isShowing) cleared() }
         }
-        d.getButton(DialogInterface.BUTTON_NEGATIVE).requestFocus()
+        // Фокус по умолчанию — «Отмена». Окно диалога при первом проходе само ставит фокус на первую
+        // кнопку (вне режима касания), поэтому — и сразу, и после первого кадра окна.
+        val cancel = d.getButton(DialogInterface.BUTTON_NEGATIVE)
+        cancel.requestFocus()
+        d.window?.decorView?.post { if (d.isShowing) cancel.requestFocus() }
         confirm = d
     }
 

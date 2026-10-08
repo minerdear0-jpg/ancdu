@@ -202,17 +202,95 @@ class DeleteLogUiTest {
         ins.runOnMainSync { assertEquals("sub/only.bin", LogRows.title(a.tx, e)) }
     }
 
+    /** The cache and baseline a background refresh of the sandbox root wrote (prefs entry too). */
+    private fun forgetCache(root: File) {
+        Holder.io.submit {}.get(30, TimeUnit.SECONDS)
+        Holder.cacheFile(ctx, root.path, false).delete()
+        Baseline.files(ctx, root.path, false).forget()
+        ctx.getSharedPreferences(Scans.PREFS, Context.MODE_PRIVATE).edit().remove(Holder.cacheFile(ctx, root.path, false).name).commit()
+    }
+
+    /**
+     * A group of ONE directory, deleted partially (a read-only subdir inside, like
+     * BrowserTest.partialDeleteRefreshesAndKeepsPath): the refresh lands on the OBJECT, so the log row
+     * is the object's path with a non-zero «⚠ X из Y» — never «0 Б» (the folder's size).
+     */
+    @Test fun groupOfOneDirectoryPartial() {
+        val d = sandbox()
+        val sub = File(d, "a/sub").apply { mkdirs() }
+        File(sub, "x.bin").writeBytes(ByteArray(50_000))
+        val locked = File(sub, "locked").apply { mkdirs() }
+        File(locked, "y.bin").writeBytes(ByteArray(20_000))
+        val keep = File(d, "a/keep.bin").apply { writeBytes(ByteArray(10)) }
+        for (f in listOf(sub, locked, keep)) assertTrue(f.isAbsolute && f.path.startsWith(d.path + "/"))
+        assertTrue(locked.setWritable(false, false))
+        Perms.filesOverride = true
+        try {
+            val a = browse(d)
+            val ka = index(a, "a/")
+            ins.runOnMainSync { a.list.source!!.click(ka) }
+            ins.waitForIdleSync()
+            val ks = index(a, "sub/")
+            var h0 = 0L
+            ins.runOnMainSync {
+                h0 = Holder.h
+                a.list.source!!.longClick(ks)
+                assertEquals(1, a.selection.count)
+                a.sel.openGroupSheet(gone = 0)
+            }
+            assertTrue(waitFor { a.sheet?.dialog?.isShowing == true })
+            ins.runOnMainSync {
+                assertEquals(1, a.sheet!!.group!!.count)
+                a.sheet!!.deleteButton!!.performClick()
+            }
+            assertTrue("no refreshed tree / footer", waitFor(30_000) {
+                Holder.h != h0 && a.footerText.startsWith(a.prefixOf(R.string.freed))
+            })
+            ins.runOnMainSync {
+                // The footer is about the object: what is left is listed, never «freed 0 B».
+                assertTrue(a.footerText.toString(), a.footerText.contains(a.suffixOf(R.string.freed_left)))
+                assertFalse(a.footerText.toString(), a.footerText.startsWith(DeleteProgress.freed(a.tx, 0)))
+            }
+            assertFalse(File(sub, "x.bin").exists())
+            assertTrue(File(locked, "y.bin").exists())
+            assertTrue(keep.exists())
+            drainIo()
+            val e = DeleteLogModel.entries(DeleteLogStore(log).lines()).single()
+            assertFalse(e.start.group)
+            assertEquals(listOf("a", "sub"), e.start.names.map { String(it) })
+            assertTrue(e.start.dir)
+            assertEquals(LogOutcome.PARTIAL, e.outcome)
+            val freed = e.freed
+            assertTrue("freed: $freed", freed == null || freed > 0)
+            ins.runOnMainSync {
+                val size = LogRows.size(a.tx, e)
+                assertTrue(size, size.startsWith("⚠ "))
+                assertFalse(size, size.startsWith("⚠ 0" + Fmt.NBSP) || size.startsWith("⚠ 0 "))
+                assertEquals("a/sub/", LogRows.title(a.tx, e))
+            }
+            assertTrue(waitFor { !BgScan.active })
+        } finally {
+            Perms.filesOverride = null
+            locked.setWritable(true, true)
+            forgetCache(d)
+        }
+    }
+
     /** Clear: Cancel keeps the entries; an early double tap on «Очистить» is ignored; Confirm empties the log. */
     @Test fun clearAsksAndGuardsDoubleTap() {
         val (_, s) = deleteOneAndOpenLog()
         ins.runOnMainSync { assertTrue(s.clearButton.performClick()) }
         assertTrue(waitFor { s.confirm?.isShowing == true })
+        ins.waitForIdleSync()
+        // Default focus is Cancel (set again after the dialog's first frame). In touch mode nothing is
+        // focused, so wait for it only outside touch mode; never assert the positive button has it.
+        var touch = true
+        ins.runOnMainSync { touch = s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE).isInTouchMode }
+        if (!touch) assertTrue("Cancel not focused", waitFor { s.confirm!!.getButton(DialogInterface.BUTTON_NEGATIVE).isFocused })
         ins.runOnMainSync {
             val c = s.confirm!!
-            val cancel = c.getButton(DialogInterface.BUTTON_NEGATIVE)
-            // Default focus is Cancel; in touch mode nothing is focused, so check it only outside it.
-            assertTrue(cancel.isFocusable)
-            if (!cancel.isInTouchMode) assertTrue(cancel.isFocused)
+            assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).isFocusable)
+            assertFalse(c.getButton(DialogInterface.BUTTON_POSITIVE).isFocused)
             assertTrue(c.getButton(DialogInterface.BUTTON_NEGATIVE).performClick())
         }
         assertTrue(waitFor { s.confirm?.isShowing != true })

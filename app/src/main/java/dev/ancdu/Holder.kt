@@ -271,10 +271,16 @@ object Holder {
                     objects: List<LogObject> = emptyList(), fast: Boolean = false) {
         checkMain("Holder.deleteGroup")
         check(!deleting) { "a delete is already running" }
-        begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
-        // Журнал: одна пара «начало/итог» на всё действие — папка, число, сумма, до 20 имён.
-        val action = LogActions.group(this.root, viaRoot, names,
-            objects.ifEmpty { jobs.map { LogObject(it.name.toByteArray(Charsets.UTF_8), it.disk, it.dir) } }, total, root, fast)
+        val objs = objects.ifEmpty { jobs.map { LogObject(it.name.toByteArray(Charsets.UTF_8), it.disk, it.dir) } }
+        // Группа из одного объекта (остальные отпали после обновления) — это удаление ЕГО: имя, путь
+        // и «каталог ли» — объекта, как у одиночного (afterDelete, landed, журнал, подвал — о нём).
+        val one = if (jobs.size == 1) objs.singleOrNull() else null
+        if (one != null) begin(jobs[0].name, total, one.disk, names + one.name, dir = one.dir, root = root, count = 1)
+        else begin(name, total, disk, names, dir = true, root = root, count = jobs.size)
+        // Журнал: одна пара «начало/итог» на всё действие — папка, число, сумма, до 20 имён. Сбой
+        // журнала удаление не трогает.
+        val action = try { LogActions.group(this.root, viaRoot, names, objs, total, root, fast) }
+            catch (e: Throwable) { Log.w("ancdu", "delete log action failed", e); null }
         run(handle, jobs, group = true, root = root, done = done, action = action)
     }
 
@@ -291,7 +297,7 @@ object Holder {
 
     /** На io: объекты по очереди; итог — на главный поток (и при исключении: deleting не останется true). */
     private fun run(handle: Long, jobs: List<GroupJob>, group: Boolean, root: Boolean, done: (Int) -> Unit,
-                    action: LogAction) {
+                    action: LogAction?) {
         io.execute {
             var r = -1
             val results = ArrayList<ItemResult>()
@@ -332,7 +338,8 @@ object Holder {
                     Growth.recompute()
                     delResults = results
                     delLogId = logId
-                    if (group) delDir = GroupResult.needsRefresh(results, root)
+                    // Группа из одного — как одиночное: delDir остаётся «каталог ли» самого объекта.
+                    if (group && jobs.size > 1) delDir = GroupResult.needsRefresh(results, root)
                     // Сначала обновление дерева (r ≠ 0): экраны в слушателях уже видят BgScan.active.
                     BgScan.deleteFinished(r)
                     for (l in deleteListeners.toList()) l(r)
