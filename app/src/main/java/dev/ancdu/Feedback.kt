@@ -113,10 +113,10 @@ object Feedback {
             systemHaptics = Settings.System.getInt(cr, Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) != 0)
     }
 
-    /** Событие [cue]; [v] — view для performHapticFeedback (null — вибрация только через Vibrator). Главный поток. */
     /** Для тестов: последний запрошенный сигнал (и при выключенном звуке). */
     @Volatile var lastCue: Cue? = null
 
+    /** Событие [cue]; [v] — view для performHapticFeedback (null — вибрация только через Vibrator). Главный поток. */
     fun cue(v: View?, cue: Cue) {
         lastCue = cue
         val a = app ?: return
