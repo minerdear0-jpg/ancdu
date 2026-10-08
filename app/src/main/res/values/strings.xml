@@ -331,6 +331,8 @@
     <string name="err_node_gone">This folder is no longer in the tree</string>
     <string name="folder_gone">Folder no longer exists: %1$s</string>
     <string name="cursor_here">, you were here</string>
+    <string name="sel_restore">Restore</string>
+    <string name="sel_restore_desc">restore the selection</string>
 
     <!-- What grew: Δ against a rolling baseline -->
     <string name="sort_delta">Δ</string>

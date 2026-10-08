@@ -189,13 +189,15 @@ class SelectModeTest {
             a.onBackPressed()
             assertEquals("назад не навигирует", sub, a.node)
             assertFalse(a.selection.active)
-            assertEquals(GroupSheet.cleared(a.tx, 1), a.footerText.toString())
+            // «назад» — с «Вернуть» (Task 31); уход из папки ниже — без него
+            assertEquals(GroupSheet.cleared(a.tx, 1) + " · " + a.tx.s(R.string.sel_restore), a.footerText.toString())
             // переход к предку снимает выбор с подвалом
             a.list.source!!.longClick(i)
             a.jumpTo(0)
             assertEquals(0, a.node)
             assertFalse(a.selection.active)
             assertEquals(GroupSheet.cleared(a.tx, 1), a.footerText.toString())
+            assertFalse(a.footerActive)
         }
     }
 

@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Task 31: браузер переживает смерть процесса (папка, прокрутка, выбор — по именам), курсор «вы были
- * здесь».
+ * здесь», «Выбор снят: N · Вернуть».
  *
  * Смерть процесса в одном процессе: [BrowserState.testProcessDeath] в начале onCreate нового экземпляра
  * (после onSaveInstanceState и onDestroy прежнего) очищает Holder (дерево освобождается — как после
@@ -372,6 +372,113 @@ class RestoreUiTest {
         ins.runOnMainSync {
             assertEquals(Kind.CACHE, Holder.kind)
             assertEquals(a2, d.cursorRow)
+        }
+    }
+
+    // ---------- Part 3 ----------
+
+    private fun selectThree(b: BrowserActivity): Set<String> {
+        ins.runOnMainSync {
+            b.list.source!!.longClick(0)
+            b.list.source!!.click(1)
+            b.list.source!!.click(2)
+        }
+        return selectedNames(b).also { assertEquals(3, it.size) }
+    }
+
+    private fun undoText(b: BrowserActivity, n: Int) = GroupSheet.cleared(b.tx, n) + " · " + b.tx.s(R.string.sel_restore)
+
+    /** «Назад» снимает выбор с «Вернуть»; тап возвращает тот же выбор; второй тап — ничего. */
+    @Test fun backOffersRestoreAndRestoreBringsTheSelectionBack() {
+        val t = fixture()
+        cached(t)
+        val b = browse()
+        open(b, "A/"); open(b, "B/")
+        val picked = selectThree(b)
+        ins.runOnMainSync {
+            b.onBackPressed()
+            assertFalse(b.selection.active)
+            assertEquals(undoText(b, 3), b.footerText.toString())
+            assertTrue(b.footerActive)
+            assertTrue(b.footer.isClickable)
+            Feedback.lastCue = null
+            b.footer.performClick()
+            assertTrue(b.selection.active)
+            assertEquals(View.VISIBLE, b.selBar.visibility)
+            assertEquals(Cue.TAP, Feedback.lastCue)
+            assertFalse(b.footerActive)
+            // Второй тап: подвала-действия уже нет, выбор тот же.
+            Feedback.lastCue = null
+            b.footer.performClick()
+            assertNull(Feedback.lastCue)
+            assertEquals(3, b.selection.count)
+        }
+        assertEquals(picked, selectedNames(b))
+    }
+
+    /** Заметка переживает поворот; подстановка дерева её не снимает, пропавшее пропускается молча. */
+    @Test fun restoreSurvivesRotationAndSkipsGoneItems() {
+        val t = fixture()
+        cached(t)
+        val b = browse()
+        open(b, "A/"); open(b, "B/")
+        val picked = selectThree(b)
+        ins.runOnMainSync { b.onBackPressed() }
+        ins.runOnMainSync { b.recreate() }
+        val c = next(b)
+        ins.runOnMainSync {
+            assertEquals(undoText(c, 3), c.footerText.toString())
+            assertTrue(c.footerActive)
+        }
+        val gone = picked.first()
+        assertTrue(inBox("tree/A/B/$gone").delete())
+        val h2 = scan(t)
+        ins.runOnMainSync {
+            Holder.offer(h2, Kind.SCAN, t.path, false, System.currentTimeMillis())
+            c.promotePending()
+            assertEquals(h2, c.h)
+            assertTrue(c.footerActive)
+            c.footer.performClick()
+            assertTrue(c.selection.active)
+            assertEquals(2, c.selection.count)
+        }
+        assertEquals(picked - gone, selectedNames(c))
+    }
+
+    /** Нечего вернуть (всё пропало) — ничего; «✕» и «НИЧЕГО» не дают «Вернуть». */
+    @Test fun noRestoreWhenNothingLeftOrClearedOnPurpose() {
+        val t = fixture()
+        cached(t)
+        val b = browse()
+        open(b, "A/"); open(b, "B/")
+        val k = index(b, "f20.bin")
+        ins.runOnMainSync { b.list.source!!.longClick(k); b.onBackPressed() }
+        assertTrue(inBox("tree/A/B/f20.bin").delete())
+        val h2 = scan(t)
+        ins.runOnMainSync {
+            Holder.offer(h2, Kind.SCAN, t.path, false, System.currentTimeMillis())
+            b.promotePending()
+            assertTrue(b.footerActive)
+            b.footer.performClick()
+            assertFalse(b.selection.active)
+            assertFalse(b.footerActive)
+            assertFalse(b.footerText.contains(b.tx.s(R.string.sel_restore)))
+        }
+        // «✕»
+        selectThree(b)
+        ins.runOnMainSync {
+            b.selExit.performClick()
+            assertFalse(b.selection.active)
+            assertFalse(b.footerActive)
+            assertFalse(b.footerText.contains(b.tx.s(R.string.sel_restore)))
+        }
+        // «ВСЕ», затем «НИЧЕГО»
+        ins.runOnMainSync {
+            b.list.source!!.longClick(0)
+            b.selAll.performClick()
+            b.selAll.performClick()
+            assertFalse(b.selection.active)
+            assertFalse(b.footerActive)
         }
     }
 }

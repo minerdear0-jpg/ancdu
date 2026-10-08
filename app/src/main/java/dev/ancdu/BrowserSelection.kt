@@ -73,17 +73,25 @@ class BrowserSelection(private val a: BrowserActivity) {
 
     /** onSaveInstanceState: выбор — по именам (байты); очень большой не сохраняется (предел Binder). */
     fun save(out: Bundle) {
-        if (selection.active && !a.busy) {
-            val ks = selection.keys
-            if (ks.size <= SAVE_MAX) {
-                val raw = ks.map(::keyBytes)
-                if (raw.sumOf { it.size } <= SAVE_BYTES) {
-                    out.putInt(S_SEL_N, ks.size)
-                    for ((i, k) in raw.withIndex()) out.putByteArray(S_SEL + i, k)
-                }
-            }
-        }
+        if (selection.active && !a.busy) putKeys(out, selection.keys, S_SEL_N, S_SEL)
+        // «Вернуть» ещё на экране: снятый выбор и его папка — только в Bundle, не в prefs.
+        val u = undo
+        if (u != null && a.footerActive && !a.busy && putKeys(out, u, S_UNDO_N, S_UNDO))
+            out.putByteArray(S_UNDO_SCOPE, Focus.encode(undoScope))
     }
+
+    /** Ключи [ks] в [out] под [nKey]/[prefix]; false — слишком много для Binder (не сохранены). */
+    private fun putKeys(out: Bundle, ks: List<SelKey>, nKey: String, prefix: String): Boolean {
+        if (ks.size > SAVE_MAX) return false
+        val raw = ks.map(::keyBytes)
+        if (raw.sumOf { it.size } > SAVE_BYTES) return false
+        out.putInt(nKey, ks.size)
+        for ((i, k) in raw.withIndex()) out.putByteArray(prefix + i, k)
+        return true
+    }
+
+    private fun getKeys(st: Bundle, nKey: String, prefix: String): List<ByteArray> =
+        (0 until st.getInt(nKey, 0)).mapNotNull { st.getByteArray(prefix + it) }
 
     /** onDestroy экрана: своих окон нет — лист группы — это [BrowserActivity.sheet], его закрывает экран. */
     fun dispose() {}
@@ -133,26 +141,32 @@ class BrowserSelection(private val a: BrowserActivity) {
     }
 
     /** Пересоздание: тот же выбор в той же папке — по именам в дереве [h]. */
-    fun restoreSelection(st: Bundle) {
-        val k = st.getInt(S_SEL_N, 0)
-        if (k <= 0) return
-        if (a.giant.on) { restoreChains(st, k); return }
+    fun restoreSelection(st: Bundle) { restoreKeys(getKeys(st, S_SEL_N, S_SEL)) }
+
+    /**
+     * Выбор по байтам ключей [raw] (имена в текущей папке; у «гигантов» — цепочки) в живом дереве:
+     * пропавшие и запрещённые пропускаются молча. Сколько выбрано.
+     */
+    private fun restoreKeys(raw: List<ByteArray>): Int {
+        if (raw.isEmpty()) return 0
+        if (a.giant.on) { restoreChains(raw); return selection.count }
         val map = a.childMap(a.node)
-        for (i in 0 until k) {
-            val key = NameKey(st.getByteArray(S_SEL + i) ?: continue)
+        for (b in raw) {
+            val key = NameKey(b)
             val nd = map[key] ?: continue
             if (a.blockReason(a.h, nd, Native.str(Native.path(a.h, nd))).let { it != null && it != Block.REFRESH_FAILED }) continue
             if (!selection.active) selection.start(key, nd) else if (selection.nodeOf(key) == null) selection.toggle(key, nd)
         }
         if (selection.active) selScope = a.pathNames(a.h, a.node)
         renderSelection()
+        return selection.count
     }
 
     /** «Гиганты»: выбор по цепочкам — каждая заново в живом дереве, и только строки списка. */
-    private fun restoreChains(st: Bundle, k: Int) {
+    private fun restoreChains(raw: List<ByteArray>) {
         val rows = a.kids.copyOf(a.n).toHashSet()
-        for (i in 0 until k) {
-            val chain = Focus.parse(st.getByteArray(S_SEL + i)) ?: continue
+        for (b in raw) {
+            val chain = Focus.parse(b) ?: continue
             val nd = a.giant.resolve(chain)?.takeIf { it in rows } ?: continue
             if (a.blockReason(a.h, nd, Native.str(Native.path(a.h, nd))).let { it != null && it != Block.REFRESH_FAILED }) continue
             val key = ChainKey(chain)
@@ -215,6 +229,7 @@ class BrowserSelection(private val a: BrowserActivity) {
         val b = blockAt(i)
         if (b != null) { refuse(b); return }
         a.cancelAsk()
+        dropUndo()
         selection.start(keyAt(i), a.kids[i])
         selScope = a.pathNames(a.h, a.node)
         Feedback.cue(a.list, Cue.TAP)
@@ -234,12 +249,64 @@ class BrowserSelection(private val a: BrowserActivity) {
         renderSelection()
     }
 
-    /** Выйти из выбора; [cleared] — подвал «Выбор снят: N» на 4 с. */
+    /**
+     * Выйти из выбора; [cleared] («назад») — подвал «Выбор снят: N · Вернуть» на 4 с (дольше с TalkBack):
+     * тап возвращает тот же выбор. «✕», «НИЧЕГО», удаление и уход из папки «Вернуть» не дают.
+     */
     fun leaveSelection(cleared: Boolean = false) {
         a.cancelAsk()
+        val keys = selection.keys
+        val scope = selScope
         val k = selection.leave()
         renderSelection()
-        if (cleared && k > 0) a.note(GroupSheet.cleared(a.txt, k))
+        if (cleared && k > 0) offerUndo(keys, scope)
+    }
+
+    /** Снятый «назад» выбор (ключи) и его папка, пока видна заметка «Вернуть»; null — нечего вернуть. */
+    private var undo: List<SelKey>? = null
+    private var undoScope: List<ByteArray> = emptyList()
+
+    private fun offerUndo(keys: List<SelKey>, scope: List<ByteArray>) {
+        val text = GroupSheet.cleared(a.txt, keys.size) + " · " + a.txt.s(R.string.sel_restore)
+        val desc = GroupSheet.cleared(a.txt, keys.size) + ", " + a.txt.s(R.string.sel_restore_desc)
+        // Сначала заметка (она снимает прежнюю и её «Вернуть»), затем — её ключи.
+        a.noteAction(text, desc, act = { restoreUndo() }, gone = { undo = null })
+        undo = keys
+        undoScope = scope
+    }
+
+    /** Снимок «Вернуть» (ключи и папка) до подстановки дерева; null — заметки нет. */
+    fun undoSnapshot(): Pair<List<SelKey>, List<ByteArray>>? = undo?.takeIf { a.footerActive }?.let { it to undoScope }
+
+    /** После подстановки: та же заметка «Вернуть», если папка та же и выбора нет. */
+    fun reofferUndo(snap: Pair<List<SelKey>, List<ByteArray>>?) {
+        if (snap == null || selection.active || !samePath(a.pathNames(a.h, a.node), snap.second)) return
+        offerUndo(snap.first, snap.second)
+    }
+
+    private fun dropUndo() { if (undo != null) { undo = null; a.endNote() } }
+
+    /**
+     * «Вернуть»: тот же выбор по именам в той же папке (пропавшие — молча мимо), режим выбора и
+     * панель. Ничего не осталось — ничего. Второй тап — ничего: ключи забыты до первого действия.
+     */
+    fun restoreUndo() {
+        val keys = undo ?: return
+        undo = null
+        a.endNote()
+        if (a.busy || a.h == 0L || selection.active || !samePath(a.pathNames(a.h, a.node), undoScope)) return
+        if (restoreKeys(keys.map(::keyBytes)) > 0 && a.list.a11yOn())
+            a.list.announceForAccessibility(a.txt.s(R.string.sel_mode_announce, Fmt.count(selection.count.toLong(), a.txt.locale)))
+    }
+
+    /** Пересоздание того же процесса, пока «Вернуть» была на экране: снова заметка с теми же ключами. */
+    fun restoreUndoNote(st: Bundle) {
+        val raw = getKeys(st, S_UNDO_N, S_UNDO)
+        if (raw.isEmpty() || selection.active) return
+        val scope = st.getByteArray(S_UNDO_SCOPE)?.let { if (it.isEmpty()) emptyList() else Focus.parse(it) } ?: return
+        if (!samePath(a.pathNames(a.h, a.node), scope)) return
+        val keys: List<SelKey> = if (a.giant.on) raw.mapNotNull { b -> Focus.parse(b)?.let(::ChainKey) } else raw.map(::NameKey)
+        if (keys.isNotEmpty()) offerUndo(keys, scope)
     }
 
     /** «ВСЕ» — каждый выбираемый (запрещённые пропускаются); «НИЧЕГО» — выход. */
@@ -547,6 +614,9 @@ class BrowserSelection(private val a: BrowserActivity) {
     private companion object {
         const val S_SEL_N = "sel_n"
         const val S_SEL = "sel_"
+        const val S_UNDO_N = "undo_n"
+        const val S_UNDO = "undo_"
+        const val S_UNDO_SCOPE = "undo_scope"
         const val SAVE_MAX = 2000
         const val SAVE_BYTES = 256 * 1024
     }

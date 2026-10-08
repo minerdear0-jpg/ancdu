@@ -319,6 +319,8 @@
     <string name="err_node_gone">Этой папки уже нет в дереве</string>
     <string name="folder_gone">Папки уже нет: %1$s</string>
     <string name="cursor_here">, вы были здесь</string>
+    <string name="sel_restore">Вернуть</string>
+    <string name="sel_restore_desc">вернуть выбор</string>
 
     <!-- What grew: Δ against a rolling baseline -->
     <string name="sort_delta">Δ</string>

@@ -255,19 +255,25 @@ class BrowserActivity : LangActivity() {
 
     /** Текст подвала; пустой — подвал невидим, но место держит (список не прыгает). В режиме выбора подвала нет. */
     private fun setFooter(text: CharSequence) {
-        linkFooter(false)
+        linkFooter(null)
         footer.text = text
         footer.visibility = if (text.isEmpty()) View.INVISIBLE else View.VISIBLE
         footerBar.visibility = if (selection.active) View.GONE else View.VISIBLE
     }
 
-    /** Подвал — ссылка «журнал ›» (итог удаления): тап открывает журнал удалений. */
-    private var footerLinked = false
+    /**
+     * Действие подвала (тап по подвалу): «журнал ›» итога удаления или «Вернуть» снятого выбора;
+     * null — подвал не касаем. [footerGone] — заметка с действием ушла (время, другая заметка, загрузка уровня).
+     */
+    private var footerAction: (() -> Unit)? = null
+    private var footerGone: (() -> Unit)? = null
 
-    private fun linkFooter(on: Boolean) {
-        footerLinked = on
+    private fun linkFooter(action: (() -> Unit)?, desc: String? = null) {
+        if (footerAction != null) { val g = footerGone; footerGone = null; footerAction = null; g?.invoke() }
+        footerAction = action
+        val on = action != null
         footer.isClickable = on; footer.isFocusable = on
-        footer.contentDescription = if (on) "${footer.text.toString().removeSuffix(" ›")}, ${txt.s(R.string.log_link_desc)}" else null
+        footer.contentDescription = if (on) desc else null
     }
 
     /** Для тестов: открытый лист журнала удалений. */
@@ -289,13 +295,41 @@ class BrowserActivity : LangActivity() {
         val linked = log && !selection.active
         val text = if (linked) message + " · " + txt.s(R.string.log_link) else message
         if (selection.active) { notice.text = text; notice.visibility = View.VISIBLE }
-        else { setFooter(text); if (linked) linkFooter(true) }
+        else { setFooter(text); if (linked) linkFooter({ openLog() }, "${text.removeSuffix(" ›")}, ${txt.s(R.string.log_link_desc)}") }
+        expire(text, NoticeTime.BASE_MS)
+    }
+
+    /**
+     * Подвал (не в режиме выбора): [text] — одна строка с действием [act] по тапу ([desc] — для
+     * TalkBack) на [NoticeTime] (дольше с TalkBack); [gone] — заметка ушла: время вышло, её сменила
+     * другая или перечитан уровень.
+     */
+    internal fun noteAction(text: String, desc: String, act: () -> Unit, gone: () -> Unit) {
+        setFooter(text)
+        linkFooter(act, desc)
+        footerGone = gone
+        expire(text, NoticeTime.ms(recommendedMs(NoticeTime.BASE_MS), footer.a11yOn()))
+    }
+
+    /** Заметка с действием видна (для тестов и сохранения). */
+    val footerActive: Boolean get() = footerAction != null
+
+    /** Снять заметку подвала сейчас (обычная подсказка). */
+    internal fun endNote() { ui.removeCallbacks(restoreFooter); setFooter(idleFooter()) }
+
+    private fun recommendedMs(base: Long): Int =
+        (getSystemService(ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager)
+            ?.getRecommendedTimeoutMillis(base.toInt(), android.view.accessibility.AccessibilityManager.FLAG_CONTENT_TEXT or
+                android.view.accessibility.AccessibilityManager.FLAG_CONTENT_CONTROLS) ?: base.toInt()
+
+    /** Через [ms] заметка [text] (если она ещё на месте) сменяется обычной подсказкой. */
+    private fun expire(text: String, ms: Long) {
         ui.removeCallbacks(restoreFooter)
         restoreFooter = Runnable {
             if (notice.visibility == View.VISIBLE && notice.text.toString() == text) notice.visibility = View.GONE
             else if (footer.text.toString() == text) setFooter(idleFooter())
         }
-        ui.postDelayed(restoreFooter, 4000)
+        ui.postDelayed(restoreFooter, ms)
     }
 
     private fun idleFooter(): String = hint
@@ -458,7 +492,9 @@ class BrowserActivity : LangActivity() {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             visibility = View.INVISIBLE
             background = pressable(android.graphics.Color.TRANSPARENT)
-            feedbackClick { if (footerLinked) openLog() }
+            // Звук и действие — только у подвала с действием (второй тап «Вернуть» — тишина).
+            isSoundEffectsEnabled = false
+            setOnClickListener { v -> footerAction?.let { Feedback.cue(v, Cue.TAP); it() } }
             isClickable = false; isFocusable = false
         }
         errors.link()
@@ -534,6 +570,8 @@ class BrowserActivity : LangActivity() {
             if (st != null) {
                 sel.restoreSelection(st)
                 cursor.restore(BrowserState.decode(st.getByteArray(S_STATE))?.cursor, flash = false)
+                // «Выбор снят · Вернуть» был на экране — снова (только пересоздание того же процесса).
+                sel.restoreUndoNote(st)
             }
             // Только при первом создании: пересоздание держит свою папку и прокрутку.
             else if (savedInstanceState == null) Focus.parse(intent.getByteArrayExtra(EXTRA_FOCUS))?.let { focus(it) }
@@ -779,11 +817,14 @@ class BrowserActivity : LangActivity() {
         if (h == 0L) { finish(); return }
         list.source = src
         val hit = Native.resolve(h, names, dirOnly = true)
+        // «Выбор снят · Вернуть» переживает подстановку (вернётся то, что есть в новом дереве).
+        val undo = sel.undoSnapshot()
         // «Гиганты»: список заново из нового дерева, затем выбор — по цепочкам; пропавшие выбрасываются.
         if (giant.on) {
             sel.rebindChains()
             load(0, keep)
             sel.keepListed()
+            sel.reofferUndo(undo)
             refreshPending()
             return
         }
@@ -793,6 +834,7 @@ class BrowserActivity : LangActivity() {
             selection.rebind { map[it] }
         }
         load(hit.node, if (hit.exact) keep else 0)
+        sel.reofferUndo(undo)
         refreshPending()
     }
 
