@@ -92,9 +92,10 @@ class BiggestSection(private val a: MainActivity) {
             val h = Holder.h
             val kind = Holder.kind
             val time = Holder.time
+            val rootKey = Holder.root
             Holder.io.execute {
                 val r = runCatching { load(app, txt, h, self, d) }.getOrDefault(emptyList())
-                val g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
+                val g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, rootKey, it.baseTime)) }.getOrNull() }
                 val n = runCatching { giants(h) }.getOrDefault(0L)
                 a.runOnUiThread { show(my, r, kind, time, g, keepGrowth = keep, giants = n) }
             }
@@ -116,7 +117,7 @@ class BiggestSection(private val a: MainActivity) {
                 if (h == 0L) emptyList() else try {
                     // Кэш открыт только на этот ответ: Δ против точки отсчёта — здесь же, на io.
                     val d = runCatching { Growth.compute(h, 0L, base) }.getOrNull()
-                    g = d?.let { runCatching { Growth.home(h, it) }.getOrNull() }
+                    g = d?.let { runCatching { Growth.home(h, it, OwnDeletes.forTree(h, Scans.STORAGE, it.baseTime)) }.getOrNull() }
                     n = runCatching { giants(h) }.getOrDefault(0L)
                     load(app, txt, h, self, d)
                 } finally { Native.free(h) }

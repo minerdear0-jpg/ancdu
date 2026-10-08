@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 class GrowthUiTest {
+    /** The delete log of this suite goes into a cacheDir sandbox (own deletes are read from it). */
+    @get:org.junit.Rule val logSandbox = LogSandboxRule()
     private val ins = InstrumentationRegistry.getInstrumentation()
     private val ctx: Context get() = ins.targetContext
     private var box: File? = null
@@ -250,6 +252,79 @@ class GrowthUiTest {
      * песочнице). Без точки отсчёта строки нет; после роста в Telegram/Video — «+… с … · больше всего
      * Telegram/Video ›», у нового крупнейшего файла — NEW; тап — браузер в Telegram/Video в сортировке Δ.
      */
+    /** Удалить [rel] (файл в папке дерева общего хранилища) через ancdu: браузер, папка, deleteBlocking. */
+    private fun deleteViaAncdu(folder: String, name: String) {
+        val b = browser()
+        ins.runOnMainSync {
+            val i = rows(b).indexOfFirst { it.name == "$folder/" }
+            assertTrue("нет $folder/", i >= 0)
+            b.list.source!!.click(i)
+        }
+        ins.waitForIdleSync()
+        var k = -1
+        ins.runOnMainSync { k = rows(b).indexOfFirst { it.name == name } }
+        assertTrue("нет $name", k >= 0)
+        assertEquals(0, b.deleteBlocking(k))
+        ins.runOnMainSync { b.finish() }
+        Holder.io.submit {}.get(30, TimeUnit.SECONDS)
+    }
+
+    /** Освобождено собственными удалениями после точки отсчёта (из журнала песочницы). */
+    private fun ownFreed(): Long = DeleteLogModel.entries(DeleteLogStore(logSandbox.file).lines()).sumOf { it.freed ?: 0L }
+
+    /**
+     * Удалил сам 5 МиБ из Movies, а Download вырос на 2 МиБ: сырая Δ корня отрицательна, строка главного
+     * экрана — «+… · больше всего Download» без удалённых байтов.
+     */
+    @Test fun homeGrowthLineExcludesOwnDeletes() {
+        val t = inBox("own").apply { assertTrue(mkdirs()) }
+        val victim = inBox("own/Movies/big.bin").also { it.parentFile!!.mkdirs(); it.writeBytes(ByteArray(5 shl 20)) }
+        inBox("own/Movies/keep.bin").writeBytes(ByteArray(10_000))
+        inBox("own/Download").mkdirs()
+        inBox("own/Download/x.bin").writeBytes(ByteArray(10_000))
+        scanIn(t, Scans.STORAGE)
+        val m = mainActivity()
+        markAndWait()
+        deleteViaAncdu("Movies", "big.bin")
+        assertFalse(victim.exists())
+        val freed = ownFreed()
+        assertTrue("журнал не знает освобождённого", freed >= 5L shl 20)
+        inBox("own/Download/new.bin").writeBytes(ByteArray(2 shl 20))
+        scanIn(t, Scans.STORAGE)
+        assertTrue("Δ не посчитана", waitFor { Growth.forTree(Holder.h, Holder.gen) != null })
+        ins.runOnMainSync { m.biggest.refresh(force = true) }
+        assertTrue("строки «что выросло» нет", waitFor { m.storage.growth?.path == "Download" })
+        ins.runOnMainSync {
+            val raw = Growth.forTree(Holder.h, Holder.gen)!!.of(0, false)
+            assertTrue("сырая Δ $raw", raw < 0)
+            val g = m.storage.growth!!
+            assertEquals(raw + freed, g.delta)
+            assertTrue(g.delta >= 2L shl 20)
+            assertEquals(C.AMBER_TEXT, m.storage.statusTxt.currentTextColor)
+        }
+    }
+
+    /** Только собственное удаление: сырая Δ −5 МиБ, но строки нет (тишина по умолчанию). */
+    @Test fun ownDeletesAloneHideTheHomeLine() {
+        val t = inBox("own2").apply { assertTrue(mkdirs()) }
+        inBox("own2/Movies/big.bin").also { it.parentFile!!.mkdirs(); it.writeBytes(ByteArray(5 shl 20)) }
+        inBox("own2/Movies/keep.bin").writeBytes(ByteArray(10_000))
+        scanIn(t, Scans.STORAGE)
+        val m = mainActivity()
+        markAndWait()
+        deleteViaAncdu("Movies", "big.bin")
+        scanIn(t, Scans.STORAGE)
+        assertTrue(waitFor { Growth.forTree(Holder.h, Holder.gen) != null })
+        val before = m.biggest.shown
+        ins.runOnMainSync { m.biggest.refresh(force = true) }
+        assertTrue(waitFor { m.biggest.shown > before })
+        ins.runOnMainSync {
+            assertTrue(Growth.forTree(Holder.h, Holder.gen)!!.of(0, false) <= -(1L shl 20))
+            assertNull(m.storage.growth)
+            assertFalse(m.storage.status is Status.Grew)
+        }
+    }
+
     @Test fun homeShowsGrowthLineAndTapLandsOnMostly() {
         val t = inBox("store").apply { assertTrue(mkdirs()) }
         inBox("store/Telegram/Video").mkdirs()

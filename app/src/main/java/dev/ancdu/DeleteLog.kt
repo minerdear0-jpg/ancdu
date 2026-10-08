@@ -329,8 +329,9 @@ object LogActions {
         // Итогов меньше, чем объектов: удаление прервалось исключением — сколько удалено, неизвестно
         // (-1): строка журнала покажет отклонение, а не спрячется как отказ.
         val removed = if (results.size < total) -1L else results.sumOf { maxOf(0L, it.done) }
-        val freed = if (total <= 1) (if (deleted == 1) results.single().disk else -1L)
-            else DeletePolicy.sum(results.filter { it.attempted && it.r == 0 }.map { it.disk })
+        // Жёсткая ссылка места не освобождает (данные живут под другим именем): 0, у группы — не в сумме.
+        val freed = if (total <= 1) (if (deleted == 1) results.single().let { if (it.hardlink) 0L else it.disk } else -1L)
+            else DeletePolicy.sum(results.filter { it.attempted && it.r == 0 && !it.hardlink }.map { it.disk })
         return LogRec.End(id, time, code, freed, removed, deleted, partial, maxOf(0, total - deleted - partial))
     }
 }
@@ -423,6 +424,12 @@ object DeleteLog {
     }
 
     /** Главный поток: записи для листа журнала (новые сверху) — чтение на io, ответ [done] на главном. */
+    /** На Holder.io: все записи журнала сейчас (пусто — журнала нет или он не читается). */
+    fun entriesNow(): List<LogEntry> {
+        val s = store() ?: return emptyList()
+        return safe("read") { DeleteLogModel.entries(s.lines()) } ?: emptyList()
+    }
+
     fun read(done: (List<LogEntry>) -> Unit) {
         val s = store()
         Holder.io.execute {

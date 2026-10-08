@@ -280,14 +280,18 @@ object Growth {
      * (новый экран, apparent = false) — та же Δ, что в строке.
      * Только чтения дерева: дети каталогов на пути «больше всего» и их имена.
      */
-    fun home(h: Long, d: Delta): HomeGrowth? {
-        val root = d.of(0, false)
+    /**
+     * [own] — освобождённое собственными удалениями в ancdu после точки отсчёта по узлам ([OwnDeletes]):
+     * строка отвечает «что выросло само», и порог, и цвет, и «больше всего» — по Δ с поправкой.
+     */
+    fun home(h: Long, d: Delta, own: Map<Int, Long> = emptyMap()): HomeGrowth? {
+        val root = OwnDeletes.corrected(d.of(0, false), own[0] ?: 0L)
         if (!GrowthText.homeShown(root)) return null
         val path = Mostly.path(root, { nd ->
             val c = IntArray(Native.childCount(h, nd))
             val k = maxOf(0, Native.children(h, nd, SORT_SIZE, false, c))
             val inf = LongArray(4 * maxOf(k, 1)).also { if (k > 0) Native.nodeInfo(h, c, k, it) }
-            (0 until k).filter { d.known(c[it]) }.map { Mostly.Kid(c[it], d.of(c[it], false), inf[4 * it + 3].toInt() and F_DIR != 0) }
+            OwnDeletes.kids((0 until k).filter { d.known(c[it]) }.map { Mostly.Kid(c[it], d.of(c[it], false), inf[4 * it + 3].toInt() and F_DIR != 0) }, own)
         })
         val names = path.map { Native.name(h, it) }
         return HomeGrowth(root, d.baseTime, names, names.joinToString("/") { Bidi.visible(Native.str(it)) })
