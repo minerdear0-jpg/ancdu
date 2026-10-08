@@ -216,8 +216,10 @@ object Growth {
             main.post {
                 if (my != seq) return@post
                 flight = -1L
-                // Ответ для уже сменённого дерева выбрасывается; экраны всё равно узнают, что ждать нечего.
-                if (Holder.h == h && Holder.gen == gen) publish(d) else for (l in listeners.toList()) l()
+                // Ответ для уже сменённого дерева выбрасывается. Экраны узнают о конце расчёта в любом
+                // случае: и «точки отсчёта нет» (null → null) снимает ожидание сортировки Δ.
+                if (Holder.h == h && Holder.gen == gen) current = d
+                tellListeners()
             }
         }
     }
@@ -244,12 +246,14 @@ object Growth {
     private fun publish(d: Delta?) {
         if (current === d) return
         current = d
-        for (l in listeners.toList()) l()
+        tellListeners()
     }
+
+    private fun tellListeners() { for (l in listeners.toList()) l() }
 
     /**
      * На Holder.io: Δ дерева [h] против A ключа; null — точки отсчёта нет или она негодна. Другая
-     * версия формата, чужой корень или повреждённый файл — точка отсчёта молча забывается (как кэш).
+     * версия формата или повреждённый файл — точка отсчёта молча забывается (как кэш).
      */
     fun compute(h: Long, gen: Long, files: BaselineFiles): Delta? {
         if (!files.a.isFile) return null
@@ -264,7 +268,9 @@ object Growth {
         val ms = (System.nanoTime() - t0) / 1_000_000
         if (flat == null) {
             Log.i("ancdu", "baseline rejected: ${err[0]}")
-            if (err[0] == -NativeErr.ENOEXEC || err[0] == -EINVAL || err[0] == -EXDEV) files.forget()
+            // Другая версия формата или негодный файл — забыть, как кэш. Чужой корень (-EXDEV) так не
+            // возникает (ключ — из корня); не удаляется: точка отсчёта просто не подходит этому дереву.
+            if (err[0] == -NativeErr.ENOEXEC || err[0] == -EINVAL) files.forget()
             return null
         }
         Log.i("ancdu", "delta: $n nodes in $ms ms")
@@ -289,5 +295,4 @@ object Growth {
     }
 
     private const val EINVAL = 22
-    private const val EXDEV = 18
 }

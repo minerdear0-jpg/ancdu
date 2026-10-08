@@ -108,6 +108,7 @@ class ScanTest {
             ActivityLifecycleMonitorRegistry.getInstance().removeLifecycleCallback(cb)
             ins.removeMonitor(browserMon)
             cache.delete()
+            Baseline.files(ctx, root, false).forget()   // точка отсчёта тестового ключа
             prefs.edit().remove(cache.name).commit()
         }
     }

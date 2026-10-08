@@ -147,6 +147,7 @@ class UxTest {
             ins.removeMonitor(browserMon)
             Holder.io.submit {}.get()   // кэш пишется на io
             cache.delete()
+            Baseline.files(ctx, dir.path, false).forget()   // точка отсчёта тестового ключа
             prefs.edit().remove(cache.name).commit()
             dir.deleteRecursively()
             ins.runOnMainSync { Holder.clear() }

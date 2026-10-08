@@ -66,6 +66,7 @@ class JankTest {
             act?.let { a -> ins.runOnMainSync { a.sheet?.dismiss(); a.finish() } }
             Holder.io.submit {}.get()
             Holder.cacheFile(ctx, dir.path, false).delete()
+            Baseline.files(ctx, dir.path, false).forget()   // точка отсчёта тестового ключа
             ctx.getSharedPreferences(Scans.PREFS, Context.MODE_PRIVATE).edit()
                 .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
         } finally {

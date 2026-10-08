@@ -713,6 +713,7 @@ class BrowserTest {
         val ctx = ins.targetContext
         Holder.io.submit {}.get()   // saveCache стоит на io
         Holder.cacheFile(ctx, dir.path, false).delete()
+        Baseline.files(ctx, dir.path, false).forget()   // точка отсчёта тестового ключа
         ctx.getSharedPreferences(Scans.PREFS, android.content.Context.MODE_PRIVATE).edit()
             .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
     }

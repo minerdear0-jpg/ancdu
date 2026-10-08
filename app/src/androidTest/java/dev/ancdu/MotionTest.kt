@@ -103,6 +103,7 @@ class MotionTest {
         val ctx = ins.targetContext
         Holder.io.submit {}.get()
         Holder.cacheFile(ctx, dir.path, false).delete()
+        Baseline.files(ctx, dir.path, false).forget()   // точка отсчёта тестового ключа
         ctx.getSharedPreferences(Scans.PREFS, Context.MODE_PRIVATE).edit()
             .remove(Holder.cacheFile(ctx, dir.path, false).name).commit()
     }

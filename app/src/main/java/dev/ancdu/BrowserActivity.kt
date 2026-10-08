@@ -1030,6 +1030,8 @@ class BrowserActivity : LangActivity() {
      */
     private fun growthChanged() {
         if (h == 0L || busy || isFinishing || isDestroyed || !::list.isInitialized || list.source == null) return
+        // Holder уже держит другое дерево (Holder.set зовёт Growth раньше слушателей сессии): экран пересоздаётся.
+        if (Holder.h != h || Holder.gen != gen) return
         if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else renderChips()
     }
 
