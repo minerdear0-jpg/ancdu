@@ -317,4 +317,17 @@
     <string name="about_licenses">Fonts: JetBrains Mono and Exo 2, SIL Open Font License 1.1</string>
     <string name="about_cert">Signing certificate SHA-256</string>
     <string name="about_cert_none">unavailable</string>
+    <!-- Task 26a: scan errors -->
+    <string name="scan_errors">Scan errors</string>
+    <string name="scan_errors_desc">Scan errors: %1$s. Open list</string>
+    <string name="err_no_access">no access</string>
+    <string name="err_gone">no longer exists</string>
+    <string name="err_symlink">symbolic link</string>
+    <string name="err_not_dir">not a folder</string>
+    <string name="err_other">read error (%1$s)</string>
+    <string name="err_incomplete">incomplete data — a delete was interrupted or the folder changed during the scan</string>
+    <string name="err_not_read">not read during the scan</string>
+    <string name="err_android_private">Android 11+ closes this folder to other apps — its size is visible only in a root scan</string>
+    <string name="err_scan_root">Scan as root</string>
+    <string name="err_node_gone">This folder is no longer in the tree</string>
 </resources>

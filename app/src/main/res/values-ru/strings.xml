@@ -305,4 +305,17 @@
     <string name="about_licenses">Шрифты: JetBrains Mono и Exo 2, SIL Open Font License 1.1</string>
     <string name="about_cert">SHA-256 сертификата подписи</string>
     <string name="about_cert_none">недоступен</string>
+    <!-- Task 26a: scan errors -->
+    <string name="scan_errors">Ошибки сканирования</string>
+    <string name="scan_errors_desc">Ошибки сканирования: %1$s. Открыть список</string>
+    <string name="err_no_access">нет доступа</string>
+    <string name="err_gone">папки уже нет</string>
+    <string name="err_symlink">символьная ссылка</string>
+    <string name="err_not_dir">это не папка</string>
+    <string name="err_other">ошибка чтения (%1$s)</string>
+    <string name="err_incomplete">данные неполные — удаление прервано или папка менялась во время скана</string>
+    <string name="err_not_read">не прочитано при скане</string>
+    <string name="err_android_private">Android 11+ закрывает эту папку для других приложений — её размер виден только при скане от root</string>
+    <string name="err_scan_root">Сканировать от root</string>
+    <string name="err_node_gone">Этой папки уже нет в дереве</string>
 </resources>
