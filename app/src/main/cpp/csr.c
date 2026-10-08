@@ -194,6 +194,16 @@ static void sift_up(const arena *a, uint32_t *h, uint32_t i) {
   }
 }
 
+/* Min-куча h[0..n) → по убыванию (disk убыв., id возр.): наименьший уходит в конец. */
+static void heap_to_desc(const arena *a, uint32_t *h, uint32_t n) {
+  for (uint32_t end = n; end > 1; end--) {
+    uint32_t t = h[0];
+    h[0] = h[end - 1];
+    h[end - 1] = t;
+    sift_down(a, h, end - 1, 0);
+  }
+}
+
 /* Узел или предок удалён (csr_remove помечает только вершину удалённого). */
 static int under_deleted(const arena *a, uint32_t x) {
   for (; x != ANCDU_NONE; x = a->parent[x])
@@ -201,19 +211,26 @@ static int under_deleted(const arena *a, uint32_t x) {
   return 0;
 }
 
-uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
-  uint64_t n = atomic_load(&a->h->count);
-  if (k == 0 || n < 2) return 0;
-  /* Удалённое есть — «мёртв ли узел» одним проходом (parent < ребёнка); нет памяти — проход
-   * по предкам только у кандидатов в кучу. */
-  uint8_t *dead = NULL;
-  int any = 0;
-  for (uint64_t i = 0; i < n && !any; i++) any = (a->flags[i] & F_DELETED) != 0;
-  if (any && (dead = malloc(n))) {
+/* Есть ли в дереве удалённое (*any) и, если есть, «мёртв ли узел» одним проходом (parent < ребёнка).
+ * NULL при *any — нет памяти: вызывающий проверяет предков (under_deleted) только у кандидатов. */
+static uint8_t *dead_map(const arena *a, uint64_t n, int *any) {
+  *any = 0;
+  for (uint64_t i = 0; i < n && !*any; i++) *any = (a->flags[i] & F_DELETED) != 0;
+  if (!*any) return NULL;
+  uint8_t *dead = malloc(n);
+  if (dead) {
     dead[0] = (a->flags[0] & F_DELETED) != 0;
     for (uint64_t i = 1; i < n; i++)
       dead[i] = (a->flags[i] & F_DELETED) || dead[a->parent[i]];
   }
+  return dead;
+}
+
+uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
+  uint64_t n = atomic_load(&a->h->count);
+  if (k == 0 || n < 2) return 0;
+  int any = 0;
+  uint8_t *dead = dead_map(a, n, &any);
   /* Жёсткие ссылки: размер несёт только первая увиденная ссылка, остальные — F_HLDUP с disk 0.
    * Удалили из дерева именно первую (csr_remove) — файл ещё на диске через другие ссылки, но в
    * топе его нет до пересканирования: дерево в этом месте и так устарело (размер удалённого вычтен
@@ -233,26 +250,41 @@ uint32_t csr_top_files(const arena *a, uint32_t k, uint32_t *out) {
     }
   }
   free(dead);
-  /* Куча → по убыванию: наименьший уходит в конец. */
-  for (uint32_t end = m; end > 1; end--) {
-    uint32_t t = out[0];
-    out[0] = out[end - 1];
-    out[end - 1] = t;
-    sift_down(a, out, end - 1, 0);
+  heap_to_desc(a, out, m);
+  return m;
+}
+
+uint32_t csr_giants(const arena *a, uint64_t min_bytes, uint32_t max_count, uint32_t *out,
+                    uint64_t *total) {
+  uint64_t n = atomic_load(&a->h->count);
+  if (min_bytes == 0) min_bytes = 1; /* disk 0 — никогда не «гигант» */
+  int any = 0;
+  uint8_t *dead = n > 1 ? dead_map(a, n, &any) : NULL;
+  uint64_t t = 0;
+  uint32_t m = 0; /* out[0..m) — min-куча, не больше max_count */
+  for (uint64_t i = 1; i < n; i++) {
+    uint32_t x = (uint32_t)i;
+    if (a->disk[x] < min_bytes || a->flags[x] & (F_DIR | F_HLDUP | F_DELETED)) continue;
+    if (dead ? dead[x] : any && under_deleted(a, x)) continue;
+    t++;
+    if (m < max_count) {
+      out[m] = x;
+      sift_up(a, out, m++);
+    } else if (m && top_less(a, out[0], x)) {
+      out[0] = x;
+      sift_down(a, out, m, 0);
+    }
   }
+  free(dead);
+  heap_to_desc(a, out, m);
+  if (total) *total = t;
   return m;
 }
 
 uint32_t csr_error_nodes(const arena *a, uint32_t cap, uint32_t *out, uint64_t *total) {
   uint64_t n = atomic_load(&a->h->count);
-  uint8_t *dead = NULL;
   int any = 0;
-  for (uint64_t i = 0; i < n && !any; i++) any = (a->flags[i] & F_DELETED) != 0;
-  if (any && (dead = malloc(n))) {
-    dead[0] = (a->flags[0] & F_DELETED) != 0;
-    for (uint64_t i = 1; i < n; i++)
-      dead[i] = (a->flags[i] & F_DELETED) || dead[a->parent[i]];
-  }
+  uint8_t *dead = dead_map(a, n, &any);
   uint64_t t = 0;
   uint32_t w = 0;
   for (uint64_t i = 0; i < n; i++) {
