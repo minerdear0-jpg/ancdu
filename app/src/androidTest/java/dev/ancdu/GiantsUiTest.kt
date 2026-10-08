@@ -369,11 +369,18 @@ class GiantsUiTest {
         android.system.Os.link(f.path, link.path)
         scanIn(t)
         val b = giants()
-        // Вторая ссылка — F_HLDUP с disk 0: в списке только первая.
-        ins.runOnMainSync { assertEquals(listOf("film.mkv"), rows(b).map { it.name }) }
-        assertEquals(0, b.deleteBlocking(index(b, "film.mkv")))
-        assertFalse(f.exists())
-        assertTrue(link.exists())
+        // Какая ссылка «первая» (несёт размер), решает порядок скана a/ и b/: в списке — ровно одна, любая.
+        var shown = ""
+        ins.runOnMainSync {
+            val r = rows(b)
+            assertEquals(1, r.size)
+            shown = r[0].name
+            assertTrue(shown, shown == "film.mkv" || shown == "film-link.mkv")
+        }
+        val (gone, kept) = if (shown == "film.mkv") f to link else link to f
+        assertEquals(0, b.deleteBlocking(0))
+        assertFalse(gone.path, gone.exists())
+        assertTrue(kept.path, kept.exists())
         ins.runOnMainSync {
             assertTrue(b.footerText.toString(), b.footerText.startsWith(b.getString(R.string.hardlink_note)))
             assertFalse(b.footerText.toString(), b.footerText.startsWith(b.prefixOf(R.string.freed)))
