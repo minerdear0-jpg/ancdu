@@ -2,8 +2,6 @@ package dev.ancdu
 
 import android.app.AlertDialog
 import android.content.Context
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
 import android.media.MediaScannerConnection
 import android.os.Bundle
@@ -18,7 +16,6 @@ import android.view.animation.AnimationUtils
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -39,7 +36,8 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: сколько раз уровень читался из дерева. */
     var loads = 0
         private set
-    private var sort = SORT_SIZE
+    internal var sort = SORT_SIZE
+        private set
     internal var apparent = false
         private set
     internal var kids = IntArray(0)
@@ -59,7 +57,7 @@ class BrowserActivity : LangActivity() {
     private var maxV = 0L
     private var parentV = 0L
     /** Δ уровня: сортировка Δ, «ушло», лист точки отсчёта. */
-    private val deltaLevel = DeltaLevel(this)
+    internal val deltaLevel = DeltaLevel(this)
     /** На этом уровне показана сортировка Δ (выбрана и Δ есть). */
     val deltaShown get() = deltaLevel.shown
     /** Строка «ушло: …» внизу папки в сортировке Δ; null — её нет. */
@@ -104,28 +102,23 @@ class BrowserActivity : LangActivity() {
     /** Для тестов: открытая карточка быстрого просмотра. */
     val quickLook get() = previews.quickLook
     private val scrollAt = HashMap<Int, Int>()
+    /** Шапка: путь и заголовок, сводка, плашка и чип «новее», переключатели, полоса скана. */
+    internal val head = BrowserHeader(this)
     /** Заголовок: имя текущей папки (на корне — PathText.rootTitle). */
-    lateinit var title: TextView
-        private set
+    val title get() = head.title
     /** Строка пути над заголовком (всегда, и на корне): тап — панель пути, долгое — копировать. */
-    lateinit var pathRow: PathRow
-        private set
+    val pathRow get() = head.pathRow
     /** Полный путь текущей папки (его копирует «Копировать путь»). */
-    var currentPath = ""
-        private set
+    val currentPath get() = head.currentPath
     /** Для тестов: открытая панель пути. */
-    var pathPanel: PathPanel? = null
-        private set
+    val pathPanel get() = head.pathPanel
     /** Узлы пути от корня до текущей папки (строки панели пути). */
-    var crumbNodes = IntArray(0)
-        private set
+    val crumbNodes get() = head.crumbNodes
     /** Пустая папка: сообщение по центру вместо списка. */
     lateinit var empty: TextView
         private set
-    private lateinit var summary: TextView
     /** Плашка вида дерева («скан · 69 312 эл. · 0,2 с»). */
-    lateinit var badge: TextView
-        private set
+    val badge get() = head.badge
     /** Подсказка или сообщение подвала: одна строка с «…» в конце (ссылка ошибок не переносит её). */
     lateinit var footer: TextView
         private set
@@ -144,24 +137,18 @@ class BrowserActivity : LangActivity() {
     lateinit var gallery: TextView
         private set
     private val onClean: () -> Unit = { renderGallery() }
-    lateinit var chips: Flow
-        private set
-    /**
-     * Шапка целиком: её высота не зависит от сортировки, режима размера и чипа «новее» и одна и
-     * та же на корне и во вложенных папках (строка пути есть всегда).
-     */
-    lateinit var header: LinearLayout
-        private set
+    val chips get() = head.chips
+    /** Шапка целиком (высота одна при любой сортировке, режиме размера, чипе «новее», на корне и вглубь). */
+    val header get() = head.header
     /** Амберный чип «новее · обновить»: в Holder ждёт более новое дерево того же корня. */
-    lateinit var newer: TextView
-        private set
+    val newer get() = head.newer
     /** Экземпляр закрепил дескриптор в Holder.browsers (снимается в onDestroy). */
     private var pinned = false
     /** Идёт [promotePending]: смену сессии экран обрабатывает сам, без recreate. */
     private var promoting = false
     /** Фоновый скан мог положить дерево в Holder.offer (тот слушателей не зовёт). */
     private val onBg: () -> Unit = {
-        val end = renderProgress()
+        val end = head.renderProgress()
         refreshPending()
         // Этот скан удался и обновлённое дерево ждёт тапа по чипу «новее» — единственное
         // объявление конца (автоподстановку объявляет landed(), провал — молча).
@@ -169,18 +156,7 @@ class BrowserActivity : LangActivity() {
             newer.announceForAccessibility(txt.s(R.string.newer_desc))
     }
     /** Полоса 2dp под линией шапки: фоновое обновление показанного дерева. */
-    lateinit var scanLine: ScanLine
-        private set
-    /** Состояние фонового скана показанного дерева при последнем [renderProgress]. */
-    private var scanState = ScanState.NONE
-    /** [BgScan.endMark] на начале скана показанного дерева: итог — именно этого скана. */
-    private var endMark = 0L
-    /** Когда плашка последний раз показала счёт (uptime). */
-    private var badgeAt = 0L
-    /** Оценка для доли полосы: items корня показанного дерева на старте скана. */
-    private var estimate: Long? = null
-    /** Обычный текст плашки — вид дерева (load). */
-    private var sourceBadge = ""
+    val scanLine get() = head.scanLine
     /** «Обновить сам, сохранив путь»: ждёт обновлённое дерево после удаления или перед листом. */
     internal val auto = AutoPromote()
     /** Обычная подсказка подвала текущего уровня (load); без жестов после первых сессий. */
@@ -380,71 +356,14 @@ class BrowserActivity : LangActivity() {
         Holder.pinBrowser(); pinned = true
         Root.load(this)
         BgScan.bind(this)
-        val top = vbox(8).also { header = it }.apply { setPadding(dp(8), dp(12), dp(16), dp(12)); setBackgroundColor(C.BG) }
-        title = label("", 22f, C.TEXT, bold = true).apply {
-            setSingleLine(true); ellipsize = TextUtils.TruncateAt.MIDDLE
-        }
-        // Путь — одна строка над заголовком и на корне: высота шапки везде одна.
-        pathRow = PathRow(this).apply {
-            longClickLabel = txt.s(R.string.copy_path)
-            feedbackClick { openPathPanel() }
-            setOnLongClickListener { Feedback.cue(this, Cue.TAP); copyPath(); true }
-        }
-        top.addView(hbox(4).apply {
-            addView(backButton { onBackPressed() })
-            addView(vbox().apply {
-                addView(pathRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-                addView(title)
-            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        })
-        summary = label("", 13f, C.MUTED, mono = true).apply {
-            setSingleLine(true); ellipsize = TextUtils.TruncateAt.END
-        }
-        // До двух строк: рядом с чипом «новее» длинная плашка («root · скан · 12,3 с · неполный»)
-        // переносится, а не обрезается. Две строки 12sp ниже 44dp строки чипа — шапка не прыгает.
-        badge = label("", 12f, C.AMBER_TEXT, mono = true).apply {
-            maxLines = BADGE_LINES; ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER_VERTICAL
-            // В сортировке Δ — «Δ с 1 окт. 09:12»: тап открывает лист точки отсчёта (load включает касание).
-            feedbackClick { deltaLevel.openBaseline() }
-            isClickable = false; isFocusable = false
-        }
-        newer = caps(txt.s(R.string.newer_chip), C.INK).apply {
-            gravity = Gravity.CENTER
-            minHeight = dp(44)
-            setPadding(dp(12), 0, dp(12), 0)
-            background = android.graphics.drawable.StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), box(C.PANEL2, C.AMBER_TEXT))
-                addState(intArrayOf(android.R.attr.state_focused), box(C.PANEL2, C.AMBER_TEXT))
-                addState(intArrayOf(), box(C.AMBER))
-            }
-            setTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_pressed),
-                intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(C.AMBER_TEXT, C.AMBER_TEXT, C.INK)))
-            isClickable = true; isFocusable = true
-            contentDescription = txt.s(R.string.newer_desc)
-            feedbackClick { promotePending() }
-            visibility = View.GONE
-        }
-        // «⇣ [РАЗМЕР|ИМЯ]» и справа [ДИСК|ВИДИМЫЙ]; не влезают в строку — переносятся.
-        chips = Flow(this, dp(12), dp(8), endLast = true)
-        top.addView(vbox().apply {
-            setPadding(dp(8), 0, 0, 0)
-            addView(summary, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            // Строка плашки всегда высотой с чип «новее» (44dp): его появление не двигает список.
-            addView(hbox(8).apply {
-                minimumHeight = dp(44)
-                addView(badge, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                addView(newer)
-            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        })
-        top.addView(chips, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        val top = head.build()
         list = NcduListView(this).apply { longClickLabel = txt.s(R.string.long_click_label); keepExt = true }
         empty = label("", 15f, C.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(dp(24), 0, dp(24), 0)
             visibility = View.GONE
         }
-        scanLine = ScanLine(this)
+        head.makeScanLine()
         // Всегда одна строка (и при 200%): появление ссылки ошибок не переносит текст и не меняет
         // высоту подвала. Полный текст — у TalkBack (text не меняется, обрезка только при отрисовке).
         footer = label("", 12f, C.MUTED, mono = true).apply {
@@ -520,7 +439,7 @@ class BrowserActivity : LangActivity() {
             // Только при первом создании: пересоздание держит свою папку и прокрутку.
             else if (savedInstanceState == null) Focus.parse(intent.getByteArrayExtra(EXTRA_FOCUS))?.let { focus(it) }
         }
-        renderProgress()
+        head.renderProgress()
     }
 
     override fun onSaveInstanceState(out: Bundle) {
@@ -557,7 +476,7 @@ class BrowserActivity : LangActivity() {
      * обновить не вышло — флаг снимается.
      */
     fun refreshPending() {
-        if (!::newer.isInitialized) return
+        if (!head.built) return
         if (h != 0L && !isFinishing && !isDestroyed) {
             val nw = hasNewer()
             // Никогда во время удаления (Holder.deleting) и при открытом листе.
@@ -565,54 +484,6 @@ class BrowserActivity : LangActivity() {
             if (!Holder.deleting && auto.failed(nw, BgScan.active)) refreshFailed(auto.take()!!)
         }
         newer.visibility = if (hasNewer() && h != 0L) View.VISIBLE else View.GONE
-    }
-
-    /**
-     * Полоса и плашка фонового обновления показанного дерева (тот же корень и режим su). Идёт —
-     * доля files / items корня (не больше 0.97), плашка «обновление · N» раз в секунду; ждёт в
-     * очереди — неопределённая полоса и «обновление · ждёт». Кончился — полоса на 100% и
-     * скрывается, плашка молча снова показывает вид дерева; не удался или выброшен (по итогу
-     * ЭТОГО скана, не по старому ждущему дереву) — полоса скрывается сразу. Голосом — только
-     * начало и ожидание ([ScanProgress.polite]). Итог скана, если он только что кончился, иначе null.
-     */
-    internal fun renderProgress(): ScanEnd? {
-        if (!::scanLine.isInitialized || h == 0L || isDestroyed) return null
-        val st = BgScan.stateFor(Holder.root, Holder.viaRoot)
-        val was = scanState
-        scanState = st
-        if (st == ScanState.NONE) {
-            if (was == ScanState.NONE) return null
-            // Итог не записан (su-цель снята с очереди) — нового дерева нет, как при провале.
-            val end = BgScan.endFor(Holder.root, Holder.viaRoot, endMark) ?: ScanEnd.FAILED
-            if (ScanProgress.completes(end)) scanLine.finish() else scanLine.hide()
-            setBadge(sourceBadge, active = false, polite = false)
-            return end
-        }
-        if (was == ScanState.NONE) endMark = BgScan.endMark
-        val files = BgScan.p[1]
-        // Во время удаления дерево не читается: без оценки — неопределённая полоса.
-        if (st == ScanState.RUNNING && was != ScanState.RUNNING)
-            estimate = if (busy) null else LongArray(4).also { Native.nodeInfo(h, intArrayOf(0), 1, it) }[2]
-        scanLine.show(if (st == ScanState.RUNNING) ScanProgress.fraction(files, estimate) else null)
-        val now = SystemClock.uptimeMillis()
-        if (ScanProgress.badgeDue(st != was, now, badgeAt)) {
-            setBadge(ScanProgress.badge(txt, st, files), active = true, polite = ScanProgress.polite(was, st))
-            badgeAt = now
-        }
-        return null
-    }
-
-    /**
-     * [polite] — TalkBack прочтёт (начало, ожидание); тики счёта, конец и покой — молча (живая
-     * область снимается до смены текста). [active] — ход скана: одна строка и при 200%; вид
-     * дерева — до [BADGE_LINES].
-     */
-    private fun setBadge(text: String, active: Boolean, polite: Boolean) {
-        badge.accessibilityLiveRegion = if (polite) View.ACCESSIBILITY_LIVE_REGION_POLITE else View.ACCESSIBILITY_LIVE_REGION_NONE
-        badge.maxLines = if (active) 1 else BADGE_LINES
-        badge.text = text
-        // Плашка Δ (касаемая) — с подсказкой «точка отсчёта»; ход скана поверх неё читается как есть.
-        badge.contentDescription = if (deltaShown && text == sourceBadge) txt.s(R.string.badge_delta_desc, text) else null
     }
 
     /** Обновлённое дерево готово: подставить (путь сохраняется) и показать итог запроса [r]. */
@@ -699,8 +570,6 @@ class BrowserActivity : LangActivity() {
         /** v2: подсказка жестов сменилась (долгое — выбрать) — показать её снова. */
         const val K_SESSIONS = "browser_sessions_v2"
         const val HINT_SESSIONS = 3
-        /** Плашка вида дерева: до двух строк рядом с чипом «новее». */
-        const val BADGE_LINES = 2
         /** Root-скан общего хранилища напрямую (чип «/data/media» главного экрана). */
         const val ROOT_MEDIA = "/data/media"
     }
@@ -717,7 +586,7 @@ class BrowserActivity : LangActivity() {
         val names = pathNames(h, node)
         val keep = list.scroll
         // Строки панели пути и листа ошибок — узлы старого дерева.
-        pathPanel?.dismiss(); pathPanel = null
+        head.dismissPanel()
         errors.dismissSheet()
         deltaLevel.dismissSheet()
         list.source = null
@@ -780,7 +649,7 @@ class BrowserActivity : LangActivity() {
         dismissWait()
         ui.removeCallbacks(restoreFooter)
         sheet?.dismiss(); sheet = null
-        pathPanel?.dismiss(); pathPanel = null
+        head.dispose()
         errors.dispose()
         deltaLevel.dispose()
         sel.dispose()
@@ -797,61 +666,11 @@ class BrowserActivity : LangActivity() {
         gallery.text = txt.s(R.string.gallery_cleaning, Fmt.count(MediaClean.cleaned, txt.locale))
     }
 
-    /** Сегменты сортировки и режима размера (пересоздаются в renderChips). */
-    private var sortSeg: LinearLayout? = null
-    private var sizeSeg: LinearLayout? = null
-
     /** Для тестов: тексты сегментов сортировки, затем режима размера (как в ресурсах). */
-    fun segmentTexts(): List<String> = listOfNotNull(sortSeg, sizeSeg).flatMap { g ->
-        (0 until g.childCount).map { (g.getChildAt(it) as TextView).text.toString() }
-    }
+    fun segmentTexts(): List<String> = head.segmentTexts()
 
     /** Для тестов: все сегменты (касания 44dp). */
-    fun segments(): List<View> = listOfNotNull(sortSeg, sizeSeg).flatMap { g -> (0 until g.childCount).map { g.getChildAt(it) } }
-
-    /** Состояние, из которого собраны переключатели (сортировка, режим размера, есть ли Δ); null — не собраны. */
-    private var chipsFor: Triple<Int, Boolean, Boolean>? = null
-
-    /**
-     * Сегмент Δ есть: для дерева посчитана Δ против точки отсчёта. Пока она считается (новое дерево того
-     * же экрана), сегмент держится, если Δ выбрана или уже была предложена — без мигания.
-     */
-    private fun deltaOffered(): Boolean =
-        h != 0L && (Growth.forTree(h, gen) != null ||
-            (Growth.pending(h, gen) && (sort == SORT_DELTA || chipsFor?.third == true)))
-
-    private fun renderChips() {
-        // Вход в папку не меняет ни сортировку, ни режим: пересборка шапки (новые view, шрифты,
-        // заново measure/layout всей шапки) стоила ~5 мс на каждый load — половина бюджета кадра.
-        val offered = deltaOffered()
-        val want = Triple(sort, apparent, offered)
-        if (chipsFor == want) return
-        chipsFor = want
-        chips.removeAllViews()
-        // [РАЗМЕР | ИМЯ | Δ]: Δ — только когда есть точка отсчёта.
-        val opts = listOf(txt.s(R.string.sort_size), txt.s(R.string.sort_name)) + if (offered) listOf(txt.s(R.string.sort_delta)) else emptyList()
-        val sel = when { sort == SORT_NAME -> 1; sort == SORT_DELTA && offered -> 2; else -> 0 }
-        val sorts = segmented(opts, sel, amber = true) { setSort(when (it) { 1 -> SORT_NAME; 2 -> SORT_DELTA; else -> SORT_SIZE }) }
-        val sizes = segmented(listOf(txt.s(R.string.size_disk), txt.s(R.string.size_apparent)),
-            if (apparent) 1 else 0, amber = false) { setApparent(it == 1) }
-        sortSeg = sorts; sizeSeg = sizes
-        // Смысл пиктограммы — в описаниях сегментов сортировки.
-        sorts.getChildAt(0).contentDescription = txt.s(R.string.sort_size_desc)
-        sorts.getChildAt(1).contentDescription = txt.s(R.string.sort_name_desc)
-        if (offered) sorts.getChildAt(2).contentDescription = txt.s(R.string.sort_delta_desc)
-        sizes.contentDescription = txt.s(R.string.size_mode_desc, txt.s(if (apparent) R.string.size_apparent else R.string.size_disk_desc))
-        // Пиктограмма и сегменты сортировки — один ребёнок Flow (не разрываются при переносе);
-        // группы при крупном шрифте переносятся, не сжимаются.
-        chips.addView(hbox(6).apply {
-            addView(ImageView(this@BrowserActivity).apply {
-                setImageResource(R.drawable.ic_sort)
-                imageTintList = android.content.res.ColorStateList.valueOf(C.MUTED)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(dp(24), dp(24)))
-            addView(sorts)
-        })
-        chips.addView(sizes)
-    }
+    fun segments(): List<View> = head.segments()
 
     fun setSort(k: Int) { if (busy) return; sort = k; load(node, 0) }
     fun setApparent(v: Boolean) { if (busy) return; apparent = v; load(node, 0) }
@@ -880,22 +699,18 @@ class BrowserActivity : LangActivity() {
         val self = LongArray(4).also { Native.nodeInfo(h, intArrayOf(node), 1, it) }
         parentV = self[if (apparent) 1 else 0]
         maxV = (0 until n).maxOfOrNull { value(it) } ?: 0L
-        renderHeader()
+        head.renderHeader()
         rowTags.reset(n, currentPath, rootPath(), node == 0, Holder.root, Holder.kind)
         empty.visibility = if (n == 0) View.VISIBLE else View.GONE
         empty.text = txt.s(if (self[3].toInt() and F_ERR == 0) R.string.folder_empty else R.string.folder_no_access)
-        summary.text = deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
+        head.summary.text = deltaLevel.summary(parentV) ?: "${Fmt.size(parentV, txt)} · ${txt.items(self[2])}"
         val p = progress()
         val full = p[0] == ST_FULL.toLong()
-        sourceBadge = deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full)
-        // Плашка Δ — касаемая (лист точки отсчёта), 44dp; иначе — просто текст.
-        badge.isClickable = deltaShown; badge.isFocusable = deltaShown
-        badge.minHeight = if (deltaShown) dp(44) else 0
-        if (scanState == ScanState.NONE) setBadge(sourceBadge, active = false, polite = false)
+        head.showSource(deltaLevel.badge() ?: Badge.text(txt, Holder.kind, Holder.time, Holder.ms, full))
         hint = if (showHint) txt.s(R.string.browser_hint) else ""
         setFooter(idleFooter())
         errors.refreshErrors()
-        renderChips()
+        head.renderChips()
         refreshPending()
         slide(dir)
         sel.renderSelection()
@@ -911,7 +726,7 @@ class BrowserActivity : LangActivity() {
         if (h == 0L || busy || isFinishing || isDestroyed || !::list.isInitialized || list.source == null) return
         // Holder уже держит другое дерево (Holder.set зовёт Growth раньше слушателей сессии): экран пересоздаётся.
         if (Holder.h != h || Holder.gen != gen) return
-        if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else renderChips()
+        if (sort == SORT_DELTA || deltaShown) load(node, list.scroll, keepAsk = true) else head.renderChips()
     }
 
     /**
@@ -930,43 +745,6 @@ class BrowserActivity : LangActivity() {
     private val enterCurve by lazy { AnimationUtils.loadInterpolator(this, R.interpolator.motion_enter) }
 
     internal fun rootPath(): String = Native.str(Native.path(h, 0)).ifEmpty { Holder.root }
-
-    /**
-     * Строка пути — полный путь текущей папки, заголовок — её имя (на корне — PathText.rootTitle).
-     * Главный поток, чтения дерева — с [h].
-     */
-    private fun renderHeader() {
-        val chain = ArrayList<Int>()
-        var c = node
-        while (c > 0) { chain += c; c = Native.parent(h, c) }
-        chain += 0
-        chain.reverse()
-        crumbNodes = chain.toIntArray()
-        title.text = Bidi.visible(if (node == 0) PathText.rootTitle(rootPath(), txt.s(R.string.internal_storage)) else nameOf(node))
-        currentPath = Native.str(Native.path(h, node))
-        pathRow.path = Bidi.visible(currentPath)
-        pathRow.contentDescription = txt.s(R.string.path_row_desc, currentPath)
-    }
-
-    /** Панель пути: полный путь, «Копировать путь», предки от корня (тап — переход к нему). */
-    fun openPathPanel() {
-        if (busy || h == 0L) return
-        pathPanel?.dismiss()
-        val root = rootPath()
-        val rows = crumbNodes.map { nd -> nd to Bidi.visible(if (nd == 0) root else nameOf(nd)) }
-        pathPanel = PathPanel(this, Bidi.visible(currentPath), rows, node,
-            onCopy = { pathPanel?.dismiss(); copyPath() },
-            onJump = { nd -> pathPanel?.dismiss(); jumpTo(nd) },
-            onClose = { refreshPending() }).also { it.show() }
-    }
-
-    /** Полный путь текущей папки — в буфер обмена; в подвале «Путь скопирован» на 4 с. */
-    fun copyPath() {
-        if (h == 0L || currentPath.isEmpty()) return
-        val cm = getSystemService(ClipboardManager::class.java) ?: return
-        cm.setPrimaryClip(ClipData.newPlainText(txt.s(R.string.path_caps), currentPath))
-        note(txt.s(R.string.path_copied))
-    }
 
     internal fun nameOf(nd: Int): String = Native.str(Native.name(h, nd))
 
@@ -1037,7 +815,7 @@ class BrowserActivity : LangActivity() {
         if (blockReason(h, t, Native.str(Native.path(h, t))) == Block.REFRESH_FAILED) {
             auto.beforeDelete(pathNames(h, t), nameOf(t), ScanTarget(Holder.root, Holder.viaRoot))
             // Встать в очередь за сканом другого корня BgScan молча: «ждёт» показывает renderProgress.
-            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { renderProgress(); return }
+            if (BgScan.refresh(this, Holder.root, Holder.viaRoot)) { head.renderProgress(); return }
             auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
         }

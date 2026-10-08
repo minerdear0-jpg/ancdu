@@ -309,7 +309,7 @@ class BrowserSelection(private val a: BrowserActivity) {
         if (stale) {
             groupAsked = before
             a.auto.beforeGroup(a.pathNames(a.h, a.node), a.nameOf(a.node), ScanTarget(Holder.root, Holder.viaRoot))
-            if (BgScan.refresh(a, Holder.root, Holder.viaRoot)) { a.renderProgress(); return }
+            if (BgScan.refresh(a, Holder.root, Holder.viaRoot)) { a.head.renderProgress(); return }
             a.auto.take()
             Log.i("ancdu", "tree refresh not started: ${BgScan.failure}")
         }
